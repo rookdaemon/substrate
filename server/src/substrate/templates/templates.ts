@@ -2,11 +2,11 @@ export const PLAN_TEMPLATE = `# Plan
 
 ## Current Goal
 
-No goal set yet. Awaiting initialization.
+Awaiting first goal.
 
-## Next Steps
+## Tasks
 
-- Initialize agent substrate
+- [ ] Review substrate files and establish initial goals
 `;
 
 export const MEMORY_TEMPLATE = `# Memory

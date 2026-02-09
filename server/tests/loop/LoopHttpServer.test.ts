@@ -6,6 +6,7 @@ import { HealthCheck } from "../../src/evaluation/HealthCheck";
 import { InMemoryEventSink } from "../../src/loop/InMemoryEventSink";
 import { ImmediateTimer } from "../../src/loop/ImmediateTimer";
 import { LoopState, defaultLoopConfig } from "../../src/loop/types";
+import { InMemoryLogger } from "../../src/logging";
 import { Ego } from "../../src/agents/roles/Ego";
 import { Subconscious } from "../../src/agents/roles/Subconscious";
 import { Superego } from "../../src/agents/roles/Superego";
@@ -52,7 +53,7 @@ function createTestHarness(): TestHarness {
   const eventSink = new InMemoryEventSink();
 
   const orchestrator = new LoopOrchestrator(
-    ego, subconscious, superego, id, appendWriter, clock, timer, eventSink, defaultLoopConfig()
+    ego, subconscious, superego, id, appendWriter, clock, timer, eventSink, defaultLoopConfig(), new InMemoryLogger()
   );
 
   return { orchestrator, reader, ego, fs, clock };

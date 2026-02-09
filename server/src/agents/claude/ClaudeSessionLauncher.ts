@@ -19,6 +19,7 @@ export interface LaunchOptions {
   maxRetries?: number;
   retryDelayMs?: number;
   onLogEntry?: (entry: ProcessLogEntry) => void;
+  cwd?: string;
 }
 
 export class ClaudeSessionLauncher {
@@ -50,6 +51,7 @@ export class ClaudeSessionLauncher {
       const args = [
         "--print",
         "--verbose",
+        "--dangerously-skip-permissions",
         "--output-format",
         "stream-json",
         "--system-prompt",
@@ -59,6 +61,7 @@ export class ClaudeSessionLauncher {
 
       const processResult = await this.processRunner.run("claude", args, {
         onStdout: (chunk) => parser.push(chunk),
+        cwd: options?.cwd,
       });
 
       parser.flush();

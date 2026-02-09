@@ -32,7 +32,7 @@ describe("initializeSubstrate", () => {
 
   it("does not overwrite existing files", async () => {
     await fs.mkdir("/substrate", { recursive: true });
-    await fs.writeFile("/substrate/PLAN.md", "# Plan\n\n## Current Goal\nCustom plan content");
+    await fs.writeFile("/substrate/PLAN.md", "# Plan\n\n## Current Goal\nCustom plan content\n\n## Tasks\n\n- [ ] Custom task");
 
     await initializeSubstrate(fs, "/substrate");
 

@@ -2,6 +2,7 @@ import { LoopOrchestrator } from "../../src/loop/LoopOrchestrator";
 import { InMemoryEventSink } from "../../src/loop/InMemoryEventSink";
 import { ImmediateTimer } from "../../src/loop/ImmediateTimer";
 import { defaultLoopConfig } from "../../src/loop/types";
+import { InMemoryLogger } from "../../src/logging";
 import { Ego } from "../../src/agents/roles/Ego";
 import { Subconscious } from "../../src/agents/roles/Subconscious";
 import { Superego } from "../../src/agents/roles/Superego";
@@ -65,7 +66,7 @@ describe("Integration: Full Cycle", () => {
     const orchestrator = new LoopOrchestrator(
       deps.ego, deps.subconscious, deps.superego, deps.id,
       deps.appendWriter, deps.clock, new ImmediateTimer(), eventSink,
-      defaultLoopConfig()
+      defaultLoopConfig(), new InMemoryLogger()
     );
 
     deps.runner.enqueue({
@@ -104,7 +105,7 @@ describe("Integration: Full Cycle", () => {
     const orchestrator = new LoopOrchestrator(
       deps.ego, deps.subconscious, deps.superego, deps.id,
       deps.appendWriter, deps.clock, new ImmediateTimer(), eventSink,
-      config
+      config, new InMemoryLogger()
     );
 
     // Task A
@@ -154,7 +155,7 @@ describe("Integration: Full Cycle", () => {
     const orchestrator = new LoopOrchestrator(
       deps.ego, deps.subconscious, deps.superego, deps.id,
       deps.appendWriter, deps.clock, new ImmediateTimer(), eventSink,
-      defaultLoopConfig()
+      defaultLoopConfig(), new InMemoryLogger()
     );
 
     deps.runner.enqueue({

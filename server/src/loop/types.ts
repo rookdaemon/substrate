@@ -11,11 +11,16 @@ export interface LoopConfig {
 }
 
 export function defaultLoopConfig(overrides?: Partial<LoopConfig>): LoopConfig {
-  return {
-    cycleDelayMs: 1000,
+  const defaults: LoopConfig = {
+    cycleDelayMs: 30000,
     superegoAuditInterval: 10,
-    maxConsecutiveIdleCycles: 5,
-    ...overrides,
+    maxConsecutiveIdleCycles: 1,
+  };
+  if (!overrides) return defaults;
+  return {
+    cycleDelayMs: overrides.cycleDelayMs ?? defaults.cycleDelayMs,
+    superegoAuditInterval: overrides.superegoAuditInterval ?? defaults.superegoAuditInterval,
+    maxConsecutiveIdleCycles: overrides.maxConsecutiveIdleCycles ?? defaults.maxConsecutiveIdleCycles,
   };
 }
 

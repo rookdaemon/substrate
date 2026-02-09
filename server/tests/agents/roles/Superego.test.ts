@@ -29,7 +29,7 @@ describe("Superego agent", () => {
     const promptBuilder = new PromptBuilder(reader, checker);
     const launcher = new ClaudeSessionLauncher(runner, clock);
 
-    superego = new Superego(reader, appendWriter, checker, promptBuilder, launcher, clock);
+    superego = new Superego(reader, appendWriter, checker, promptBuilder, launcher, clock, "/workspace");
 
     await fs.mkdir("/substrate", { recursive: true });
     await fs.writeFile("/substrate/PLAN.md", "# Plan\n\n## Current Goal\nBuild it\n\n## Tasks\n- [ ] Do stuff");
@@ -62,6 +62,17 @@ describe("Superego agent", () => {
       expect(report.findings).toHaveLength(2);
       expect(report.findings[0].severity).toBe("info");
       expect(report.summary).toBe("Overall good shape");
+    });
+
+    it("passes substratePath as cwd to session launcher", async () => {
+      runner.enqueue({ stdout: asStreamJson(JSON.stringify({
+        findings: [], proposalEvaluations: [], summary: "OK",
+      })), stderr: "", exitCode: 0 });
+
+      await superego.audit();
+
+      const calls = runner.getCalls();
+      expect(calls[0].options?.cwd).toBe("/workspace");
     });
 
     it("returns error report when Claude fails", async () => {

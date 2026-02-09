@@ -32,7 +32,7 @@ describe("Subconscious agent", () => {
     const launcher = new ClaudeSessionLauncher(runner, clock);
 
     subconscious = new Subconscious(
-      reader, writer, appendWriter, checker, promptBuilder, launcher, clock
+      reader, writer, appendWriter, checker, promptBuilder, launcher, clock, "/workspace"
     );
 
     await fs.mkdir("/substrate", { recursive: true });
@@ -68,6 +68,17 @@ describe("Subconscious agent", () => {
 
       expect(result.result).toBe("success");
       expect(result.summary).toBe("Implemented the feature");
+    });
+
+    it("passes substratePath as cwd to session launcher", async () => {
+      runner.enqueue({ stdout: asStreamJson(JSON.stringify({
+        result: "success", summary: "Done", progressEntry: "", skillUpdates: null, proposals: [],
+      })), stderr: "", exitCode: 0 });
+
+      await subconscious.execute({ taskId: "task-1", description: "Do it" });
+
+      const calls = runner.getCalls();
+      expect(calls[0].options?.cwd).toBe("/workspace");
     });
 
     it("returns failure result when Claude fails", async () => {
@@ -121,6 +132,16 @@ describe("Subconscious agent", () => {
       const content = await fs.readFile("/substrate/PLAN.md");
       expect(content).toContain("- [x] Task A");
       expect(content).toContain("- [ ] Task B");
+    });
+  });
+
+  describe("logConversation", () => {
+    it("appends conversation entry to CONVERSATION", async () => {
+      await subconscious.logConversation("Task completed successfully");
+
+      const content = await fs.readFile("/substrate/CONVERSATION.md");
+      expect(content).toContain("[2025-06-15T10:00:00.000Z]");
+      expect(content).toContain("[SUBCONSCIOUS] Task completed successfully");
     });
   });
 

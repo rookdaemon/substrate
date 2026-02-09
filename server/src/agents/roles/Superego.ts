@@ -36,7 +36,8 @@ export class Superego {
     private readonly checker: PermissionChecker,
     private readonly promptBuilder: PromptBuilder,
     private readonly sessionLauncher: ClaudeSessionLauncher,
-    private readonly clock: IClock
+    private readonly clock: IClock,
+    private readonly workingDirectory?: string
   ) {}
 
   async audit(onLogEntry?: (entry: ProcessLogEntry) => void): Promise<GovernanceReport> {
@@ -45,7 +46,7 @@ export class Superego {
       const result = await this.sessionLauncher.launch({
         systemPrompt,
         message: "Perform a full audit of all substrate files. Report findings.",
-      }, { onLogEntry });
+      }, { onLogEntry, cwd: this.workingDirectory });
 
       if (!result.success) {
         return {
@@ -76,7 +77,7 @@ export class Superego {
       const result = await this.sessionLauncher.launch({
         systemPrompt,
         message: `Evaluate these proposals:\n${JSON.stringify(proposals, null, 2)}`,
-      }, { onLogEntry });
+      }, { onLogEntry, cwd: this.workingDirectory });
 
       if (!result.success) {
         return proposals.map(() => ({

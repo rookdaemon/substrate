@@ -34,7 +34,7 @@ describe("Ego agent", () => {
     const launcher = new ClaudeSessionLauncher(runner, clock);
 
     ego = new Ego(
-      reader, writer, appendWriter, checker, promptBuilder, launcher, clock
+      reader, writer, appendWriter, checker, promptBuilder, launcher, clock, "/workspace"
     );
 
     await fs.mkdir("/substrate", { recursive: true });
@@ -77,6 +77,15 @@ describe("Ego agent", () => {
 
       const decision = await ego.decide();
       expect(decision.action).toBe("idle");
+    });
+
+    it("passes substratePath as cwd to session launcher", async () => {
+      runner.enqueue({ stdout: asStreamJson(JSON.stringify({ action: "idle" })), stderr: "", exitCode: 0 });
+
+      await ego.decide();
+
+      const calls = runner.getCalls();
+      expect(calls[0].options?.cwd).toBe("/workspace");
     });
 
     it("forwards onLogEntry callback to session launcher", async () => {

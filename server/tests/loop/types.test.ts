@@ -18,9 +18,9 @@ describe("defaultLoopConfig", () => {
   it("returns default configuration", () => {
     const config = defaultLoopConfig();
 
-    expect(config.cycleDelayMs).toBe(1000);
+    expect(config.cycleDelayMs).toBe(30000);
     expect(config.superegoAuditInterval).toBe(10);
-    expect(config.maxConsecutiveIdleCycles).toBe(5);
+    expect(config.maxConsecutiveIdleCycles).toBe(1);
   });
 
   it("allows overriding individual fields", () => {
@@ -28,7 +28,19 @@ describe("defaultLoopConfig", () => {
 
     expect(config.cycleDelayMs).toBe(500);
     expect(config.superegoAuditInterval).toBe(10);
-    expect(config.maxConsecutiveIdleCycles).toBe(5);
+    expect(config.maxConsecutiveIdleCycles).toBe(1);
+  });
+
+  it("ignores undefined overrides and keeps defaults", () => {
+    const config = defaultLoopConfig({
+      cycleDelayMs: undefined,
+      superegoAuditInterval: undefined,
+      maxConsecutiveIdleCycles: undefined,
+    });
+
+    expect(config.cycleDelayMs).toBe(30000);
+    expect(config.superegoAuditInterval).toBe(10);
+    expect(config.maxConsecutiveIdleCycles).toBe(1);
   });
 
   it("allows overriding all fields", () => {

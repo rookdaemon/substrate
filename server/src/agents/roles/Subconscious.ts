@@ -36,7 +36,8 @@ export class Subconscious {
     private readonly checker: PermissionChecker,
     private readonly promptBuilder: PromptBuilder,
     private readonly sessionLauncher: ClaudeSessionLauncher,
-    private readonly clock: IClock
+    private readonly clock: IClock,
+    private readonly workingDirectory?: string
   ) {}
 
   async execute(task: TaskAssignment, onLogEntry?: (entry: ProcessLogEntry) => void): Promise<TaskResult> {
@@ -45,7 +46,7 @@ export class Subconscious {
       const result = await this.sessionLauncher.launch({
         systemPrompt,
         message: `Execute this task:\nID: ${task.taskId}\nDescription: ${task.description}`,
-      }, { onLogEntry });
+      }, { onLogEntry, cwd: this.workingDirectory });
 
       if (!result.success) {
         return {
@@ -74,6 +75,11 @@ export class Subconscious {
         proposals: [],
       };
     }
+  }
+
+  async logConversation(entry: string): Promise<void> {
+    this.checker.assertCanAppend(AgentRole.SUBCONSCIOUS, SubstrateFileType.CONVERSATION);
+    await this.appendWriter.append(SubstrateFileType.CONVERSATION, `[SUBCONSCIOUS] ${entry}`);
   }
 
   async logProgress(entry: string): Promise<void> {

@@ -2,6 +2,7 @@ import { IdleHandler } from "../../src/loop/IdleHandler";
 import { Id } from "../../src/agents/roles/Id";
 import { Superego } from "../../src/agents/roles/Superego";
 import { Ego } from "../../src/agents/roles/Ego";
+import { InMemoryLogger } from "../../src/logging";
 import { InMemoryFileSystem } from "../../src/substrate/abstractions/InMemoryFileSystem";
 import { FixedClock } from "../../src/substrate/abstractions/FixedClock";
 import { InMemoryProcessRunner } from "../../src/agents/claude/InMemoryProcessRunner";
@@ -53,12 +54,14 @@ async function setupSubstrateFiles(fs: InMemoryFileSystem) {
 
 describe("IdleHandler", () => {
   let deps: ReturnType<typeof createTestDeps>;
+  let logger: InMemoryLogger;
   let handler: IdleHandler;
 
   beforeEach(async () => {
     deps = createTestDeps();
+    logger = new InMemoryLogger();
     await setupSubstrateFiles(deps.fs);
-    handler = new IdleHandler(deps.id, deps.superego, deps.ego, deps.appendWriter, deps.clock);
+    handler = new IdleHandler(deps.id, deps.superego, deps.ego, deps.appendWriter, deps.clock, logger);
   });
 
   it("returns no_goals when Id detects not idle", async () => {

@@ -1,3 +1,4 @@
+import * as path from "path";
 import { NodeFileSystem } from "../substrate/abstractions/NodeFileSystem";
 import { SystemClock } from "../substrate/abstractions/SystemClock";
 import { SubstrateConfig } from "../substrate/config";
@@ -13,6 +14,7 @@ import { Ego } from "../agents/roles/Ego";
 import { Subconscious } from "../agents/roles/Subconscious";
 import { Superego } from "../agents/roles/Superego";
 import { Id } from "../agents/roles/Id";
+import { FileLogger } from "../logging";
 import { NodeTimer } from "./NodeTimer";
 import { LoopOrchestrator } from "./LoopOrchestrator";
 import { IdleHandler } from "./IdleHandler";
@@ -23,6 +25,7 @@ import { HealthCheck } from "../evaluation/HealthCheck";
 
 export interface ApplicationConfig {
   substratePath: string;
+  workingDirectory?: string;
   httpPort?: number;
   cycleDelayMs?: number;
   superegoAuditInterval?: number;
@@ -33,6 +36,7 @@ export interface Application {
   orchestrator: LoopOrchestrator;
   httpServer: LoopHttpServer;
   wsServer: LoopWebSocketServer;
+  logPath: string;
   start(port?: number): Promise<number>;
   stop(): Promise<void>;
 }
@@ -53,10 +57,11 @@ export function createApplication(config: ApplicationConfig): Application {
   const runner = new NodeProcessRunner();
   const launcher = new ClaudeSessionLauncher(runner, clock);
 
-  const ego = new Ego(reader, writer, appendWriter, checker, promptBuilder, launcher, clock);
-  const subconscious = new Subconscious(reader, writer, appendWriter, checker, promptBuilder, launcher, clock);
-  const superego = new Superego(reader, appendWriter, checker, promptBuilder, launcher, clock);
-  const id = new Id(reader, checker, promptBuilder, launcher, clock);
+  const cwd = config.workingDirectory;
+  const ego = new Ego(reader, writer, appendWriter, checker, promptBuilder, launcher, clock, cwd);
+  const subconscious = new Subconscious(reader, writer, appendWriter, checker, promptBuilder, launcher, clock, cwd);
+  const superego = new Superego(reader, appendWriter, checker, promptBuilder, launcher, clock, cwd);
+  const id = new Id(reader, checker, promptBuilder, launcher, clock, cwd);
 
   // Loop layer — build httpServer first for the underlying http.Server,
   // then wsServer, then orchestrator, then wire orchestrator back into httpServer
@@ -66,16 +71,19 @@ export function createApplication(config: ApplicationConfig): Application {
     maxConsecutiveIdleCycles: config.maxConsecutiveIdleCycles,
   });
 
+  const logPath = path.resolve(config.substratePath, "..", "debug.log");
+  const logger = new FileLogger(logPath);
+
   const httpServer = new LoopHttpServer(null as unknown as LoopOrchestrator);
   const wsServer = new LoopWebSocketServer(httpServer.getServer());
   const timer = new NodeTimer();
 
-  const idleHandler = new IdleHandler(id, superego, ego, appendWriter, clock);
+  const idleHandler = new IdleHandler(id, superego, ego, appendWriter, clock, logger);
 
   const orchestrator = new LoopOrchestrator(
     ego, subconscious, superego, id,
     appendWriter, clock, timer, wsServer, loopConfig,
-    idleHandler
+    logger, idleHandler
   );
 
   httpServer.setOrchestrator(orchestrator);
@@ -86,6 +94,7 @@ export function createApplication(config: ApplicationConfig): Application {
     orchestrator,
     httpServer,
     wsServer,
+    logPath,
     async start(port?: number): Promise<number> {
       const p = port ?? config.httpPort ?? 3000;
       return httpServer.listen(p);

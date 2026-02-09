@@ -3,6 +3,7 @@ import { IdleHandler } from "../../src/loop/IdleHandler";
 import { InMemoryEventSink } from "../../src/loop/InMemoryEventSink";
 import { ImmediateTimer } from "../../src/loop/ImmediateTimer";
 import { defaultLoopConfig } from "../../src/loop/types";
+import { InMemoryLogger } from "../../src/logging";
 import { Ego } from "../../src/agents/roles/Ego";
 import { Subconscious } from "../../src/agents/roles/Subconscious";
 import { Superego } from "../../src/agents/roles/Superego";
@@ -62,8 +63,9 @@ describe("Integration: Idle → Goal Flow", () => {
     const deps = createDeps();
     await setupIdleSubstrate(deps.fs);
 
+    const logger = new InMemoryLogger();
     const idleHandler = new IdleHandler(
-      deps.id, deps.superego, deps.ego, deps.appendWriter, deps.clock
+      deps.id, deps.superego, deps.ego, deps.appendWriter, deps.clock, logger
     );
 
     const eventSink = new InMemoryEventSink();
@@ -71,7 +73,7 @@ describe("Integration: Idle → Goal Flow", () => {
     const orchestrator = new LoopOrchestrator(
       deps.ego, deps.subconscious, deps.superego, deps.id,
       deps.appendWriter, deps.clock, new ImmediateTimer(), eventSink,
-      config, idleHandler
+      config, logger, idleHandler
     );
 
     // IdleHandler: Id.generateDrives → 1 goal
@@ -124,8 +126,9 @@ describe("Integration: Idle → Goal Flow", () => {
     const deps = createDeps();
     await setupIdleSubstrate(deps.fs);
 
+    const logger = new InMemoryLogger();
     const idleHandler = new IdleHandler(
-      deps.id, deps.superego, deps.ego, deps.appendWriter, deps.clock
+      deps.id, deps.superego, deps.ego, deps.appendWriter, deps.clock, logger
     );
 
     const eventSink = new InMemoryEventSink();
@@ -133,7 +136,7 @@ describe("Integration: Idle → Goal Flow", () => {
     const orchestrator = new LoopOrchestrator(
       deps.ego, deps.subconscious, deps.superego, deps.id,
       deps.appendWriter, deps.clock, new ImmediateTimer(), eventSink,
-      config, idleHandler
+      config, logger, idleHandler
     );
 
     // Id.generateDrives will fail (no runner responses) → no_goals

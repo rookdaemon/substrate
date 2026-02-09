@@ -50,8 +50,11 @@ export async function startServer(config: RookConfig): Promise<StartedServer> {
 
   const app = createApplication({
     substratePath: config.substratePath,
+    workingDirectory: config.workingDirectory,
     httpPort: config.port,
   });
+
+  console.log(`Debug log: ${app.logPath}`);
 
   const boundPort = await app.start(config.port);
   console.log(`Server listening on port ${boundPort}`);

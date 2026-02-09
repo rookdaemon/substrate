@@ -5,6 +5,7 @@ import { ProcessLogEntry } from "../agents/claude/StreamJsonParser";
 import { AppendOnlyWriter } from "../substrate/io/AppendOnlyWriter";
 import { SubstrateFileType } from "../substrate/types";
 import { IClock } from "../substrate/abstractions/IClock";
+import { ILogger } from "../logging";
 
 export interface IdleHandlerResult {
   action: "plan_created" | "no_goals" | "all_rejected" | "not_idle";
@@ -17,21 +18,28 @@ export class IdleHandler {
     private readonly superego: Superego,
     private readonly ego: Ego,
     private readonly appendWriter: AppendOnlyWriter,
-    private readonly clock: IClock
+    private readonly clock: IClock,
+    private readonly logger: ILogger
   ) {}
 
   async handleIdle(createLogCallback?: (role: string) => (entry: ProcessLogEntry) => void): Promise<IdleHandlerResult> {
     // Step 1: Confirm idle via Id
+    this.logger.debug("IdleHandler: detecting idle state");
     const detection = await this.id.detectIdle();
     if (!detection.idle) {
+      this.logger.debug("IdleHandler: not idle, skipping");
       return { action: "not_idle" };
     }
 
     // Step 2: Generate goal candidates
+    this.logger.debug(`IdleHandler: idle detected (${detection.reason}), generating drives`);
     const candidates = await this.id.generateDrives(createLogCallback?.("ID"));
     if (candidates.length === 0) {
+      this.logger.debug("IdleHandler: no goal candidates generated");
       return { action: "no_goals" };
     }
+
+    this.logger.debug(`IdleHandler: generated ${candidates.length} goal candidate(s)`);
 
     // Step 3: Log idle detection
     await this.appendWriter.append(
@@ -45,15 +53,18 @@ export class IdleHandler {
       content: `${c.title}: ${c.description}`,
     }));
 
+    this.logger.debug(`IdleHandler: evaluating ${proposals.length} proposal(s) via Superego`);
     const evaluations = await this.superego.evaluateProposals(proposals, createLogCallback?.("SUPEREGO"));
 
     // Step 5: Filter to approved goals
     const approved = candidates.filter((_, i) => evaluations[i]?.approved);
     if (approved.length === 0) {
+      this.logger.debug("IdleHandler: all proposals rejected by Superego");
       return { action: "all_rejected" };
     }
 
     // Step 6: Write new plan from approved goals
+    this.logger.debug(`IdleHandler: ${approved.length} proposal(s) approved, writing plan`);
     const planLines = [
       "# Plan",
       "",
@@ -65,6 +76,7 @@ export class IdleHandler {
     ];
     await this.ego.writePlan(planLines.join("\n"));
 
+    this.logger.debug("IdleHandler: plan written successfully");
     return { action: "plan_created", goalCount: approved.length };
   }
 }

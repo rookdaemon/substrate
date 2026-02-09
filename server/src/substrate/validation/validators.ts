@@ -22,6 +22,8 @@ export function validateSubstrateContent(
   if (fileType === SubstrateFileType.PLAN && errors.length === 0) {
     if (!content.includes("\n## ")) {
       errors.push("PLAN must have at least one ## section");
+    } else if (!content.includes("\n## Tasks")) {
+      errors.push("PLAN must have a ## Tasks section");
     }
   }
 

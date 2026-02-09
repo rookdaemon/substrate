@@ -25,7 +25,8 @@ export class Id {
     private readonly checker: PermissionChecker,
     private readonly promptBuilder: PromptBuilder,
     private readonly sessionLauncher: ClaudeSessionLauncher,
-    private readonly clock: IClock
+    private readonly clock: IClock,
+    private readonly workingDirectory?: string
   ) {}
 
   async detectIdle(): Promise<IdleDetectionResult> {
@@ -50,7 +51,7 @@ export class Id {
       const result = await this.sessionLauncher.launch({
         systemPrompt,
         message: "Analyze the current state. Are we idle? What goals should we pursue?",
-      }, { onLogEntry });
+      }, { onLogEntry, cwd: this.workingDirectory });
 
       if (!result.success) return [];
 

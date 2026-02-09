@@ -31,6 +31,16 @@ export function ConversationView({ lastEvent, refreshKey }: ConversationViewProp
     if (lastEvent?.type === "cycle_complete") {
       fetchConversation();
     }
+    if (lastEvent?.type === "process_output") {
+      const { role, entry } = lastEvent.data as {
+        role: string;
+        entry: { type: string; content: string };
+      };
+      if (entry.type === "text") {
+        const line = `[${lastEvent.timestamp}] [${role}] ${entry.content}`;
+        setEntries((prev) => [...prev, line]);
+      }
+    }
   }, [lastEvent]);
 
   return (

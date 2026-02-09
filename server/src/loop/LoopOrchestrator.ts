@@ -5,6 +5,7 @@ import { Id } from "../agents/roles/Id";
 import { ProcessLogEntry } from "../agents/claude/StreamJsonParser";
 import { AppendOnlyWriter } from "../substrate/io/AppendOnlyWriter";
 import { IClock } from "../substrate/abstractions/IClock";
+import { ILogger } from "../logging";
 import { ITimer } from "./ITimer";
 import { ILoopEventSink } from "./ILoopEventSink";
 import { IdleHandler } from "./IdleHandler";
@@ -20,6 +21,7 @@ export class LoopOrchestrator {
   private state: LoopState = LoopState.STOPPED;
   private metrics: LoopMetrics = createInitialMetrics();
   private cycleNumber = 0;
+  private isProcessing = false;
 
   private auditOnNextCycle = false;
 
@@ -33,6 +35,7 @@ export class LoopOrchestrator {
     private readonly timer: ITimer,
     private readonly eventSink: ILoopEventSink,
     private readonly config: LoopConfig,
+    private readonly logger: ILogger,
     private readonly idleHandler?: IdleHandler
   ) {}
 
@@ -48,6 +51,7 @@ export class LoopOrchestrator {
     if (this.state !== LoopState.STOPPED) {
       throw new Error(`Cannot start: loop is in ${this.state} state`);
     }
+    this.logger.debug("start() called");
     this.transition(LoopState.RUNNING);
   }
 
@@ -55,6 +59,7 @@ export class LoopOrchestrator {
     if (this.state !== LoopState.RUNNING) {
       throw new Error(`Cannot pause: loop is in ${this.state} state`);
     }
+    this.logger.debug("pause() called");
     this.transition(LoopState.PAUSED);
   }
 
@@ -62,6 +67,7 @@ export class LoopOrchestrator {
     if (this.state !== LoopState.PAUSED) {
       throw new Error(`Cannot resume: loop is in ${this.state} state`);
     }
+    this.logger.debug("resume() called");
     this.transition(LoopState.RUNNING);
   }
 
@@ -69,6 +75,7 @@ export class LoopOrchestrator {
     if (this.state === LoopState.STOPPED) {
       return;
     }
+    this.logger.debug("stop() called");
     this.transition(LoopState.STOPPED);
   }
 
@@ -82,8 +89,29 @@ export class LoopOrchestrator {
   }
 
   async runOneCycle(): Promise<CycleResult> {
+    if (this.isProcessing) {
+      this.logger.debug("runOneCycle() skipped — already processing");
+      return {
+        cycleNumber: this.cycleNumber,
+        action: "idle",
+        success: true,
+        summary: "Skipped — cycle already in progress",
+      };
+    }
+
+    this.isProcessing = true;
+    try {
+      return await this.executeOneCycle();
+    } finally {
+      this.isProcessing = false;
+    }
+  }
+
+  private async executeOneCycle(): Promise<CycleResult> {
     this.cycleNumber++;
     this.metrics.totalCycles++;
+
+    this.logger.debug(`cycle ${this.cycleNumber}: starting`);
 
     const dispatch = await this.ego.dispatchNext();
 
@@ -92,6 +120,8 @@ export class LoopOrchestrator {
     if (!dispatch) {
       this.metrics.idleCycles++;
       this.metrics.consecutiveIdleCycles++;
+
+      this.logger.debug(`cycle ${this.cycleNumber}: idle (consecutive: ${this.metrics.consecutiveIdleCycles})`);
 
       result = {
         cycleNumber: this.cycleNumber,
@@ -106,12 +136,16 @@ export class LoopOrchestrator {
         data: { consecutiveIdleCycles: this.metrics.consecutiveIdleCycles },
       });
     } else {
+      this.logger.debug(`cycle ${this.cycleNumber}: dispatching task "${dispatch.taskId}"`);
+
       const taskResult = await this.subconscious.execute({
         taskId: dispatch.taskId,
         description: dispatch.description,
       }, this.createLogCallback("SUBCONSCIOUS"));
 
       const success = taskResult.result === "success";
+
+      this.logger.debug(`cycle ${this.cycleNumber}: task "${dispatch.taskId}" ${success ? "succeeded" : "failed"} — ${taskResult.summary}`);
 
       if (success) {
         this.metrics.successfulCycles++;
@@ -126,11 +160,16 @@ export class LoopOrchestrator {
         if (taskResult.skillUpdates) {
           await this.subconscious.updateSkills(taskResult.skillUpdates);
         }
+
+        if (taskResult.summary) {
+          await this.subconscious.logConversation(taskResult.summary);
+        }
       } else {
         this.metrics.failedCycles++;
       }
 
       if (taskResult.proposals.length > 0) {
+        this.logger.debug(`cycle ${this.cycleNumber}: evaluating ${taskResult.proposals.length} proposal(s)`);
         await this.superego.evaluateProposals(taskResult.proposals, this.createLogCallback("SUPEREGO"));
       }
 
@@ -159,12 +198,15 @@ export class LoopOrchestrator {
   }
 
   async runLoop(): Promise<void> {
+    this.logger.debug("runLoop() entered");
     while (this.state === LoopState.RUNNING) {
       await this.runOneCycle();
 
       if (this.metrics.consecutiveIdleCycles >= this.config.maxConsecutiveIdleCycles) {
         if (this.idleHandler) {
+          this.logger.debug(`runLoop: idle threshold reached (${this.metrics.consecutiveIdleCycles}), invoking IdleHandler`);
           const result = await this.idleHandler.handleIdle((role) => this.createLogCallback(role));
+          this.logger.debug(`runLoop: IdleHandler result: ${result.action} (goalCount: ${result.goalCount ?? 0})`);
           this.eventSink.emit({
             type: "idle_handler",
             timestamp: this.clock.now().toISOString(),
@@ -175,21 +217,26 @@ export class LoopOrchestrator {
             continue;
           }
         }
+        this.logger.debug("runLoop: stopping — idle threshold exceeded with no plan created");
         this.stop();
         break;
       }
 
       if (this.state !== LoopState.RUNNING) {
+        this.logger.debug(`runLoop: exiting — state is ${this.state}`);
         break;
       }
 
+      this.logger.debug(`runLoop: delaying ${this.config.cycleDelayMs}ms before next cycle`);
       await this.timer.delay(this.config.cycleDelayMs);
     }
+    this.logger.debug("runLoop() exited");
   }
 
   private transition(to: LoopState): void {
     const from = this.state;
     this.state = to;
+    this.logger.debug(`state: ${from} → ${to}`);
     this.eventSink.emit({
       type: "state_changed",
       timestamp: this.clock.now().toISOString(),
@@ -208,12 +255,14 @@ export class LoopOrchestrator {
   }
 
   private async runAudit(): Promise<void> {
+    this.logger.debug(`audit: starting (cycle ${this.cycleNumber})`);
     this.metrics.superegoAudits++;
     try {
       const report = await this.superego.audit(this.createLogCallback("SUPEREGO"));
       await this.superego.logAudit(report.summary);
-    } catch {
-      // Audit failures are non-fatal
+      this.logger.debug(`audit: complete — ${report.summary}`);
+    } catch (err) {
+      this.logger.debug(`audit: failed — ${err instanceof Error ? err.message : String(err)}`);
     }
     this.eventSink.emit({
       type: "audit_complete",

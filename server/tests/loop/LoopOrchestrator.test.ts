@@ -3,6 +3,7 @@ import { IdleHandler } from "../../src/loop/IdleHandler";
 import { InMemoryEventSink } from "../../src/loop/InMemoryEventSink";
 import { ImmediateTimer } from "../../src/loop/ImmediateTimer";
 import { LoopState, defaultLoopConfig } from "../../src/loop/types";
+import { InMemoryLogger } from "../../src/logging";
 import { Ego } from "../../src/agents/roles/Ego";
 import { Subconscious } from "../../src/agents/roles/Subconscious";
 import { Superego } from "../../src/agents/roles/Superego";
@@ -61,12 +62,14 @@ describe("LoopOrchestrator", () => {
   let deps: ReturnType<typeof createTestDeps>;
   let timer: ImmediateTimer;
   let eventSink: InMemoryEventSink;
+  let logger: InMemoryLogger;
   let orchestrator: LoopOrchestrator;
 
   beforeEach(async () => {
     deps = createTestDeps();
     timer = new ImmediateTimer();
     eventSink = new InMemoryEventSink();
+    logger = new InMemoryLogger();
     await setupSubstrateFiles(deps.fs);
 
     orchestrator = new LoopOrchestrator(
@@ -78,7 +81,8 @@ describe("LoopOrchestrator", () => {
       deps.clock,
       timer,
       eventSink,
-      defaultLoopConfig()
+      defaultLoopConfig(),
+      logger
     );
   });
 
@@ -349,6 +353,27 @@ describe("LoopOrchestrator", () => {
       expect(skills).toBe("# Skills\n\nLearned TypeScript");
     });
 
+    it("writes task summary to CONVERSATION after successful dispatch", async () => {
+      orchestrator.start();
+
+      deps.runner.enqueue({
+        stdout: asStreamJson(JSON.stringify({
+          result: "success",
+          summary: "Implemented the authentication module",
+          progressEntry: "Auth done",
+          skillUpdates: null,
+          proposals: [],
+        })),
+        stderr: "",
+        exitCode: 0,
+      });
+
+      await orchestrator.runOneCycle();
+
+      const conversation = await deps.fs.readFile("/substrate/CONVERSATION.md");
+      expect(conversation).toContain("[SUBCONSCIOUS] Implemented the authentication module");
+    });
+
     it("evaluates proposals via superego when present", async () => {
       orchestrator.start();
 
@@ -463,7 +488,7 @@ describe("LoopOrchestrator", () => {
       const config = defaultLoopConfig({ superegoAuditInterval: 3 });
       orchestrator = new LoopOrchestrator(
         deps.ego, deps.subconscious, deps.superego, deps.id,
-        deps.appendWriter, deps.clock, timer, eventSink, config
+        deps.appendWriter, deps.clock, timer, eventSink, config, logger
       );
       orchestrator.start();
 
@@ -495,7 +520,7 @@ describe("LoopOrchestrator", () => {
       const config = defaultLoopConfig({ superegoAuditInterval: 1 });
       orchestrator = new LoopOrchestrator(
         deps.ego, deps.subconscious, deps.superego, deps.id,
-        deps.appendWriter, deps.clock, timer, eventSink, config
+        deps.appendWriter, deps.clock, timer, eventSink, config, logger
       );
       orchestrator.start();
 
@@ -514,7 +539,7 @@ describe("LoopOrchestrator", () => {
       const config = defaultLoopConfig({ superegoAuditInterval: 1 });
       orchestrator = new LoopOrchestrator(
         deps.ego, deps.subconscious, deps.superego, deps.id,
-        deps.appendWriter, deps.clock, timer, eventSink, config
+        deps.appendWriter, deps.clock, timer, eventSink, config, logger
       );
       orchestrator.start();
       eventSink.reset();
@@ -546,7 +571,7 @@ describe("LoopOrchestrator", () => {
       const config = defaultLoopConfig({ maxConsecutiveIdleCycles: 2 });
       orchestrator = new LoopOrchestrator(
         deps.ego, deps.subconscious, deps.superego, deps.id,
-        deps.appendWriter, deps.clock, timer, eventSink, config
+        deps.appendWriter, deps.clock, timer, eventSink, config, logger
       );
 
       // Task A execution
@@ -588,7 +613,7 @@ describe("LoopOrchestrator", () => {
       const config = defaultLoopConfig({ maxConsecutiveIdleCycles: 3 });
       orchestrator = new LoopOrchestrator(
         deps.ego, deps.subconscious, deps.superego, deps.id,
-        deps.appendWriter, deps.clock, timer, eventSink, config
+        deps.appendWriter, deps.clock, timer, eventSink, config, logger
       );
 
       orchestrator.start();
@@ -603,7 +628,7 @@ describe("LoopOrchestrator", () => {
       const config = defaultLoopConfig({ maxConsecutiveIdleCycles: 100 });
       orchestrator = new LoopOrchestrator(
         deps.ego, deps.subconscious, deps.superego, deps.id,
-        deps.appendWriter, deps.clock, timer, eventSink, config
+        deps.appendWriter, deps.clock, timer, eventSink, config, logger
       );
 
       orchestrator.start();
@@ -629,7 +654,7 @@ describe("LoopOrchestrator", () => {
       const config = defaultLoopConfig({ cycleDelayMs: 500, maxConsecutiveIdleCycles: 2 });
       orchestrator = new LoopOrchestrator(
         deps.ego, deps.subconscious, deps.superego, deps.id,
-        deps.appendWriter, deps.clock, timer, eventSink, config
+        deps.appendWriter, deps.clock, timer, eventSink, config, logger
       );
 
       orchestrator.start();
@@ -647,13 +672,13 @@ describe("LoopOrchestrator", () => {
       const config = defaultLoopConfig({ maxConsecutiveIdleCycles: 2 });
 
       const idleHandler = new IdleHandler(
-        deps.id, deps.superego, deps.ego, deps.appendWriter, deps.clock
+        deps.id, deps.superego, deps.ego, deps.appendWriter, deps.clock, logger
       );
 
       orchestrator = new LoopOrchestrator(
         deps.ego, deps.subconscious, deps.superego, deps.id,
         deps.appendWriter, deps.clock, timer, eventSink, config,
-        idleHandler
+        logger, idleHandler
       );
 
       // IdleHandler will: detectIdle → idle, generateDrives → 1 goal, superego → approved
@@ -704,13 +729,13 @@ describe("LoopOrchestrator", () => {
       const config = defaultLoopConfig({ maxConsecutiveIdleCycles: 2 });
 
       const idleHandler = new IdleHandler(
-        deps.id, deps.superego, deps.ego, deps.appendWriter, deps.clock
+        deps.id, deps.superego, deps.ego, deps.appendWriter, deps.clock, logger
       );
 
       orchestrator = new LoopOrchestrator(
         deps.ego, deps.subconscious, deps.superego, deps.id,
         deps.appendWriter, deps.clock, timer, eventSink, config,
-        idleHandler
+        logger, idleHandler
       );
 
       // IdleHandler → no_goals (no responses enqueued for generateDrives)
@@ -726,13 +751,13 @@ describe("LoopOrchestrator", () => {
       const config = defaultLoopConfig({ maxConsecutiveIdleCycles: 2 });
 
       const idleHandler = new IdleHandler(
-        deps.id, deps.superego, deps.ego, deps.appendWriter, deps.clock
+        deps.id, deps.superego, deps.ego, deps.appendWriter, deps.clock, logger
       );
 
       orchestrator = new LoopOrchestrator(
         deps.ego, deps.subconscious, deps.superego, deps.id,
         deps.appendWriter, deps.clock, timer, eventSink, config,
-        idleHandler
+        logger, idleHandler
       );
 
       deps.runner.enqueue({
@@ -763,7 +788,7 @@ describe("LoopOrchestrator", () => {
 
       orchestrator = new LoopOrchestrator(
         deps.ego, deps.subconscious, deps.superego, deps.id,
-        deps.appendWriter, deps.clock, timer, eventSink, config
+        deps.appendWriter, deps.clock, timer, eventSink, config, logger
       );
 
       orchestrator.start();
@@ -778,13 +803,13 @@ describe("LoopOrchestrator", () => {
       const config = defaultLoopConfig({ maxConsecutiveIdleCycles: 1 });
 
       const idleHandler = new IdleHandler(
-        deps.id, deps.superego, deps.ego, deps.appendWriter, deps.clock
+        deps.id, deps.superego, deps.ego, deps.appendWriter, deps.clock, logger
       );
 
       orchestrator = new LoopOrchestrator(
         deps.ego, deps.subconscious, deps.superego, deps.id,
         deps.appendWriter, deps.clock, timer, eventSink, config,
-        idleHandler
+        logger, idleHandler
       );
 
       deps.runner.enqueue({

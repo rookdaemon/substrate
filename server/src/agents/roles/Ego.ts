@@ -29,7 +29,8 @@ export class Ego {
     private readonly checker: PermissionChecker,
     private readonly promptBuilder: PromptBuilder,
     private readonly sessionLauncher: ClaudeSessionLauncher,
-    private readonly clock: IClock
+    private readonly clock: IClock,
+    private readonly workingDirectory?: string
   ) {}
 
   async decide(onLogEntry?: (entry: ProcessLogEntry) => void): Promise<EgoDecision> {
@@ -38,7 +39,7 @@ export class Ego {
       const result = await this.sessionLauncher.launch({
         systemPrompt,
         message: "Analyze the current context. What should we do next?",
-      }, { onLogEntry });
+      }, { onLogEntry, cwd: this.workingDirectory });
 
       if (!result.success) {
         return { action: "idle", reason: "Claude session error" };

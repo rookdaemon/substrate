@@ -38,6 +38,7 @@ export const ROLE_PERMISSIONS: Record<AgentRole, FilePermission[]> = {
     write(SubstrateFileType.PLAN),
     write(SubstrateFileType.SKILLS),
     append(SubstrateFileType.PROGRESS),
+    append(SubstrateFileType.CONVERSATION),
   ],
 
   [AgentRole.SUPEREGO]: [

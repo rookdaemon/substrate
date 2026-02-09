@@ -40,9 +40,20 @@ describe("validateSubstrateContent", () => {
       );
     });
 
-    it("accepts PLAN with a ## section", () => {
+    it("rejects PLAN without ## Tasks section", () => {
       const result = validateSubstrateContent(
-        "# Plan\n\n## Current Goal\n\nDo something",
+        "# Plan\n\n## Current Goal\n\nDo something\n\n## Next Steps\n\n- Something",
+        SubstrateFileType.PLAN
+      );
+      expect(result.valid).toBe(false);
+      expect(result.errors).toContain(
+        "PLAN must have a ## Tasks section"
+      );
+    });
+
+    it("accepts PLAN with ## Tasks section", () => {
+      const result = validateSubstrateContent(
+        "# Plan\n\n## Current Goal\n\nDo something\n\n## Tasks\n\n- [ ] First task",
         SubstrateFileType.PLAN
       );
       expect(result.valid).toBe(true);

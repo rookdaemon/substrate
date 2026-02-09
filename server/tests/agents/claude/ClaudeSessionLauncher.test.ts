@@ -36,6 +36,7 @@ describe("ClaudeSessionLauncher", () => {
     expect(calls[0].command).toBe("claude");
     expect(calls[0].args).toContain("--print");
     expect(calls[0].args).toContain("--verbose");
+    expect(calls[0].args).toContain("--dangerously-skip-permissions");
     expect(calls[0].args).toContain("--output-format");
     expect(calls[0].args).toContain("stream-json");
 
@@ -189,6 +190,18 @@ describe("ClaudeSessionLauncher", () => {
 
       const calls = runner.getCalls();
       expect(calls[0].options?.onStdout).toBeDefined();
+    });
+
+    it("passes cwd through to process runner", async () => {
+      runner.enqueue({ stdout: asStreamJson("ok"), stderr: "", exitCode: 0 });
+
+      await launcher.launch(
+        { systemPrompt: "sys", message: "msg" },
+        { cwd: "/my/substrate" }
+      );
+
+      const calls = runner.getCalls();
+      expect(calls[0].options?.cwd).toBe("/my/substrate");
     });
   });
 });

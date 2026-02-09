@@ -2,6 +2,7 @@ import { LoopOrchestrator } from "../../src/loop/LoopOrchestrator";
 import { InMemoryEventSink } from "../../src/loop/InMemoryEventSink";
 import { ImmediateTimer } from "../../src/loop/ImmediateTimer";
 import { defaultLoopConfig } from "../../src/loop/types";
+import { InMemoryLogger } from "../../src/logging";
 import { Ego } from "../../src/agents/roles/Ego";
 import { Subconscious } from "../../src/agents/roles/Subconscious";
 import { Superego } from "../../src/agents/roles/Superego";
@@ -66,7 +67,7 @@ describe("Integration: Superego Audit", () => {
     const orchestrator = new LoopOrchestrator(
       deps.ego, deps.subconscious, deps.superego, deps.id,
       deps.appendWriter, deps.clock, new ImmediateTimer(), eventSink,
-      config
+      config, new InMemoryLogger()
     );
 
     // Cycle 2 will trigger audit — superego.audit() needs a Claude response
@@ -101,7 +102,7 @@ describe("Integration: Superego Audit", () => {
     const orchestrator = new LoopOrchestrator(
       deps.ego, deps.subconscious, deps.superego, deps.id,
       deps.appendWriter, deps.clock, new ImmediateTimer(), eventSink,
-      config
+      config, new InMemoryLogger()
     );
 
     // Prepare audit response
@@ -138,7 +139,7 @@ describe("Integration: Superego Audit", () => {
     const orchestrator = new LoopOrchestrator(
       deps.ego, deps.subconscious, deps.superego, deps.id,
       deps.appendWriter, deps.clock, new ImmediateTimer(), eventSink,
-      config
+      config, new InMemoryLogger()
     );
 
     deps.runner.enqueue({

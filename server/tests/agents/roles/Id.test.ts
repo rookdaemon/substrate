@@ -25,7 +25,7 @@ describe("Id agent", () => {
     const promptBuilder = new PromptBuilder(reader, checker);
     const launcher = new ClaudeSessionLauncher(runner, clock);
 
-    id = new Id(reader, checker, promptBuilder, launcher, clock);
+    id = new Id(reader, checker, promptBuilder, launcher, clock, "/workspace");
 
     await fs.mkdir("/substrate", { recursive: true });
     await fs.writeFile("/substrate/PLAN.md", "# Plan\n\n## Current Goal\nBuild it\n\n## Tasks\n- [ ] Do stuff");
@@ -80,6 +80,17 @@ describe("Id agent", () => {
       expect(drives[0].title).toBe("Learn TypeScript");
       expect(drives[0].priority).toBe("high");
       expect(drives[1].title).toBe("Write docs");
+    });
+
+    it("passes substratePath as cwd to session launcher", async () => {
+      runner.enqueue({ stdout: asStreamJson(JSON.stringify({
+        goalCandidates: [{ title: "Goal", description: "Do it", priority: "high" }],
+      })), stderr: "", exitCode: 0 });
+
+      await id.generateDrives();
+
+      const calls = runner.getCalls();
+      expect(calls[0].options?.cwd).toBe("/workspace");
     });
 
     it("returns empty array when Claude fails", async () => {

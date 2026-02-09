@@ -16,7 +16,7 @@ export class NodeProcessRunner implements IProcessRunner {
     const timeoutMs = options?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 
     return new Promise<ProcessResult>((resolve, reject) => {
-      const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"] });
+      const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"], cwd: options?.cwd });
 
       let stdout = "";
       let stderr = "";

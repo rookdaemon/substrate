@@ -57,12 +57,13 @@ describe("ROLE_PERMISSIONS", () => {
     expect(writeFiles).toContain(SubstrateFileType.SKILLS);
   });
 
-  it("gives Subconscious append access to PROGRESS", () => {
+  it("gives Subconscious append access to PROGRESS and CONVERSATION", () => {
     const perms = ROLE_PERMISSIONS[AgentRole.SUBCONSCIOUS];
     const appendFiles = perms
       .filter((p) => p.accessLevel === FileAccessLevel.APPEND)
       .map((p) => p.fileType);
     expect(appendFiles).toContain(SubstrateFileType.PROGRESS);
+    expect(appendFiles).toContain(SubstrateFileType.CONVERSATION);
   });
 
   it("gives Superego read access to ALL files", () => {

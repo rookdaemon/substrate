@@ -7,6 +7,7 @@ export interface ProcessResult {
 export interface ProcessRunOptions {
   timeoutMs?: number;
   onStdout?: (chunk: string) => void;
+  cwd?: string;
 }
 
 export interface IProcessRunner {
