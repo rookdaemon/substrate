@@ -59,9 +59,9 @@ export class Superego {
 
       const parsed = extractJson(result.rawOutput);
       return {
-        findings: parsed.findings ?? [],
-        proposalEvaluations: parsed.proposalEvaluations ?? [],
-        summary: parsed.summary ?? "",
+        findings: (parsed.findings as Finding[] | undefined) ?? [],
+        proposalEvaluations: (parsed.proposalEvaluations as ProposalEvaluation[] | undefined) ?? [],
+        summary: (parsed.summary as string | undefined) ?? "",
       };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -90,7 +90,7 @@ export class Superego {
       }
 
       const parsed = extractJson(result.rawOutput);
-      return parsed.proposalEvaluations ?? proposals.map(() => ({
+      return (parsed.proposalEvaluations as ProposalEvaluation[] | undefined) ?? proposals.map(() => ({
         approved: false,
         reason: "No evaluation returned",
       }));

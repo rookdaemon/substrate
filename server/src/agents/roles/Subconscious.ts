@@ -63,12 +63,12 @@ export class Subconscious {
 
       const parsed = extractJson(result.rawOutput);
       return {
-        result: parsed.result ?? "failure",
-        summary: parsed.summary ?? "",
-        progressEntry: parsed.progressEntry ?? "",
-        skillUpdates: parsed.skillUpdates ?? null,
-        memoryUpdates: parsed.memoryUpdates ?? null,
-        proposals: parsed.proposals ?? [],
+        result: (parsed.result as "success" | "failure" | "partial" | undefined) ?? "failure",
+        summary: (parsed.summary as string | undefined) ?? "",
+        progressEntry: (parsed.progressEntry as string | undefined) ?? "",
+        skillUpdates: (parsed.skillUpdates as string | null | undefined) ?? null,
+        memoryUpdates: (parsed.memoryUpdates as string | null | undefined) ?? null,
+        proposals: (parsed.proposals as SubconsciousProposal[] | undefined) ?? [],
       };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
