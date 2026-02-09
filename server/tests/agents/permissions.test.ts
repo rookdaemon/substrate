@@ -48,13 +48,14 @@ describe("ROLE_PERMISSIONS", () => {
     expect(appendFiles).toContain(SubstrateFileType.CONVERSATION);
   });
 
-  it("gives Subconscious write access to PLAN and SKILLS", () => {
+  it("gives Subconscious write access to PLAN, SKILLS, and MEMORY", () => {
     const perms = ROLE_PERMISSIONS[AgentRole.SUBCONSCIOUS];
     const writeFiles = perms
       .filter((p) => p.accessLevel === FileAccessLevel.WRITE)
       .map((p) => p.fileType);
     expect(writeFiles).toContain(SubstrateFileType.PLAN);
     expect(writeFiles).toContain(SubstrateFileType.SKILLS);
+    expect(writeFiles).toContain(SubstrateFileType.MEMORY);
   });
 
   it("gives Subconscious append access to PROGRESS and CONVERSATION", () => {
@@ -92,7 +93,7 @@ describe("ROLE_PERMISSIONS", () => {
     expect(writeFiles).toHaveLength(0);
   });
 
-  it("gives Id read access to ID, VALUES, PLAN, PROGRESS, SKILLS only", () => {
+  it("gives Id read access to ID, VALUES, PLAN, PROGRESS, SKILLS, MEMORY", () => {
     const perms = ROLE_PERMISSIONS[AgentRole.ID];
     const readFiles = perms
       .filter((p) => p.accessLevel === FileAccessLevel.READ)
@@ -102,7 +103,8 @@ describe("ROLE_PERMISSIONS", () => {
     expect(readFiles).toContain(SubstrateFileType.PLAN);
     expect(readFiles).toContain(SubstrateFileType.PROGRESS);
     expect(readFiles).toContain(SubstrateFileType.SKILLS);
-    expect(readFiles).toHaveLength(5);
+    expect(readFiles).toContain(SubstrateFileType.MEMORY);
+    expect(readFiles).toHaveLength(6);
   });
 
   it("gives Id no write or append access", () => {
@@ -129,7 +131,7 @@ describe("PermissionChecker", () => {
     });
 
     it("returns false when role lacks READ permission", () => {
-      expect(checker.canRead(AgentRole.ID, SubstrateFileType.MEMORY)).toBe(false);
+      expect(checker.canRead(AgentRole.ID, SubstrateFileType.SECURITY)).toBe(false);
     });
 
     it("Superego can read any file", () => {
@@ -184,8 +186,8 @@ describe("PermissionChecker", () => {
     });
 
     it("throws when not permitted", () => {
-      expect(() => checker.assertCanRead(AgentRole.ID, SubstrateFileType.MEMORY)).toThrow(
-        "ID does not have READ access to MEMORY"
+      expect(() => checker.assertCanRead(AgentRole.ID, SubstrateFileType.SECURITY)).toThrow(
+        "ID does not have READ access to SECURITY"
       );
     });
   });
@@ -219,12 +221,13 @@ describe("PermissionChecker", () => {
   describe("getReadableFiles", () => {
     it("returns all files a role can read", () => {
       const readable = checker.getReadableFiles(AgentRole.ID);
-      expect(readable).toHaveLength(5);
+      expect(readable).toHaveLength(6);
       expect(readable).toContain(SubstrateFileType.ID);
       expect(readable).toContain(SubstrateFileType.VALUES);
       expect(readable).toContain(SubstrateFileType.PLAN);
       expect(readable).toContain(SubstrateFileType.PROGRESS);
       expect(readable).toContain(SubstrateFileType.SKILLS);
+      expect(readable).toContain(SubstrateFileType.MEMORY);
     });
 
     it("returns all 12 files for Superego", () => {

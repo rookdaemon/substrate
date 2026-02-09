@@ -8,6 +8,7 @@ import { PromptBuilder } from "../prompts/PromptBuilder";
 import { ClaudeSessionLauncher } from "../claude/ClaudeSessionLauncher";
 import { ProcessLogEntry } from "../claude/StreamJsonParser";
 import { PlanParser } from "../parsers/PlanParser";
+import { extractJson } from "../parsers/extractJson";
 import { AgentRole } from "../types";
 
 export interface EgoDecision {
@@ -35,17 +36,18 @@ export class Ego {
 
   async decide(onLogEntry?: (entry: ProcessLogEntry) => void): Promise<EgoDecision> {
     try {
-      const systemPrompt = await this.promptBuilder.buildSystemPrompt(AgentRole.EGO);
+      const systemPrompt = this.promptBuilder.buildSystemPrompt(AgentRole.EGO);
+      const contextRefs = this.promptBuilder.getContextReferences(AgentRole.EGO);
       const result = await this.sessionLauncher.launch({
         systemPrompt,
-        message: "Analyze the current context. What should we do next?",
+        message: `${contextRefs}\n\nAnalyze the current context. What should we do next?`,
       }, { onLogEntry, cwd: this.workingDirectory });
 
       if (!result.success) {
         return { action: "idle", reason: `Claude session error: ${result.error || "unknown"}` };
       }
 
-      const parsed = JSON.parse(result.rawOutput);
+      const parsed = extractJson(result.rawOutput);
       return parsed as EgoDecision;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

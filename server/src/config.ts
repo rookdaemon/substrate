@@ -5,6 +5,7 @@ import type { AppPaths } from "./paths";
 export interface RookConfig {
   substratePath: string;
   workingDirectory: string;
+  sourceCodePath: string;
   port: number;
   model: string;
 }
@@ -25,6 +26,7 @@ export async function resolveConfig(
   const defaults: RookConfig = {
     substratePath: path.join(appPaths.data, "substrate"),
     workingDirectory: appPaths.data,
+    sourceCodePath: options.cwd ?? appPaths.data,
     port: 3000,
     model: "sonnet",
   };
@@ -56,6 +58,7 @@ export async function resolveConfig(
   const merged: RookConfig = {
     substratePath: fileConfig.substratePath ?? defaults.substratePath,
     workingDirectory: fileConfig.workingDirectory ?? defaults.workingDirectory,
+    sourceCodePath: fileConfig.sourceCodePath ?? defaults.sourceCodePath,
     port: fileConfig.port ?? defaults.port,
     model: fileConfig.model ?? defaults.model,
   };

@@ -26,6 +26,7 @@ import { HealthCheck } from "../evaluation/HealthCheck";
 export interface ApplicationConfig {
   substratePath: string;
   workingDirectory?: string;
+  sourceCodePath?: string;
   model?: string;
   httpPort?: number;
   cycleDelayMs?: number;
@@ -52,14 +53,18 @@ export function createApplication(config: ApplicationConfig): Application {
   const writer = new SubstrateFileWriter(fs, substrateConfig, lock);
   const appendWriter = new AppendOnlyWriter(fs, substrateConfig, lock, clock);
 
+  // Logger — created early so all layers can use it
+  const logPath = path.resolve(config.substratePath, "..", "debug.log");
+  const logger = new FileLogger(logPath);
+
   // Agent layer
   const checker = new PermissionChecker();
   const promptBuilder = new PromptBuilder(reader, checker, {
     substratePath: config.substratePath,
-    sourceCodePath: config.workingDirectory,
+    sourceCodePath: config.sourceCodePath,
   });
   const runner = new NodeProcessRunner();
-  const launcher = new ClaudeSessionLauncher(runner, clock, config.model);
+  const launcher = new ClaudeSessionLauncher(runner, clock, config.model, logger);
 
   const cwd = config.workingDirectory;
   const ego = new Ego(reader, writer, appendWriter, checker, promptBuilder, launcher, clock, cwd);
@@ -74,9 +79,6 @@ export function createApplication(config: ApplicationConfig): Application {
     superegoAuditInterval: config.superegoAuditInterval,
     maxConsecutiveIdleCycles: config.maxConsecutiveIdleCycles,
   });
-
-  const logPath = path.resolve(config.substratePath, "..", "debug.log");
-  const logger = new FileLogger(logPath);
 
   const httpServer = new LoopHttpServer(null as unknown as LoopOrchestrator);
   const wsServer = new LoopWebSocketServer(httpServer.getServer());

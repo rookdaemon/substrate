@@ -9,17 +9,19 @@ import { InMemoryFileSystem } from "../../../src/substrate/abstractions/InMemory
 
 describe("PromptBuilder", () => {
   let fs: InMemoryFileSystem;
-  let config: SubstrateConfig;
   let reader: SubstrateFileReader;
   let checker: PermissionChecker;
   let builder: PromptBuilder;
 
   beforeEach(async () => {
     fs = new InMemoryFileSystem();
-    config = new SubstrateConfig("/substrate");
+    const config = new SubstrateConfig("/substrate");
     reader = new SubstrateFileReader(fs, config);
     checker = new PermissionChecker();
-    builder = new PromptBuilder(reader, checker);
+    builder = new PromptBuilder(reader, checker, {
+      substratePath: "/substrate",
+      sourceCodePath: "/home/user/rook_wiggums",
+    });
 
     await fs.mkdir("/substrate", { recursive: true });
     await fs.writeFile("/substrate/PLAN.md", "# Plan\n\n## Current Goal\nBuild it\n\n## Tasks\n- [ ] Do stuff");
@@ -45,7 +47,8 @@ describe("PromptBuilder", () => {
       expect(fileTypes).toContain(SubstrateFileType.PLAN);
       expect(fileTypes).toContain(SubstrateFileType.PROGRESS);
       expect(fileTypes).toContain(SubstrateFileType.SKILLS);
-      expect(fileTypes).toHaveLength(5);
+      expect(fileTypes).toContain(SubstrateFileType.MEMORY);
+      expect(fileTypes).toHaveLength(6);
     });
 
     it("returns content for each file", async () => {
@@ -62,44 +65,46 @@ describe("PromptBuilder", () => {
   });
 
   describe("buildSystemPrompt", () => {
-    it("includes the role template", async () => {
-      const prompt = await builder.buildSystemPrompt(AgentRole.EGO);
+    it("includes the role template", () => {
+      const prompt = builder.buildSystemPrompt(AgentRole.EGO);
       expect(prompt).toContain(ROLE_PROMPTS[AgentRole.EGO]);
     });
 
-    it("includes substrate file contents as labeled sections", async () => {
-      const prompt = await builder.buildSystemPrompt(AgentRole.ID);
-      expect(prompt).toContain("--- ID.md ---");
-      expect(prompt).toContain("Core identity");
-      expect(prompt).toContain("--- VALUES.md ---");
-      expect(prompt).toContain("Be good");
+    it("does NOT embed file contents", () => {
+      const prompt = builder.buildSystemPrompt(AgentRole.ID);
+      expect(prompt).not.toContain("Core identity");
+      expect(prompt).not.toContain("Be good");
     });
 
-    it("does not include files the role cannot read", async () => {
-      const prompt = await builder.buildSystemPrompt(AgentRole.ID);
-      expect(prompt).not.toContain("--- MEMORY.md ---");
-      expect(prompt).not.toContain("--- SECURITY.md ---");
-    });
-
-    it("separates template and context sections", async () => {
-      const prompt = await builder.buildSystemPrompt(AgentRole.ID);
-      expect(prompt).toContain("=== SUBSTRATE CONTEXT ===");
-    });
-
-    it("includes environment section with paths when provided", async () => {
-      const builderWithPaths = new PromptBuilder(reader, checker, {
-        substratePath: "/home/user/.local/share/rook-wiggums/substrate",
-        sourceCodePath: "/home/user/rook_wiggums",
-      });
-      const prompt = await builderWithPaths.buildSystemPrompt(AgentRole.EGO);
+    it("includes environment section with paths", () => {
+      const prompt = builder.buildSystemPrompt(AgentRole.EGO);
       expect(prompt).toContain("=== ENVIRONMENT ===");
-      expect(prompt).toContain("Substrate directory: /home/user/.local/share/rook-wiggums/substrate");
+      expect(prompt).toContain("Substrate directory: /substrate");
       expect(prompt).toContain("My own source code: /home/user/rook_wiggums");
     });
+  });
 
-    it("omits environment section when no paths provided", async () => {
-      const prompt = await builder.buildSystemPrompt(AgentRole.EGO);
-      expect(prompt).not.toContain("=== ENVIRONMENT ===");
+  describe("getContextReferences", () => {
+    it("returns @ references for all readable files", () => {
+      const refs = builder.getContextReferences(AgentRole.ID);
+      expect(refs).toContain("@/substrate/ID.md");
+      expect(refs).toContain("@/substrate/VALUES.md");
+      expect(refs).toContain("@/substrate/PLAN.md");
+      expect(refs).toContain("@/substrate/PROGRESS.md");
+      expect(refs).toContain("@/substrate/SKILLS.md");
+      expect(refs).toContain("@/substrate/MEMORY.md");
+    });
+
+    it("does not include files the role cannot read", () => {
+      const refs = builder.getContextReferences(AgentRole.ID);
+      expect(refs).not.toContain("@/substrate/SECURITY.md");
+      expect(refs).not.toContain("@/substrate/CHARTER.md");
+    });
+
+    it("Superego references all 12 files", () => {
+      const refs = builder.getContextReferences(AgentRole.SUPEREGO);
+      const atRefs = refs.split("\n").filter((l) => l.startsWith("@"));
+      expect(atRefs).toHaveLength(12);
     });
   });
 });

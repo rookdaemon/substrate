@@ -6,6 +6,7 @@ import { PermissionChecker } from "../permissions";
 import { PromptBuilder } from "../prompts/PromptBuilder";
 import { ClaudeSessionLauncher } from "../claude/ClaudeSessionLauncher";
 import { ProcessLogEntry } from "../claude/StreamJsonParser";
+import { extractJson } from "../parsers/extractJson";
 import { AgentRole } from "../types";
 
 export interface Finding {
@@ -56,7 +57,7 @@ export class Superego {
         };
       }
 
-      const parsed = JSON.parse(result.rawOutput);
+      const parsed = extractJson(result.rawOutput);
       return {
         findings: parsed.findings ?? [],
         proposalEvaluations: parsed.proposalEvaluations ?? [],
@@ -87,7 +88,7 @@ export class Superego {
         }));
       }
 
-      const parsed = JSON.parse(result.rawOutput);
+      const parsed = extractJson(result.rawOutput);
       return parsed.proposalEvaluations ?? proposals.map(() => ({
         approved: false,
         reason: "No evaluation returned",

@@ -38,15 +38,10 @@ export class PromptBuilder {
     return contexts;
   }
 
-  async buildSystemPrompt(role: AgentRole): Promise<string> {
+  buildSystemPrompt(role: AgentRole): string {
     const template = ROLE_PROMPTS[role];
-    const contexts = await this.gatherContext(role);
 
-    const contextSections = contexts
-      .map((c) => `--- ${c.fileName} ---\n${c.content}`)
-      .join("\n\n");
-
-    let prompt = `${template}\n\n=== SUBSTRATE CONTEXT ===\n\n${contextSections}`;
+    let prompt = template;
 
     if (this.paths) {
       const lines = [
@@ -60,5 +55,14 @@ export class PromptBuilder {
     }
 
     return prompt;
+  }
+
+  getContextReferences(role: AgentRole): string {
+    const readableFiles = this.checker.getReadableFiles(role);
+    const substratePath = this.paths?.substratePath ?? "/substrate";
+
+    return readableFiles
+      .map((ft) => `@${substratePath}/${SUBSTRATE_FILE_SPECS[ft].fileName}`)
+      .join("\n");
   }
 }

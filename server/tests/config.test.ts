@@ -129,6 +129,31 @@ describe("resolveConfig", () => {
     expect(config.model).toBe("opus");
   });
 
+  it("defaults sourceCodePath to cwd", async () => {
+    const config = await resolveConfig(fs, {
+      appPaths: TEST_PATHS,
+      cwd: "/home/stefan/rook_wiggums",
+      env: {},
+    });
+
+    expect(config.sourceCodePath).toBe("/home/stefan/rook_wiggums");
+  });
+
+  it("uses sourceCodePath from config file", async () => {
+    await fs.mkdir("/project", { recursive: true });
+    await fs.writeFile("/project/config.json", JSON.stringify({
+      sourceCodePath: "/opt/my-project",
+    }));
+
+    const config = await resolveConfig(fs, {
+      appPaths: TEST_PATHS,
+      cwd: "/project",
+      env: {},
+    });
+
+    expect(config.sourceCodePath).toBe("/opt/my-project");
+  });
+
   it("env vars override config file values", async () => {
     await fs.mkdir("/project", { recursive: true });
     await fs.writeFile("/project/config.json", JSON.stringify({

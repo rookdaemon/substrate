@@ -1,6 +1,7 @@
 import { ClaudeSessionLauncher } from "../../../src/agents/claude/ClaudeSessionLauncher";
 import { InMemoryProcessRunner } from "../../../src/agents/claude/InMemoryProcessRunner";
 import { FixedClock } from "../../../src/substrate/abstractions/FixedClock";
+import { InMemoryLogger } from "../../../src/logging";
 import { ProcessLogEntry } from "../../../src/agents/claude/StreamJsonParser";
 import { asStreamJson } from "../../helpers/streamJson";
 
@@ -202,6 +203,85 @@ describe("ClaudeSessionLauncher", () => {
 
       const calls = runner.getCalls();
       expect(calls[0].options?.cwd).toBe("/my/substrate");
+    });
+  });
+
+  describe("debug logging", () => {
+    it("logs the full claude command invocation", async () => {
+      const logger = new InMemoryLogger();
+      const loggedLauncher = new ClaudeSessionLauncher(runner, clock, "sonnet", logger);
+      runner.enqueue({ stdout: asStreamJson('{"action":"idle"}'), stderr: "", exitCode: 0 });
+
+      await loggedLauncher.launch({
+        systemPrompt: "You are the Ego",
+        message: "What should we do next?",
+      });
+
+      const entries = logger.getEntries();
+      const cmdLine = entries.find((e) => e.includes("$ claude"));
+      expect(cmdLine).toBeDefined();
+      expect(cmdLine).toContain("--print");
+      expect(cmdLine).toContain("--dangerously-skip-permissions");
+      expect(cmdLine).toContain("--model");
+      expect(cmdLine).toContain("sonnet");
+      expect(cmdLine).toContain("What should we do next?");
+    });
+
+    it("logs each process log entry", async () => {
+      const logger = new InMemoryLogger();
+      const loggedLauncher = new ClaudeSessionLauncher(runner, clock, "sonnet", logger);
+
+      const streamOutput =
+        makeAssistantLine([
+          { type: "thinking", thinking: "analyzing" },
+          { type: "text", text: "the answer" },
+        ]) + "\n" +
+        makeResultLine("the answer") + "\n";
+      runner.enqueue({ stdout: streamOutput, stderr: "", exitCode: 0 });
+
+      await loggedLauncher.launch({ systemPrompt: "sys", message: "msg" });
+
+      const entries = logger.getEntries();
+      expect(entries.some((e) => e.includes("[thinking]"))).toBe(true);
+      expect(entries.some((e) => e.includes("[text]"))).toBe(true);
+    });
+
+    it("logs launch result with exit code and duration", async () => {
+      const logger = new InMemoryLogger();
+      const loggedLauncher = new ClaudeSessionLauncher(runner, clock, "sonnet", logger);
+      runner.enqueue({ stdout: asStreamJson("ok"), stderr: "", exitCode: 0 });
+
+      await loggedLauncher.launch({ systemPrompt: "sys", message: "msg" });
+
+      const entries = logger.getEntries();
+      expect(entries.some((e) => e.includes("launch: done") && e.includes("exitCode=0"))).toBe(true);
+    });
+
+    it("logs stderr on failure", async () => {
+      const logger = new InMemoryLogger();
+      const loggedLauncher = new ClaudeSessionLauncher(runner, clock, "sonnet", logger);
+      runner.enqueue({ stdout: "", stderr: "model not found", exitCode: 1 });
+
+      await loggedLauncher.launch({ systemPrompt: "sys", message: "msg" });
+
+      const entries = logger.getEntries();
+      expect(entries.some((e) => e.includes("model not found"))).toBe(true);
+    });
+
+    it("logs retry attempts", async () => {
+      const logger = new InMemoryLogger();
+      const loggedLauncher = new ClaudeSessionLauncher(runner, clock, "sonnet", logger);
+      runner.enqueue({ stdout: "", stderr: "fail", exitCode: 1 });
+      runner.enqueue({ stdout: asStreamJson("ok"), stderr: "", exitCode: 0 });
+
+      await loggedLauncher.launch(
+        { systemPrompt: "sys", message: "msg" },
+        { maxRetries: 2, retryDelayMs: 0 }
+      );
+
+      const entries = logger.getEntries();
+      expect(entries.some((e) => e.includes("attempt 1/2"))).toBe(true);
+      expect(entries.some((e) => e.includes("attempt 2/2"))).toBe(true);
     });
   });
 

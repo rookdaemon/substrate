@@ -6,6 +6,7 @@ import { PromptBuilder } from "../prompts/PromptBuilder";
 import { ClaudeSessionLauncher } from "../claude/ClaudeSessionLauncher";
 import { ProcessLogEntry } from "../claude/StreamJsonParser";
 import { PlanParser } from "../parsers/PlanParser";
+import { extractJson } from "../parsers/extractJson";
 import { AgentRole } from "../types";
 
 export interface GoalCandidate {
@@ -55,7 +56,7 @@ export class Id {
 
       if (!result.success) return [];
 
-      const parsed = JSON.parse(result.rawOutput);
+      const parsed = extractJson(result.rawOutput);
       if (!Array.isArray(parsed.goalCandidates)) return [];
 
       return parsed.goalCandidates;
