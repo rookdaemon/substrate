@@ -10,7 +10,7 @@ import { Superego } from "../../src/agents/roles/Superego";
 import { Id } from "../../src/agents/roles/Id";
 import { InMemoryFileSystem } from "../../src/substrate/abstractions/InMemoryFileSystem";
 import { FixedClock } from "../../src/substrate/abstractions/FixedClock";
-import { InMemoryProcessRunner } from "../../src/agents/claude/InMemoryProcessRunner";
+import { InMemorySessionLauncher } from "../../src/agents/claude/InMemorySessionLauncher";
 import { SubstrateConfig } from "../../src/substrate/config";
 import { SubstrateFileReader } from "../../src/substrate/io/FileReader";
 import { SubstrateFileWriter } from "../../src/substrate/io/FileWriter";
@@ -18,13 +18,11 @@ import { AppendOnlyWriter } from "../../src/substrate/io/AppendOnlyWriter";
 import { FileLock } from "../../src/substrate/io/FileLock";
 import { PermissionChecker } from "../../src/agents/permissions";
 import { PromptBuilder } from "../../src/agents/prompts/PromptBuilder";
-import { ClaudeSessionLauncher } from "../../src/agents/claude/ClaudeSessionLauncher";
-import { asStreamJson } from "../helpers/streamJson";
 
 function createDeps() {
   const fs = new InMemoryFileSystem();
   const clock = new FixedClock(new Date("2025-06-15T10:00:00.000Z"));
-  const runner = new InMemoryProcessRunner();
+  const launcher = new InMemorySessionLauncher();
   const config = new SubstrateConfig("/substrate");
   const reader = new SubstrateFileReader(fs, config);
   const lock = new FileLock();
@@ -32,14 +30,13 @@ function createDeps() {
   const appendWriter = new AppendOnlyWriter(fs, config, lock, clock);
   const checker = new PermissionChecker();
   const promptBuilder = new PromptBuilder(reader, checker);
-  const launcher = new ClaudeSessionLauncher(runner, clock);
 
   const ego = new Ego(reader, writer, appendWriter, checker, promptBuilder, launcher, clock);
   const subconscious = new Subconscious(reader, writer, appendWriter, checker, promptBuilder, launcher, clock);
   const superego = new Superego(reader, appendWriter, checker, promptBuilder, launcher, clock);
   const id = new Id(reader, checker, promptBuilder, launcher, clock);
 
-  return { fs, clock, runner, appendWriter, ego, subconscious, superego, id };
+  return { fs, clock, launcher, appendWriter, ego, subconscious, superego, id };
 }
 
 async function setupIdleSubstrate(fs: InMemoryFileSystem) {
@@ -77,35 +74,23 @@ describe("Integration: Idle → Goal Flow", () => {
     );
 
     // IdleHandler: Id.generateDrives → 1 goal
-    deps.runner.enqueue({
-      stdout: asStreamJson(JSON.stringify({
-        goalCandidates: [{ title: "Explore new topic", description: "Learn something new", priority: "high" }],
-      })),
-      stderr: "",
-      exitCode: 0,
-    });
+    deps.launcher.enqueueSuccess(JSON.stringify({
+      goalCandidates: [{ title: "Explore new topic", description: "Learn something new", priority: "high" }],
+    }));
 
     // IdleHandler: Superego.evaluateProposals → approved
-    deps.runner.enqueue({
-      stdout: asStreamJson(JSON.stringify({
-        proposalEvaluations: [{ approved: true, reason: "Good goal" }],
-      })),
-      stderr: "",
-      exitCode: 0,
-    });
+    deps.launcher.enqueueSuccess(JSON.stringify({
+      proposalEvaluations: [{ approved: true, reason: "Good goal" }],
+    }));
 
     // After plan_created, loop dispatches the new task
-    deps.runner.enqueue({
-      stdout: asStreamJson(JSON.stringify({
-        result: "success",
-        summary: "Explored new topic",
-        progressEntry: "Learned about new topic",
-        skillUpdates: null,
-        proposals: [],
-      })),
-      stderr: "",
-      exitCode: 0,
-    });
+    deps.launcher.enqueueSuccess(JSON.stringify({
+      result: "success",
+      summary: "Explored new topic",
+      progressEntry: "Learned about new topic",
+      skillUpdates: null,
+      proposals: [],
+    }));
 
     orchestrator.start();
     await orchestrator.runLoop();

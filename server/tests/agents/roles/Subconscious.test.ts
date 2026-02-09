@@ -1,8 +1,7 @@
 import { Subconscious } from "../../../src/agents/roles/Subconscious";
 import { PermissionChecker } from "../../../src/agents/permissions";
 import { PromptBuilder } from "../../../src/agents/prompts/PromptBuilder";
-import { ClaudeSessionLauncher } from "../../../src/agents/claude/ClaudeSessionLauncher";
-import { InMemoryProcessRunner } from "../../../src/agents/claude/InMemoryProcessRunner";
+import { InMemorySessionLauncher } from "../../../src/agents/claude/InMemorySessionLauncher";
 import { SubstrateFileReader } from "../../../src/substrate/io/FileReader";
 import { SubstrateFileWriter } from "../../../src/substrate/io/FileWriter";
 import { AppendOnlyWriter } from "../../../src/substrate/io/AppendOnlyWriter";
@@ -10,18 +9,17 @@ import { FileLock } from "../../../src/substrate/io/FileLock";
 import { SubstrateConfig } from "../../../src/substrate/config";
 import { InMemoryFileSystem } from "../../../src/substrate/abstractions/InMemoryFileSystem";
 import { FixedClock } from "../../../src/substrate/abstractions/FixedClock";
-import { asStreamJson } from "../../helpers/streamJson";
 
 describe("Subconscious agent", () => {
   let fs: InMemoryFileSystem;
   let clock: FixedClock;
-  let runner: InMemoryProcessRunner;
+  let launcher: InMemorySessionLauncher;
   let subconscious: Subconscious;
 
   beforeEach(async () => {
     fs = new InMemoryFileSystem();
     clock = new FixedClock(new Date("2025-06-15T10:00:00.000Z"));
-    runner = new InMemoryProcessRunner();
+    launcher = new InMemorySessionLauncher();
     const config = new SubstrateConfig("/substrate");
     const reader = new SubstrateFileReader(fs, config);
     const lock = new FileLock();
@@ -29,7 +27,6 @@ describe("Subconscious agent", () => {
     const appendWriter = new AppendOnlyWriter(fs, config, lock, clock);
     const checker = new PermissionChecker();
     const promptBuilder = new PromptBuilder(reader, checker);
-    const launcher = new ClaudeSessionLauncher(runner, clock);
 
     subconscious = new Subconscious(
       reader, writer, appendWriter, checker, promptBuilder, launcher, clock, "/workspace"
@@ -59,7 +56,7 @@ describe("Subconscious agent", () => {
         skillUpdates: null,
         proposals: [],
       });
-      runner.enqueue({ stdout: asStreamJson(claudeResponse), stderr: "", exitCode: 0 });
+      launcher.enqueueSuccess(claudeResponse);
 
       const result = await subconscious.execute({
         taskId: "task-1",
@@ -71,18 +68,18 @@ describe("Subconscious agent", () => {
     });
 
     it("passes substratePath as cwd to session launcher", async () => {
-      runner.enqueue({ stdout: asStreamJson(JSON.stringify({
+      launcher.enqueueSuccess(JSON.stringify({
         result: "success", summary: "Done", progressEntry: "", skillUpdates: null, proposals: [],
-      })), stderr: "", exitCode: 0 });
+      }));
 
       await subconscious.execute({ taskId: "task-1", description: "Do it" });
 
-      const calls = runner.getCalls();
-      expect(calls[0].options?.cwd).toBe("/workspace");
+      const launches = launcher.getLaunches();
+      expect(launches[0].options?.cwd).toBe("/workspace");
     });
 
     it("returns failure result with stderr when Claude fails", async () => {
-      runner.enqueue({ stdout: "", stderr: "claude: model not found", exitCode: 1 });
+      launcher.enqueueFailure("claude: model not found");
 
       const result = await subconscious.execute({
         taskId: "task-1",
@@ -94,7 +91,7 @@ describe("Subconscious agent", () => {
     });
 
     it("returns failure result with error message on parse error", async () => {
-      runner.enqueue({ stdout: asStreamJson("not valid json"), stderr: "", exitCode: 0 });
+      launcher.enqueueSuccess("not valid json");
 
       const result = await subconscious.execute({
         taskId: "task-1",
@@ -115,7 +112,7 @@ describe("Subconscious agent", () => {
           { target: "MEMORY", content: "Learned something new" },
         ],
       });
-      runner.enqueue({ stdout: asStreamJson(claudeResponse), stderr: "", exitCode: 0 });
+      launcher.enqueueSuccess(claudeResponse);
 
       const result = await subconscious.execute({
         taskId: "task-1",

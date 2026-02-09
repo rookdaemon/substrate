@@ -5,7 +5,7 @@ import { Ego } from "../../src/agents/roles/Ego";
 import { InMemoryLogger } from "../../src/logging";
 import { InMemoryFileSystem } from "../../src/substrate/abstractions/InMemoryFileSystem";
 import { FixedClock } from "../../src/substrate/abstractions/FixedClock";
-import { InMemoryProcessRunner } from "../../src/agents/claude/InMemoryProcessRunner";
+import { InMemorySessionLauncher } from "../../src/agents/claude/InMemorySessionLauncher";
 import { SubstrateConfig } from "../../src/substrate/config";
 import { SubstrateFileReader } from "../../src/substrate/io/FileReader";
 import { SubstrateFileWriter } from "../../src/substrate/io/FileWriter";
@@ -13,13 +13,11 @@ import { AppendOnlyWriter } from "../../src/substrate/io/AppendOnlyWriter";
 import { FileLock } from "../../src/substrate/io/FileLock";
 import { PermissionChecker } from "../../src/agents/permissions";
 import { PromptBuilder } from "../../src/agents/prompts/PromptBuilder";
-import { ClaudeSessionLauncher } from "../../src/agents/claude/ClaudeSessionLauncher";
-import { asStreamJson } from "../helpers/streamJson";
 
 function createTestDeps() {
   const fs = new InMemoryFileSystem();
   const clock = new FixedClock(new Date("2025-06-15T10:00:00.000Z"));
-  const runner = new InMemoryProcessRunner();
+  const launcher = new InMemorySessionLauncher();
   const config = new SubstrateConfig("/substrate");
   const reader = new SubstrateFileReader(fs, config);
   const lock = new FileLock();
@@ -27,13 +25,12 @@ function createTestDeps() {
   const appendWriter = new AppendOnlyWriter(fs, config, lock, clock);
   const checker = new PermissionChecker();
   const promptBuilder = new PromptBuilder(reader, checker);
-  const launcher = new ClaudeSessionLauncher(runner, clock);
 
   const ego = new Ego(reader, writer, appendWriter, checker, promptBuilder, launcher, clock);
   const superego = new Superego(reader, appendWriter, checker, promptBuilder, launcher, clock);
   const id = new Id(reader, checker, promptBuilder, launcher, clock);
 
-  return { fs, clock, runner, appendWriter, ego, superego, id };
+  return { fs, clock, launcher, appendWriter, ego, superego, id };
 }
 
 async function setupSubstrateFiles(fs: InMemoryFileSystem) {
@@ -75,7 +72,7 @@ describe("IdleHandler", () => {
 
   it("returns no_goals when Id generates no drives", async () => {
     // Plan is complete — idle
-    // Id.generateDrives returns empty because runner has no enqueued response
+    // Id.generateDrives returns empty because launcher has no enqueued response
     const result = await handler.handleIdle();
 
     expect(result.action).toBe("no_goals");
@@ -83,28 +80,20 @@ describe("IdleHandler", () => {
 
   it("creates plan from approved goals", async () => {
     // Id.generateDrives returns goals
-    deps.runner.enqueue({
-      stdout: asStreamJson(JSON.stringify({
-        goalCandidates: [
-          { title: "Learn Rust", description: "Study the Rust programming language", priority: "high" },
-          { title: "Write docs", description: "Document the API", priority: "medium" },
-        ],
-      })),
-      stderr: "",
-      exitCode: 0,
-    });
+    deps.launcher.enqueueSuccess(JSON.stringify({
+      goalCandidates: [
+        { title: "Learn Rust", description: "Study the Rust programming language", priority: "high" },
+        { title: "Write docs", description: "Document the API", priority: "medium" },
+      ],
+    }));
 
     // Superego evaluates proposals — approves first, rejects second
-    deps.runner.enqueue({
-      stdout: asStreamJson(JSON.stringify({
-        proposalEvaluations: [
-          { approved: true, reason: "Aligned with values" },
-          { approved: false, reason: "Not a priority" },
-        ],
-      })),
-      stderr: "",
-      exitCode: 0,
-    });
+    deps.launcher.enqueueSuccess(JSON.stringify({
+      proposalEvaluations: [
+        { approved: true, reason: "Aligned with values" },
+        { approved: false, reason: "Not a priority" },
+      ],
+    }));
 
     const result = await handler.handleIdle();
 
@@ -118,25 +107,17 @@ describe("IdleHandler", () => {
   });
 
   it("returns all_rejected when superego rejects all goals", async () => {
-    deps.runner.enqueue({
-      stdout: asStreamJson(JSON.stringify({
-        goalCandidates: [
-          { title: "Bad idea", description: "Do something wrong", priority: "high" },
-        ],
-      })),
-      stderr: "",
-      exitCode: 0,
-    });
+    deps.launcher.enqueueSuccess(JSON.stringify({
+      goalCandidates: [
+        { title: "Bad idea", description: "Do something wrong", priority: "high" },
+      ],
+    }));
 
-    deps.runner.enqueue({
-      stdout: asStreamJson(JSON.stringify({
-        proposalEvaluations: [
-          { approved: false, reason: "Against values" },
-        ],
-      })),
-      stderr: "",
-      exitCode: 0,
-    });
+    deps.launcher.enqueueSuccess(JSON.stringify({
+      proposalEvaluations: [
+        { approved: false, reason: "Against values" },
+      ],
+    }));
 
     const result = await handler.handleIdle();
 
@@ -144,25 +125,17 @@ describe("IdleHandler", () => {
   });
 
   it("logs idle handling to PROGRESS", async () => {
-    deps.runner.enqueue({
-      stdout: asStreamJson(JSON.stringify({
-        goalCandidates: [
-          { title: "Learn Rust", description: "Study Rust", priority: "high" },
-        ],
-      })),
-      stderr: "",
-      exitCode: 0,
-    });
+    deps.launcher.enqueueSuccess(JSON.stringify({
+      goalCandidates: [
+        { title: "Learn Rust", description: "Study Rust", priority: "high" },
+      ],
+    }));
 
-    deps.runner.enqueue({
-      stdout: asStreamJson(JSON.stringify({
-        proposalEvaluations: [
-          { approved: true, reason: "Good idea" },
-        ],
-      })),
-      stderr: "",
-      exitCode: 0,
-    });
+    deps.launcher.enqueueSuccess(JSON.stringify({
+      proposalEvaluations: [
+        { approved: true, reason: "Good idea" },
+      ],
+    }));
 
     await handler.handleIdle();
 
@@ -171,29 +144,21 @@ describe("IdleHandler", () => {
   });
 
   it("creates plan with multiple approved goals", async () => {
-    deps.runner.enqueue({
-      stdout: asStreamJson(JSON.stringify({
-        goalCandidates: [
-          { title: "Goal A", description: "Do A", priority: "high" },
-          { title: "Goal B", description: "Do B", priority: "medium" },
-          { title: "Goal C", description: "Do C", priority: "low" },
-        ],
-      })),
-      stderr: "",
-      exitCode: 0,
-    });
+    deps.launcher.enqueueSuccess(JSON.stringify({
+      goalCandidates: [
+        { title: "Goal A", description: "Do A", priority: "high" },
+        { title: "Goal B", description: "Do B", priority: "medium" },
+        { title: "Goal C", description: "Do C", priority: "low" },
+      ],
+    }));
 
-    deps.runner.enqueue({
-      stdout: asStreamJson(JSON.stringify({
-        proposalEvaluations: [
-          { approved: true, reason: "Good" },
-          { approved: true, reason: "Good" },
-          { approved: false, reason: "Bad" },
-        ],
-      })),
-      stderr: "",
-      exitCode: 0,
-    });
+    deps.launcher.enqueueSuccess(JSON.stringify({
+      proposalEvaluations: [
+        { approved: true, reason: "Good" },
+        { approved: true, reason: "Good" },
+        { approved: false, reason: "Bad" },
+      ],
+    }));
 
     const result = await handler.handleIdle();
 
@@ -207,24 +172,20 @@ describe("IdleHandler", () => {
   });
 
   it("handles Id.generateDrives error gracefully", async () => {
-    // Runner throws because no responses enqueued
+    // Launcher throws because no responses enqueued
     const result = await handler.handleIdle();
 
     expect(result.action).toBe("no_goals");
   });
 
   it("handles Superego.evaluateProposals error gracefully", async () => {
-    deps.runner.enqueue({
-      stdout: asStreamJson(JSON.stringify({
-        goalCandidates: [
-          { title: "Goal A", description: "Do A", priority: "high" },
-        ],
-      })),
-      stderr: "",
-      exitCode: 0,
-    });
+    deps.launcher.enqueueSuccess(JSON.stringify({
+      goalCandidates: [
+        { title: "Goal A", description: "Do A", priority: "high" },
+      ],
+    }));
 
-    // Runner will throw on Superego call — no enqueued response
+    // Launcher will throw on Superego call — no enqueued response
 
     const result = await handler.handleIdle();
 

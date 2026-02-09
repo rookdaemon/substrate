@@ -1,29 +1,26 @@
 import { Id } from "../../../src/agents/roles/Id";
 import { PermissionChecker } from "../../../src/agents/permissions";
 import { PromptBuilder } from "../../../src/agents/prompts/PromptBuilder";
-import { ClaudeSessionLauncher } from "../../../src/agents/claude/ClaudeSessionLauncher";
-import { InMemoryProcessRunner } from "../../../src/agents/claude/InMemoryProcessRunner";
+import { InMemorySessionLauncher } from "../../../src/agents/claude/InMemorySessionLauncher";
 import { SubstrateFileReader } from "../../../src/substrate/io/FileReader";
 import { SubstrateConfig } from "../../../src/substrate/config";
 import { InMemoryFileSystem } from "../../../src/substrate/abstractions/InMemoryFileSystem";
 import { FixedClock } from "../../../src/substrate/abstractions/FixedClock";
-import { asStreamJson } from "../../helpers/streamJson";
 
 describe("Id agent", () => {
   let fs: InMemoryFileSystem;
   let clock: FixedClock;
-  let runner: InMemoryProcessRunner;
+  let launcher: InMemorySessionLauncher;
   let id: Id;
 
   beforeEach(async () => {
     fs = new InMemoryFileSystem();
     clock = new FixedClock(new Date("2025-06-15T10:00:00.000Z"));
-    runner = new InMemoryProcessRunner();
+    launcher = new InMemorySessionLauncher();
     const config = new SubstrateConfig("/substrate");
     const reader = new SubstrateFileReader(fs, config);
     const checker = new PermissionChecker();
     const promptBuilder = new PromptBuilder(reader, checker);
-    const launcher = new ClaudeSessionLauncher(runner, clock);
 
     id = new Id(reader, checker, promptBuilder, launcher, clock, "/workspace");
 
@@ -73,7 +70,7 @@ describe("Id agent", () => {
           { title: "Write docs", description: "Document the system", priority: "medium" },
         ],
       });
-      runner.enqueue({ stdout: asStreamJson(claudeResponse), stderr: "", exitCode: 0 });
+      launcher.enqueueSuccess(claudeResponse);
 
       const drives = await id.generateDrives();
       expect(drives).toHaveLength(2);
@@ -83,25 +80,25 @@ describe("Id agent", () => {
     });
 
     it("passes substratePath as cwd to session launcher", async () => {
-      runner.enqueue({ stdout: asStreamJson(JSON.stringify({
+      launcher.enqueueSuccess(JSON.stringify({
         goalCandidates: [{ title: "Goal", description: "Do it", priority: "high" }],
-      })), stderr: "", exitCode: 0 });
+      }));
 
       await id.generateDrives();
 
-      const calls = runner.getCalls();
-      expect(calls[0].options?.cwd).toBe("/workspace");
+      const launches = launcher.getLaunches();
+      expect(launches[0].options?.cwd).toBe("/workspace");
     });
 
     it("returns empty array when Claude fails", async () => {
-      runner.enqueue({ stdout: "", stderr: "error", exitCode: 1 });
+      launcher.enqueueFailure("error");
 
       const drives = await id.generateDrives();
       expect(drives).toEqual([]);
     });
 
     it("returns empty array when Claude returns invalid JSON", async () => {
-      runner.enqueue({ stdout: asStreamJson("not json at all"), stderr: "", exitCode: 0 });
+      launcher.enqueueSuccess("not json at all");
 
       const drives = await id.generateDrives();
       expect(drives).toEqual([]);

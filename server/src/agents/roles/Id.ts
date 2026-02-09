@@ -3,8 +3,7 @@ import { SubstrateFileType } from "../../substrate/types";
 import { SubstrateFileReader } from "../../substrate/io/FileReader";
 import { PermissionChecker } from "../permissions";
 import { PromptBuilder } from "../prompts/PromptBuilder";
-import { ClaudeSessionLauncher } from "../claude/ClaudeSessionLauncher";
-import { ProcessLogEntry } from "../claude/StreamJsonParser";
+import { ISessionLauncher, ProcessLogEntry } from "../claude/ISessionLauncher";
 import { PlanParser } from "../parsers/PlanParser";
 import { extractJson } from "../parsers/extractJson";
 import { AgentRole } from "../types";
@@ -25,7 +24,7 @@ export class Id {
     private readonly reader: SubstrateFileReader,
     private readonly checker: PermissionChecker,
     private readonly promptBuilder: PromptBuilder,
-    private readonly sessionLauncher: ClaudeSessionLauncher,
+    private readonly sessionLauncher: ISessionLauncher,
     private readonly clock: IClock,
     private readonly workingDirectory?: string
   ) {}

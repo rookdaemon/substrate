@@ -5,4 +5,7 @@ module.exports = {
   roots: ["<rootDir>/tests"],
   testMatch: ["**/*.test.ts"],
   collectCoverageFrom: ["src/**/*.ts"],
+  moduleNameMapper: {
+    "^@anthropic-ai/claude-agent-sdk$": "<rootDir>/tests/__mocks__/claude-agent-sdk.ts",
+  },
 };

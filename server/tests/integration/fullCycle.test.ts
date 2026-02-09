@@ -9,7 +9,7 @@ import { Superego } from "../../src/agents/roles/Superego";
 import { Id } from "../../src/agents/roles/Id";
 import { InMemoryFileSystem } from "../../src/substrate/abstractions/InMemoryFileSystem";
 import { FixedClock } from "../../src/substrate/abstractions/FixedClock";
-import { InMemoryProcessRunner } from "../../src/agents/claude/InMemoryProcessRunner";
+import { InMemorySessionLauncher } from "../../src/agents/claude/InMemorySessionLauncher";
 import { SubstrateConfig } from "../../src/substrate/config";
 import { SubstrateFileReader } from "../../src/substrate/io/FileReader";
 import { SubstrateFileWriter } from "../../src/substrate/io/FileWriter";
@@ -17,13 +17,11 @@ import { AppendOnlyWriter } from "../../src/substrate/io/AppendOnlyWriter";
 import { FileLock } from "../../src/substrate/io/FileLock";
 import { PermissionChecker } from "../../src/agents/permissions";
 import { PromptBuilder } from "../../src/agents/prompts/PromptBuilder";
-import { ClaudeSessionLauncher } from "../../src/agents/claude/ClaudeSessionLauncher";
-import { asStreamJson } from "../helpers/streamJson";
 
 function createFullDeps() {
   const fs = new InMemoryFileSystem();
   const clock = new FixedClock(new Date("2025-06-15T10:00:00.000Z"));
-  const runner = new InMemoryProcessRunner();
+  const launcher = new InMemorySessionLauncher();
   const config = new SubstrateConfig("/substrate");
   const reader = new SubstrateFileReader(fs, config);
   const lock = new FileLock();
@@ -31,14 +29,13 @@ function createFullDeps() {
   const appendWriter = new AppendOnlyWriter(fs, config, lock, clock);
   const checker = new PermissionChecker();
   const promptBuilder = new PromptBuilder(reader, checker);
-  const launcher = new ClaudeSessionLauncher(runner, clock);
 
   const ego = new Ego(reader, writer, appendWriter, checker, promptBuilder, launcher, clock);
   const subconscious = new Subconscious(reader, writer, appendWriter, checker, promptBuilder, launcher, clock);
   const superego = new Superego(reader, appendWriter, checker, promptBuilder, launcher, clock);
   const id = new Id(reader, checker, promptBuilder, launcher, clock);
 
-  return { fs, clock, runner, appendWriter, ego, subconscious, superego, id, reader };
+  return { fs, clock, launcher, appendWriter, ego, subconscious, superego, id, reader };
 }
 
 async function setupSubstrate(fs: InMemoryFileSystem) {
@@ -69,17 +66,13 @@ describe("Integration: Full Cycle", () => {
       defaultLoopConfig(), new InMemoryLogger()
     );
 
-    deps.runner.enqueue({
-      stdout: asStreamJson(JSON.stringify({
-        result: "success",
-        summary: "Task A completed",
-        progressEntry: "Finished Task A successfully",
-        skillUpdates: null,
-        proposals: [],
-      })),
-      stderr: "",
-      exitCode: 0,
-    });
+    deps.launcher.enqueueSuccess(JSON.stringify({
+      result: "success",
+      summary: "Task A completed",
+      progressEntry: "Finished Task A successfully",
+      skillUpdates: null,
+      proposals: [],
+    }));
 
     orchestrator.start();
     const result = await orchestrator.runOneCycle();
@@ -109,30 +102,22 @@ describe("Integration: Full Cycle", () => {
     );
 
     // Task A
-    deps.runner.enqueue({
-      stdout: asStreamJson(JSON.stringify({
-        result: "success",
-        summary: "Task A done",
-        progressEntry: "Did A",
-        skillUpdates: null,
-        proposals: [],
-      })),
-      stderr: "",
-      exitCode: 0,
-    });
+    deps.launcher.enqueueSuccess(JSON.stringify({
+      result: "success",
+      summary: "Task A done",
+      progressEntry: "Did A",
+      skillUpdates: null,
+      proposals: [],
+    }));
 
     // Task B
-    deps.runner.enqueue({
-      stdout: asStreamJson(JSON.stringify({
-        result: "success",
-        summary: "Task B done",
-        progressEntry: "Did B",
-        skillUpdates: null,
-        proposals: [],
-      })),
-      stderr: "",
-      exitCode: 0,
-    });
+    deps.launcher.enqueueSuccess(JSON.stringify({
+      result: "success",
+      summary: "Task B done",
+      progressEntry: "Did B",
+      skillUpdates: null,
+      proposals: [],
+    }));
 
     orchestrator.start();
     await orchestrator.runLoop();
@@ -158,17 +143,13 @@ describe("Integration: Full Cycle", () => {
       defaultLoopConfig(), new InMemoryLogger()
     );
 
-    deps.runner.enqueue({
-      stdout: asStreamJson(JSON.stringify({
-        result: "failure",
-        summary: "Task A failed miserably",
-        progressEntry: "",
-        skillUpdates: null,
-        proposals: [],
-      })),
-      stderr: "",
-      exitCode: 0,
-    });
+    deps.launcher.enqueueSuccess(JSON.stringify({
+      result: "failure",
+      summary: "Task A failed miserably",
+      progressEntry: "",
+      skillUpdates: null,
+      proposals: [],
+    }));
 
     orchestrator.start();
     const result = await orchestrator.runOneCycle();

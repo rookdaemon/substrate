@@ -1,33 +1,19 @@
 import { IClock } from "../../substrate/abstractions/IClock";
 import { ILogger } from "../../logging";
 import { IProcessRunner } from "./IProcessRunner";
-import { StreamJsonParser, ProcessLogEntry } from "./StreamJsonParser";
+import { StreamJsonParser } from "./StreamJsonParser";
+import {
+  ISessionLauncher,
+  ClaudeSessionRequest,
+  ClaudeSessionResult,
+  LaunchOptions,
+} from "./ISessionLauncher";
 
-export interface ClaudeSessionRequest {
-  systemPrompt: string;
-  message: string;
-}
-
-export interface ClaudeSessionResult {
-  rawOutput: string;
-  exitCode: number;
-  durationMs: number;
-  success: boolean;
-  error?: string;
-}
-
-export interface LaunchOptions {
-  maxRetries?: number;
-  retryDelayMs?: number;
-  timeoutMs?: number;
-  idleTimeoutMs?: number;
-  onLogEntry?: (entry: ProcessLogEntry) => void;
-  cwd?: string;
-}
+export type { ClaudeSessionRequest, ClaudeSessionResult, LaunchOptions };
 
 const noopLogger: ILogger = { debug() {} };
 
-export class ClaudeSessionLauncher {
+export class ClaudeSessionLauncher implements ISessionLauncher {
   private readonly model: string;
   private readonly logger: ILogger;
 

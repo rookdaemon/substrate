@@ -9,7 +9,7 @@ import { Superego } from "../../src/agents/roles/Superego";
 import { Id } from "../../src/agents/roles/Id";
 import { InMemoryFileSystem } from "../../src/substrate/abstractions/InMemoryFileSystem";
 import { FixedClock } from "../../src/substrate/abstractions/FixedClock";
-import { InMemoryProcessRunner } from "../../src/agents/claude/InMemoryProcessRunner";
+import { InMemorySessionLauncher } from "../../src/agents/claude/InMemorySessionLauncher";
 import { SubstrateConfig } from "../../src/substrate/config";
 import { SubstrateFileReader } from "../../src/substrate/io/FileReader";
 import { SubstrateFileWriter } from "../../src/substrate/io/FileWriter";
@@ -17,13 +17,11 @@ import { AppendOnlyWriter } from "../../src/substrate/io/AppendOnlyWriter";
 import { FileLock } from "../../src/substrate/io/FileLock";
 import { PermissionChecker } from "../../src/agents/permissions";
 import { PromptBuilder } from "../../src/agents/prompts/PromptBuilder";
-import { ClaudeSessionLauncher } from "../../src/agents/claude/ClaudeSessionLauncher";
-import { asStreamJson } from "../helpers/streamJson";
 
 function createDeps() {
   const fs = new InMemoryFileSystem();
   const clock = new FixedClock(new Date("2025-06-15T10:00:00.000Z"));
-  const runner = new InMemoryProcessRunner();
+  const launcher = new InMemorySessionLauncher();
   const config = new SubstrateConfig("/substrate");
   const reader = new SubstrateFileReader(fs, config);
   const lock = new FileLock();
@@ -31,14 +29,13 @@ function createDeps() {
   const appendWriter = new AppendOnlyWriter(fs, config, lock, clock);
   const checker = new PermissionChecker();
   const promptBuilder = new PromptBuilder(reader, checker);
-  const launcher = new ClaudeSessionLauncher(runner, clock);
 
   const ego = new Ego(reader, writer, appendWriter, checker, promptBuilder, launcher, clock);
   const subconscious = new Subconscious(reader, writer, appendWriter, checker, promptBuilder, launcher, clock);
   const superego = new Superego(reader, appendWriter, checker, promptBuilder, launcher, clock);
   const id = new Id(reader, checker, promptBuilder, launcher, clock);
 
-  return { fs, clock, runner, appendWriter, ego, subconscious, superego, id };
+  return { fs, clock, launcher, appendWriter, ego, subconscious, superego, id };
 }
 
 async function setupSubstrate(fs: InMemoryFileSystem) {
@@ -71,15 +68,11 @@ describe("Integration: Superego Audit", () => {
     );
 
     // Cycle 2 will trigger audit — superego.audit() needs a Claude response
-    deps.runner.enqueue({
-      stdout: asStreamJson(JSON.stringify({
-        findings: [{ severity: "info", message: "All is well" }],
-        proposalEvaluations: [],
-        summary: "System healthy",
-      })),
-      stderr: "",
-      exitCode: 0,
-    });
+    deps.launcher.enqueueSuccess(JSON.stringify({
+      findings: [{ severity: "info", message: "All is well" }],
+      proposalEvaluations: [],
+      summary: "System healthy",
+    }));
 
     orchestrator.start();
     await orchestrator.runLoop();
@@ -106,15 +99,11 @@ describe("Integration: Superego Audit", () => {
     );
 
     // Prepare audit response
-    deps.runner.enqueue({
-      stdout: asStreamJson(JSON.stringify({
-        findings: [],
-        proposalEvaluations: [],
-        summary: "On-demand audit clean",
-      })),
-      stderr: "",
-      exitCode: 0,
-    });
+    deps.launcher.enqueueSuccess(JSON.stringify({
+      findings: [],
+      proposalEvaluations: [],
+      summary: "On-demand audit clean",
+    }));
 
     orchestrator.start();
     orchestrator.requestAudit();
@@ -142,15 +131,11 @@ describe("Integration: Superego Audit", () => {
       config, new InMemoryLogger()
     );
 
-    deps.runner.enqueue({
-      stdout: asStreamJson(JSON.stringify({
-        findings: [],
-        proposalEvaluations: [],
-        summary: "Audit complete: system in good shape",
-      })),
-      stderr: "",
-      exitCode: 0,
-    });
+    deps.launcher.enqueueSuccess(JSON.stringify({
+      findings: [],
+      proposalEvaluations: [],
+      summary: "Audit complete: system in good shape",
+    }));
 
     orchestrator.start();
     await orchestrator.runOneCycle();

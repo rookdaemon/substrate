@@ -5,8 +5,7 @@ import { SubstrateFileWriter } from "../../substrate/io/FileWriter";
 import { AppendOnlyWriter } from "../../substrate/io/AppendOnlyWriter";
 import { PermissionChecker } from "../permissions";
 import { PromptBuilder } from "../prompts/PromptBuilder";
-import { ClaudeSessionLauncher } from "../claude/ClaudeSessionLauncher";
-import { ProcessLogEntry } from "../claude/StreamJsonParser";
+import { ISessionLauncher, ProcessLogEntry } from "../claude/ISessionLauncher";
 import { PlanParser } from "../parsers/PlanParser";
 import { extractJson } from "../parsers/extractJson";
 import { AgentRole } from "../types";
@@ -29,7 +28,7 @@ export class Ego {
     private readonly appendWriter: AppendOnlyWriter,
     private readonly checker: PermissionChecker,
     private readonly promptBuilder: PromptBuilder,
-    private readonly sessionLauncher: ClaudeSessionLauncher,
+    private readonly sessionLauncher: ISessionLauncher,
     private readonly clock: IClock,
     private readonly workingDirectory?: string
   ) {}

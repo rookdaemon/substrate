@@ -8,8 +8,8 @@ import { AppendOnlyWriter } from "../substrate/io/AppendOnlyWriter";
 import { FileLock } from "../substrate/io/FileLock";
 import { PermissionChecker } from "../agents/permissions";
 import { PromptBuilder } from "../agents/prompts/PromptBuilder";
-import { ClaudeSessionLauncher } from "../agents/claude/ClaudeSessionLauncher";
-import { NodeProcessRunner } from "../agents/claude/NodeProcessRunner";
+import { AgentSdkLauncher, SdkQueryFn } from "../agents/claude/AgentSdkLauncher";
+import { query as sdkQuery } from "@anthropic-ai/claude-agent-sdk";
 import { Ego } from "../agents/roles/Ego";
 import { Subconscious } from "../agents/roles/Subconscious";
 import { Superego } from "../agents/roles/Superego";
@@ -63,8 +63,7 @@ export function createApplication(config: ApplicationConfig): Application {
     substratePath: config.substratePath,
     sourceCodePath: config.sourceCodePath,
   });
-  const runner = new NodeProcessRunner();
-  const launcher = new ClaudeSessionLauncher(runner, clock, config.model, logger);
+  const launcher = new AgentSdkLauncher(sdkQuery as unknown as SdkQueryFn, clock, config.model, logger);
 
   const cwd = config.workingDirectory;
   const ego = new Ego(reader, writer, appendWriter, checker, promptBuilder, launcher, clock, cwd);

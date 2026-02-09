@@ -1,33 +1,30 @@
 import { Superego } from "../../../src/agents/roles/Superego";
 import { PermissionChecker } from "../../../src/agents/permissions";
 import { PromptBuilder } from "../../../src/agents/prompts/PromptBuilder";
-import { ClaudeSessionLauncher } from "../../../src/agents/claude/ClaudeSessionLauncher";
-import { InMemoryProcessRunner } from "../../../src/agents/claude/InMemoryProcessRunner";
+import { InMemorySessionLauncher } from "../../../src/agents/claude/InMemorySessionLauncher";
 import { SubstrateFileReader } from "../../../src/substrate/io/FileReader";
 import { AppendOnlyWriter } from "../../../src/substrate/io/AppendOnlyWriter";
 import { FileLock } from "../../../src/substrate/io/FileLock";
 import { SubstrateConfig } from "../../../src/substrate/config";
 import { InMemoryFileSystem } from "../../../src/substrate/abstractions/InMemoryFileSystem";
 import { FixedClock } from "../../../src/substrate/abstractions/FixedClock";
-import { asStreamJson } from "../../helpers/streamJson";
 
 describe("Superego agent", () => {
   let fs: InMemoryFileSystem;
   let clock: FixedClock;
-  let runner: InMemoryProcessRunner;
+  let launcher: InMemorySessionLauncher;
   let superego: Superego;
 
   beforeEach(async () => {
     fs = new InMemoryFileSystem();
     clock = new FixedClock(new Date("2025-06-15T10:00:00.000Z"));
-    runner = new InMemoryProcessRunner();
+    launcher = new InMemorySessionLauncher();
     const config = new SubstrateConfig("/substrate");
     const reader = new SubstrateFileReader(fs, config);
     const lock = new FileLock();
     const appendWriter = new AppendOnlyWriter(fs, config, lock, clock);
     const checker = new PermissionChecker();
     const promptBuilder = new PromptBuilder(reader, checker);
-    const launcher = new ClaudeSessionLauncher(runner, clock);
 
     superego = new Superego(reader, appendWriter, checker, promptBuilder, launcher, clock, "/workspace");
 
@@ -56,7 +53,7 @@ describe("Superego agent", () => {
         proposalEvaluations: [],
         summary: "Overall good shape",
       });
-      runner.enqueue({ stdout: asStreamJson(claudeResponse), stderr: "", exitCode: 0 });
+      launcher.enqueueSuccess(claudeResponse);
 
       const report = await superego.audit();
       expect(report.findings).toHaveLength(2);
@@ -65,18 +62,18 @@ describe("Superego agent", () => {
     });
 
     it("passes substratePath as cwd to session launcher", async () => {
-      runner.enqueue({ stdout: asStreamJson(JSON.stringify({
+      launcher.enqueueSuccess(JSON.stringify({
         findings: [], proposalEvaluations: [], summary: "OK",
-      })), stderr: "", exitCode: 0 });
+      }));
 
       await superego.audit();
 
-      const calls = runner.getCalls();
-      expect(calls[0].options?.cwd).toBe("/workspace");
+      const launches = launcher.getLaunches();
+      expect(launches[0].options?.cwd).toBe("/workspace");
     });
 
     it("returns error report with stderr when Claude fails", async () => {
-      runner.enqueue({ stdout: "", stderr: "claude: connection refused", exitCode: 1 });
+      launcher.enqueueFailure("claude: connection refused");
 
       const report = await superego.audit();
       expect(report.findings).toHaveLength(1);
@@ -85,7 +82,7 @@ describe("Superego agent", () => {
     });
 
     it("returns error report with error message on parse error", async () => {
-      runner.enqueue({ stdout: asStreamJson("not json"), stderr: "", exitCode: 0 });
+      launcher.enqueueSuccess("not json");
 
       const report = await superego.audit();
       expect(report.findings).toHaveLength(1);
@@ -104,7 +101,7 @@ describe("Superego agent", () => {
         ],
         summary: "Mixed results",
       });
-      runner.enqueue({ stdout: asStreamJson(claudeResponse), stderr: "", exitCode: 0 });
+      launcher.enqueueSuccess(claudeResponse);
 
       const evaluations = await superego.evaluateProposals([
         { target: "MEMORY", content: "Remember this" },
@@ -117,7 +114,7 @@ describe("Superego agent", () => {
     });
 
     it("rejects all proposals with stderr when Claude fails", async () => {
-      runner.enqueue({ stdout: "", stderr: "claude: timeout", exitCode: 1 });
+      launcher.enqueueFailure("claude: timeout");
 
       const evaluations = await superego.evaluateProposals([
         { target: "MEMORY", content: "stuff" },
