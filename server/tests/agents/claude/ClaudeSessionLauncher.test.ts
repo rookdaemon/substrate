@@ -204,4 +204,40 @@ describe("ClaudeSessionLauncher", () => {
       expect(calls[0].options?.cwd).toBe("/my/substrate");
     });
   });
+
+  describe("model selection", () => {
+    it("defaults to sonnet model", async () => {
+      runner.enqueue({ stdout: asStreamJson("ok"), stderr: "", exitCode: 0 });
+
+      await launcher.launch({ systemPrompt: "sys", message: "msg" });
+
+      const calls = runner.getCalls();
+      const modelIdx = calls[0].args.indexOf("--model");
+      expect(modelIdx).toBeGreaterThanOrEqual(0);
+      expect(calls[0].args[modelIdx + 1]).toBe("sonnet");
+    });
+
+    it("uses model from constructor when provided", async () => {
+      const customLauncher = new ClaudeSessionLauncher(runner, clock, "opus");
+      runner.enqueue({ stdout: asStreamJson("ok"), stderr: "", exitCode: 0 });
+
+      await customLauncher.launch({ systemPrompt: "sys", message: "msg" });
+
+      const calls = runner.getCalls();
+      const modelIdx = calls[0].args.indexOf("--model");
+      expect(modelIdx).toBeGreaterThanOrEqual(0);
+      expect(calls[0].args[modelIdx + 1]).toBe("opus");
+    });
+
+    it("uses haiku when configured", async () => {
+      const haikuLauncher = new ClaudeSessionLauncher(runner, clock, "haiku");
+      runner.enqueue({ stdout: asStreamJson("ok"), stderr: "", exitCode: 0 });
+
+      await haikuLauncher.launch({ systemPrompt: "sys", message: "msg" });
+
+      const calls = runner.getCalls();
+      const modelIdx = calls[0].args.indexOf("--model");
+      expect(calls[0].args[modelIdx + 1]).toBe("haiku");
+    });
+  });
 });

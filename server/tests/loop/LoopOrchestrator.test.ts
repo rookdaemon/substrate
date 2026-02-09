@@ -264,6 +264,27 @@ describe("LoopOrchestrator", () => {
       expect(metrics.failedCycles).toBe(1);
     });
 
+    it("writes failure summary to CONVERSATION on failed dispatch", async () => {
+      orchestrator.start();
+
+      deps.runner.enqueue({
+        stdout: asStreamJson(JSON.stringify({
+          result: "failure",
+          summary: "Task failed: connection refused",
+          progressEntry: "",
+          skillUpdates: null,
+          proposals: [],
+        })),
+        stderr: "",
+        exitCode: 0,
+      });
+
+      await orchestrator.runOneCycle();
+
+      const conversation = await deps.fs.readFile("/substrate/CONVERSATION.md");
+      expect(conversation).toContain("[SUBCONSCIOUS] Task failed: connection refused");
+    });
+
     it("emits cycle_complete event", async () => {
       orchestrator.start();
       eventSink.reset();

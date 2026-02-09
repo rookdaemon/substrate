@@ -60,7 +60,7 @@ export class Id {
 
       return parsed.goalCandidates;
     } catch {
-      return [];
+      return [];  // Id silently returns empty — errors surface through other agents
     }
   }
 }

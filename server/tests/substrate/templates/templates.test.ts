@@ -29,4 +29,15 @@ describe("templates", () => {
       expect(template.trimStart().startsWith("# ")).toBe(true);
     }
   });
+
+  it("PLAN template has bootstrapping tasks", () => {
+    const plan = getTemplate(SubstrateFileType.PLAN);
+    expect(plan).toContain("## Tasks");
+    expect(plan).toContain("- [ ]");
+  });
+
+  it("CLAUDE template has operational instructions", () => {
+    const claude = getTemplate(SubstrateFileType.CLAUDE);
+    expect(claude).toMatch(/substrate|PLAN|PROGRESS/i);
+  });
 });

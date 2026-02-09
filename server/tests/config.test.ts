@@ -20,6 +20,7 @@ describe("resolveConfig", () => {
     expect(config.substratePath).toBe("/xdg/data/rook-wiggums/substrate");
     expect(config.workingDirectory).toBe("/xdg/data/rook-wiggums");
     expect(config.port).toBe(3000);
+    expect(config.model).toBe("sonnet");
   });
 
   it("loads from explicit configPath", async () => {
@@ -113,6 +114,19 @@ describe("resolveConfig", () => {
     expect(config.port).toBe(9000);
     expect(config.substratePath).toBe("/xdg/data/rook-wiggums/substrate");
     expect(config.workingDirectory).toBe("/xdg/data/rook-wiggums");
+  });
+
+  it("reads model from config file", async () => {
+    await fs.mkdir("/project", { recursive: true });
+    await fs.writeFile("/project/config.json", JSON.stringify({ model: "opus" }));
+
+    const config = await resolveConfig(fs, {
+      appPaths: TEST_PATHS,
+      cwd: "/project",
+      env: {},
+    });
+
+    expect(config.model).toBe("opus");
   });
 
   it("env vars override config file values", async () => {

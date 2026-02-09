@@ -10,6 +10,7 @@
     "dev": "tsx watch src/cli.ts start",
     "build": "tsc",
     "test": "jest",
+    "backup": "tsx src/cli.ts backup",
     "lint": "eslint src/ tests/"
   },
   "devDependencies": {

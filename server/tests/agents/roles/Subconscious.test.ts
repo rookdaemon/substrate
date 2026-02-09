@@ -81,8 +81,8 @@ describe("Subconscious agent", () => {
       expect(calls[0].options?.cwd).toBe("/workspace");
     });
 
-    it("returns failure result when Claude fails", async () => {
-      runner.enqueue({ stdout: "", stderr: "error", exitCode: 1 });
+    it("returns failure result with stderr when Claude fails", async () => {
+      runner.enqueue({ stdout: "", stderr: "claude: model not found", exitCode: 1 });
 
       const result = await subconscious.execute({
         taskId: "task-1",
@@ -90,7 +90,19 @@ describe("Subconscious agent", () => {
       });
 
       expect(result.result).toBe("failure");
-      expect(result.summary).toMatch(/failed/i);
+      expect(result.summary).toContain("claude: model not found");
+    });
+
+    it("returns failure result with error message on parse error", async () => {
+      runner.enqueue({ stdout: asStreamJson("not valid json"), stderr: "", exitCode: 0 });
+
+      const result = await subconscious.execute({
+        taskId: "task-1",
+        description: "Implement task A",
+      });
+
+      expect(result.result).toBe("failure");
+      expect(result.summary).toMatch(/JSON|Unexpected|parse/i);
     });
 
     it("includes proposals in the result", async () => {

@@ -50,9 +50,9 @@ export class Superego {
 
       if (!result.success) {
         return {
-          findings: [{ severity: "critical", message: "Audit failed: Claude session error" }],
+          findings: [{ severity: "critical", message: `Audit failed: ${result.error || "Claude session error"}` }],
           proposalEvaluations: [],
-          summary: "Audit failed due to session error",
+          summary: `Audit failed: ${result.error || "session error"}`,
         };
       }
 
@@ -62,11 +62,12 @@ export class Superego {
         proposalEvaluations: parsed.proposalEvaluations ?? [],
         summary: parsed.summary ?? "",
       };
-    } catch {
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
       return {
-        findings: [{ severity: "critical", message: "Audit failed: unexpected error" }],
+        findings: [{ severity: "critical", message: `Audit failed: ${msg}` }],
         proposalEvaluations: [],
-        summary: "Audit failed due to unexpected error",
+        summary: `Audit failed: ${msg}`,
       };
     }
   }
@@ -82,7 +83,7 @@ export class Superego {
       if (!result.success) {
         return proposals.map(() => ({
           approved: false,
-          reason: "Evaluation failed: Claude session error",
+          reason: `Evaluation failed: ${result.error || "Claude session error"}`,
         }));
       }
 
@@ -91,10 +92,11 @@ export class Superego {
         approved: false,
         reason: "No evaluation returned",
       }));
-    } catch {
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
       return proposals.map(() => ({
         approved: false,
-        reason: "Evaluation failed: unexpected error",
+        reason: `Evaluation failed: ${msg}`,
       }));
     }
   }

@@ -38,6 +38,16 @@ describe("ROLE_PROMPTS", () => {
       const prompt = ROLE_PROMPTS[AgentRole.SUBCONSCIOUS];
       expect(prompt).toMatch(/execute|task|work/i);
     });
+
+    it("explains substrate context is pre-loaded", () => {
+      const prompt = ROLE_PROMPTS[AgentRole.SUBCONSCIOUS];
+      expect(prompt).toMatch(/SUBSTRATE CONTEXT/i);
+    });
+
+    it("instructs to write concrete progress entries", () => {
+      const prompt = ROLE_PROMPTS[AgentRole.SUBCONSCIOUS];
+      expect(prompt).toMatch(/progress/i);
+    });
   });
 
   describe("Superego prompt", () => {

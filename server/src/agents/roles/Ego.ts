@@ -42,13 +42,14 @@ export class Ego {
       }, { onLogEntry, cwd: this.workingDirectory });
 
       if (!result.success) {
-        return { action: "idle", reason: "Claude session error" };
+        return { action: "idle", reason: `Claude session error: ${result.error || "unknown"}` };
       }
 
       const parsed = JSON.parse(result.rawOutput);
       return parsed as EgoDecision;
-    } catch {
-      return { action: "idle", reason: "Decision failed: unexpected error" };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return { action: "idle", reason: `Decision failed: ${msg}` };
     }
   }
 

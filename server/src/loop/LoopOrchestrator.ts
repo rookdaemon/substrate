@@ -166,6 +166,10 @@ export class LoopOrchestrator {
         }
       } else {
         this.metrics.failedCycles++;
+
+        if (taskResult.summary) {
+          await this.subconscious.logConversation(taskResult.summary);
+        }
       }
 
       if (taskResult.proposals.length > 0) {

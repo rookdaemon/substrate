@@ -6,6 +6,7 @@ export interface RookConfig {
   substratePath: string;
   workingDirectory: string;
   port: number;
+  model: string;
 }
 
 export interface ResolveConfigOptions {
@@ -25,6 +26,7 @@ export async function resolveConfig(
     substratePath: path.join(appPaths.data, "substrate"),
     workingDirectory: appPaths.data,
     port: 3000,
+    model: "sonnet",
   };
 
   let fileConfig: Partial<RookConfig> = {};
@@ -55,6 +57,7 @@ export async function resolveConfig(
     substratePath: fileConfig.substratePath ?? defaults.substratePath,
     workingDirectory: fileConfig.workingDirectory ?? defaults.workingDirectory,
     port: fileConfig.port ?? defaults.port,
+    model: fileConfig.model ?? defaults.model,
   };
 
   // Env vars override everything

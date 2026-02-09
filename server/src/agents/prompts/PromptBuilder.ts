@@ -10,10 +10,16 @@ export interface FileContext {
   content: string;
 }
 
+export interface PromptBuilderPaths {
+  substratePath: string;
+  sourceCodePath?: string;
+}
+
 export class PromptBuilder {
   constructor(
     private readonly reader: SubstrateFileReader,
-    private readonly checker: PermissionChecker
+    private readonly checker: PermissionChecker,
+    private readonly paths?: PromptBuilderPaths
   ) {}
 
   async gatherContext(role: AgentRole): Promise<FileContext[]> {
@@ -40,6 +46,19 @@ export class PromptBuilder {
       .map((c) => `--- ${c.fileName} ---\n${c.content}`)
       .join("\n\n");
 
-    return `${template}\n\n=== SUBSTRATE CONTEXT ===\n\n${contextSections}`;
+    let prompt = `${template}\n\n=== SUBSTRATE CONTEXT ===\n\n${contextSections}`;
+
+    if (this.paths) {
+      const lines = [
+        `Substrate directory: ${this.paths.substratePath}`,
+        `Substrate files are located at: ${this.paths.substratePath}/<FILENAME>.md`,
+      ];
+      if (this.paths.sourceCodePath) {
+        lines.push(`My own source code: ${this.paths.sourceCodePath}`);
+      }
+      prompt += `\n\n=== ENVIRONMENT ===\n\n${lines.join("\n")}`;
+    }
+
+    return prompt;
   }
 }

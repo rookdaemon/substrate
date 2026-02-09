@@ -85,5 +85,21 @@ describe("PromptBuilder", () => {
       const prompt = await builder.buildSystemPrompt(AgentRole.ID);
       expect(prompt).toContain("=== SUBSTRATE CONTEXT ===");
     });
+
+    it("includes environment section with paths when provided", async () => {
+      const builderWithPaths = new PromptBuilder(reader, checker, {
+        substratePath: "/home/user/.local/share/rook-wiggums/substrate",
+        sourceCodePath: "/home/user/rook_wiggums",
+      });
+      const prompt = await builderWithPaths.buildSystemPrompt(AgentRole.EGO);
+      expect(prompt).toContain("=== ENVIRONMENT ===");
+      expect(prompt).toContain("Substrate directory: /home/user/.local/share/rook-wiggums/substrate");
+      expect(prompt).toContain("My own source code: /home/user/rook_wiggums");
+    });
+
+    it("omits environment section when no paths provided", async () => {
+      const prompt = await builder.buildSystemPrompt(AgentRole.EGO);
+      expect(prompt).not.toContain("=== ENVIRONMENT ===");
+    });
   });
 });

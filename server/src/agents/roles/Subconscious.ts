@@ -51,7 +51,7 @@ export class Subconscious {
       if (!result.success) {
         return {
           result: "failure",
-          summary: "Task execution failed: Claude session error",
+          summary: `Task execution failed: ${result.error || "Claude session error"}`,
           progressEntry: "",
           skillUpdates: null,
           proposals: [],
@@ -66,10 +66,11 @@ export class Subconscious {
         skillUpdates: parsed.skillUpdates ?? null,
         proposals: parsed.proposals ?? [],
       };
-    } catch {
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
       return {
         result: "failure",
-        summary: "Task execution failed: unexpected error",
+        summary: `Task execution failed: ${msg}`,
         progressEntry: "",
         skillUpdates: null,
         proposals: [],

@@ -75,13 +75,22 @@ describe("Superego agent", () => {
       expect(calls[0].options?.cwd).toBe("/workspace");
     });
 
-    it("returns error report when Claude fails", async () => {
-      runner.enqueue({ stdout: "", stderr: "error", exitCode: 1 });
+    it("returns error report with stderr when Claude fails", async () => {
+      runner.enqueue({ stdout: "", stderr: "claude: connection refused", exitCode: 1 });
 
       const report = await superego.audit();
       expect(report.findings).toHaveLength(1);
       expect(report.findings[0].severity).toBe("critical");
-      expect(report.summary).toMatch(/failed/i);
+      expect(report.findings[0].message).toContain("claude: connection refused");
+    });
+
+    it("returns error report with error message on parse error", async () => {
+      runner.enqueue({ stdout: asStreamJson("not json"), stderr: "", exitCode: 0 });
+
+      const report = await superego.audit();
+      expect(report.findings).toHaveLength(1);
+      expect(report.findings[0].severity).toBe("critical");
+      expect(report.findings[0].message).toMatch(/JSON|Unexpected|parse/i);
     });
   });
 
@@ -107,8 +116,8 @@ describe("Superego agent", () => {
       expect(evaluations[1].approved).toBe(false);
     });
 
-    it("rejects all proposals when Claude fails", async () => {
-      runner.enqueue({ stdout: "", stderr: "error", exitCode: 1 });
+    it("rejects all proposals with stderr when Claude fails", async () => {
+      runner.enqueue({ stdout: "", stderr: "claude: timeout", exitCode: 1 });
 
       const evaluations = await superego.evaluateProposals([
         { target: "MEMORY", content: "stuff" },
@@ -116,6 +125,7 @@ describe("Superego agent", () => {
 
       expect(evaluations).toHaveLength(1);
       expect(evaluations[0].approved).toBe(false);
+      expect(evaluations[0].reason).toContain("claude: timeout");
     });
   });
 

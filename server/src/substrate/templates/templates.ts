@@ -2,11 +2,15 @@ export const PLAN_TEMPLATE = `# Plan
 
 ## Current Goal
 
-Awaiting first goal.
+Bootstrap the agent: define identity, values, and initial capabilities.
 
 ## Tasks
 
-- [ ] Review substrate files and establish initial goals
+- [ ] Define core values in VALUES.md (what matters to this agent)
+- [ ] Write initial identity in ID.md (who is this agent, what drives it)
+- [ ] Establish a charter in CHARTER.md (mission and boundaries)
+- [ ] Catalogue current skills in SKILLS.md
+- [ ] Set security policies in SECURITY.md
 `;
 
 export const MEMORY_TEMPLATE = `# Memory
@@ -51,7 +55,16 @@ No superego rules defined yet.
 
 export const CLAUDE_TEMPLATE = `# Claude
 
-No Claude configuration set yet.
+## Operating Instructions
+
+You are part of a self-improving agent system. Your substrate files (PLAN.md, MEMORY.md, SKILLS.md, PROGRESS.md, etc.) define your current state and goals.
+
+Key principles:
+- Always update PLAN.md with concrete, specific tasks — never leave vague placeholders
+- Write detailed PROGRESS.md entries so future cycles understand what happened
+- Break large goals into small, achievable subtasks in PLAN.md
+- When a task is complete, mark it done and identify what comes next
+- Respond with ONLY valid JSON — no markdown, no explanations, no preamble
 `;
 
 export const PROGRESS_TEMPLATE = `# Progress

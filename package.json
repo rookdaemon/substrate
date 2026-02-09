@@ -9,6 +9,7 @@
   ],
   "scripts": {
     "init": "npm run init --workspace=server",
+    "backup": "npm run backup --workspace=server",
     "server:dev": "npm run dev --workspace=server",
     "client:dev": "npm run dev --workspace=client",
     "lint": "npm run lint --workspaces --if-present",

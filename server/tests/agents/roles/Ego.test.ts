@@ -65,18 +65,20 @@ describe("Ego agent", () => {
       expect(decision.action).toBe("dispatch");
     });
 
-    it("returns idle decision when Claude fails", async () => {
-      runner.enqueue({ stdout: "", stderr: "error", exitCode: 1 });
+    it("returns idle decision with stderr when Claude fails", async () => {
+      runner.enqueue({ stdout: "", stderr: "claude: rate limited", exitCode: 1 });
 
       const decision = await ego.decide();
       expect(decision.action).toBe("idle");
+      expect(decision.reason).toContain("claude: rate limited");
     });
 
-    it("returns idle decision on invalid JSON", async () => {
+    it("returns idle decision with error message on invalid JSON", async () => {
       runner.enqueue({ stdout: asStreamJson("not json"), stderr: "", exitCode: 0 });
 
       const decision = await ego.decide();
       expect(decision.action).toBe("idle");
+      expect(decision.reason).toMatch(/JSON|Unexpected|parse/i);
     });
 
     it("passes substratePath as cwd to session launcher", async () => {

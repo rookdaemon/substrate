@@ -26,6 +26,7 @@ import { HealthCheck } from "../evaluation/HealthCheck";
 export interface ApplicationConfig {
   substratePath: string;
   workingDirectory?: string;
+  model?: string;
   httpPort?: number;
   cycleDelayMs?: number;
   superegoAuditInterval?: number;
@@ -53,9 +54,12 @@ export function createApplication(config: ApplicationConfig): Application {
 
   // Agent layer
   const checker = new PermissionChecker();
-  const promptBuilder = new PromptBuilder(reader, checker);
+  const promptBuilder = new PromptBuilder(reader, checker, {
+    substratePath: config.substratePath,
+    sourceCodePath: config.workingDirectory,
+  });
   const runner = new NodeProcessRunner();
-  const launcher = new ClaudeSessionLauncher(runner, clock);
+  const launcher = new ClaudeSessionLauncher(runner, clock, config.model);
 
   const cwd = config.workingDirectory;
   const ego = new Ego(reader, writer, appendWriter, checker, promptBuilder, launcher, clock, cwd);

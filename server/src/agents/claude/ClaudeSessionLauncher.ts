@@ -23,10 +23,15 @@ export interface LaunchOptions {
 }
 
 export class ClaudeSessionLauncher {
+  private readonly model: string;
+
   constructor(
     private readonly processRunner: IProcessRunner,
-    private readonly clock: IClock
-  ) {}
+    private readonly clock: IClock,
+    model?: string
+  ) {
+    this.model = model ?? "sonnet";
+  }
 
   async launch(
     request: ClaudeSessionRequest,
@@ -52,6 +57,8 @@ export class ClaudeSessionLauncher {
         "--print",
         "--verbose",
         "--dangerously-skip-permissions",
+        "--model",
+        this.model,
         "--output-format",
         "stream-json",
         "--system-prompt",
