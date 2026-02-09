@@ -6,7 +6,7 @@ import {
 } from "./IProcessRunner";
 
 const DEFAULT_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes hard ceiling
-const DEFAULT_IDLE_TIMEOUT_MS = 120_000;    // 2 minutes without output
+const DEFAULT_IDLE_TIMEOUT_MS = 300_000;    // 5 minutes without output (Claude generates large tool_use blocks with no intermediate output)
 
 export class NodeProcessRunner implements IProcessRunner {
   async run(
