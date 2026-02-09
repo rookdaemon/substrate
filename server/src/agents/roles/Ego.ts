@@ -74,17 +74,23 @@ export class Ego {
     message: string,
     onLogEntry?: (entry: ProcessLogEntry) => void
   ): Promise<string | null> {
-    const systemPrompt = this.promptBuilder.buildSystemPrompt(AgentRole.EGO);
     const contextRefs = this.promptBuilder.getContextReferences(AgentRole.EGO);
+
+    const systemPrompt =
+      `You are the Ego — the executive decision-maker of a self-improving AI agent system.\n` +
+      `A user has sent you a message. Read CONVERSATION.md for context and respond naturally.\n` +
+      `Respond with ONLY your plain text reply — no JSON, no markdown code blocks, no wrapper.\n` +
+      `Keep responses concise and conversational.`;
 
     const result = await this.sessionLauncher.launch({
       systemPrompt,
-      message: `${contextRefs}\n\nThe user sent you a message. Read CONVERSATION.md for context and respond directly.\n\nUser message: "${message}"`,
+      message: `${contextRefs}\n\nUser message: "${message}"`,
     }, { onLogEntry, cwd: this.workingDirectory });
 
     if (result.success && result.rawOutput) {
-      await this.appendConversation(result.rawOutput);
-      return result.rawOutput;
+      const response = result.rawOutput.trim();
+      await this.appendConversation(response);
+      return response;
     }
     return null;
   }
