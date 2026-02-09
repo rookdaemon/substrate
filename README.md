@@ -7,21 +7,21 @@ A persistent, self-referential orchestration layer around Claude Code with disti
 Rook Wiggums (the Ralph Wiggum REPL) is an agent shell that wraps Claude Code in a continuous execution loop with four cognitive roles:
 
 - **Ego** — Executive planner that reads the current PLAN, decides the next action, and dispatches work
-- **Subconscious** — Worker that executes tasks, logs progress, and proposes updates to memory and habits
+- **Subconscious** — Worker that executes tasks, logs progress, updates memory and skills
 - **Superego** — Auditor that periodically evaluates drift, consistency, and security posture
 - **Id** — Motivation engine that generates new goals when the system is idle
 
-All state lives in plain markdown files (the "substrate"), making the system fully inspectable and version-controllable.
+All state lives in plain markdown files (the "substrate"), making the system fully inspectable and version-controllable. Each substrate file follows a two-tier knowledge pattern: a short-form index in the main file with `@`-references to long-form detail in subdirectories (e.g., `MEMORY.md` references `memory/topic.md`).
 
 ---
 
-## 8.4.1 — Setup Instructions
+## Quick Start
 
 ### Prerequisites
 
 - Node.js 18+
 - npm 9+
-- Claude Code CLI installed and authenticated (`claude --version` should work)
+- Claude Code CLI installed and authenticated (`claude --version`)
 
 ### Installation
 
@@ -30,24 +30,67 @@ git clone <repo-url> && cd rook_wiggums
 npm install
 ```
 
-This installs dependencies for both `server/` and `client/` workspaces.
-
-### Running
+### Initialize & Run
 
 ```bash
-# Start the backend (creates substrate files on first run)
-npm run server:dev
+# Initialize workspace (creates XDG dirs, config, substrate files)
+cd server && npm run init
 
-# In another terminal, start the frontend dev server
-npm run client:dev
+# Start the backend
+npm run start
+
+# Or with file watching for development
+npm run dev
+
+# In another terminal, start the frontend
+cd client && npm run dev
 ```
 
-### Environment Variables
+### CLI Commands
+
+All commands are run from `server/`:
+
+```bash
+npm run init                            # Initialize workspace
+npm run start                           # Start the server
+npm run dev                             # Start with file watching
+npm run backup                          # Snapshot substrate to tar.gz
+npm run backup -- --output /path        # Backup to specific directory
+npm run restore                         # Restore latest backup
+npm run restore -- --input /path/file   # Restore specific archive
+npm run transfer -- --dest user@host    # Transfer substrate to remote
+npm run transfer -- -i ~/.ssh/key --dest user@host  # With SSH identity
+```
+
+### Configuration
+
+Configuration is resolved in priority order:
+1. `--config /path/to/config.json` (explicit flag)
+2. `config.json` in current working directory
+3. `~/.config/rook-wiggums/config.json` (XDG config dir)
+4. Built-in defaults
+
+Environment variables override all file-based config:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `SUBSTRATE_PATH` | `./substrate` | Directory for substrate markdown files |
+| `SUBSTRATE_PATH` | `~/.local/share/rook-wiggums/substrate` | Substrate directory |
 | `PORT` | `3000` | HTTP/WebSocket server port |
+
+Config file fields:
+
+```json
+{
+  "substratePath": "~/.local/share/rook-wiggums/substrate",
+  "workingDirectory": "~/.local/share/rook-wiggums",
+  "sourceCodePath": "/path/to/rook_wiggums",
+  "backupPath": "~/.local/share/rook-wiggums-backups",
+  "port": 3000,
+  "model": "sonnet"
+}
+```
+
+The `--model` CLI flag overrides the config file model: `npm run start -- --model opus`
 
 ### Running Tests
 
@@ -60,50 +103,61 @@ cd client && npx vitest run
 
 # Linting
 cd server && npx eslint src/ tests/
-cd client && npx eslint src/ tests/
 ```
 
 ---
 
-## 8.4.2 — Substrate File Formats
+## Substrate File Formats
 
-The substrate is a directory of 12 markdown files that serve as the system's shared memory. Each file has a heading requirement and a write mode.
+The substrate is a directory of 12 markdown files that serve as the system's shared memory. Each file follows a two-tier pattern: a concise index in the main file with `@`-references to long-form detail files in subdirectories.
 
 | File | Write Mode | Description |
 |------|-----------|-------------|
 | `PLAN.md` | OVERWRITE | Current task tree with `## Current Goal` and `## Tasks` sections |
 | `PROGRESS.md` | APPEND | Timestamped execution log: `[ISO-timestamp] [ROLE] message` |
 | `CONVERSATION.md` | APPEND | User/system message transcript |
-| `MEMORY.md` | OVERWRITE | Long-term facts and learned knowledge |
-| `HABITS.md` | OVERWRITE | Behavioral defaults and routines |
-| `SKILLS.md` | OVERWRITE | Learned capabilities and tool proficiencies |
-| `VALUES.md` | OVERWRITE | Optimization targets and priorities |
-| `ID.md` | OVERWRITE | Motivational drives and desires |
-| `SECURITY.md` | OVERWRITE | Security policies and constraints |
+| `MEMORY.md` | OVERWRITE | Long-term knowledge index, references `memory/*.md` |
+| `HABITS.md` | OVERWRITE | Behavioral routines index, references `habits/*.md` |
+| `SKILLS.md` | OVERWRITE | Learned capabilities index, references `skills/*.md` |
+| `VALUES.md` | OVERWRITE | Optimization targets, references `values/*.md` |
+| `ID.md` | OVERWRITE | Motivational drives, references `id/*.md` |
+| `SECURITY.md` | OVERWRITE | Security policies, references `security/*.md` |
 | `CHARTER.md` | OVERWRITE | Operational doctrine and boundaries |
-| `SUPEREGO.md` | OVERWRITE | Evaluation criteria for audits |
-| `CLAUDE.md` | OVERWRITE | Claude Code capabilities model |
+| `SUPEREGO.md` | OVERWRITE | Evaluation criteria, references `superego/*.md` |
+| `CLAUDE.md` | OVERWRITE | Claude Code capabilities and self-improvement doctrine |
 
-**Write modes:**
-- **OVERWRITE** — File contents are replaced entirely on each write. Used for state that is recomputed.
-- **APPEND** — New entries are appended with `[timestamp] [ROLE] message` format. Used for logs and transcripts.
+### Two-Tier Knowledge System
 
-All files are initialized with a `# Heading` matching their name on first run via `SubstrateInitializer`.
+Each knowledge file (MEMORY, SKILLS, HABITS, etc.) uses a two-tier structure:
+
+- **Short-form index** — The main `.md` file contains a concise summary with `@`-references
+- **Long-form detail** — Subdirectories (e.g., `memory/`, `skills/`) hold detailed files
+
+Example `MEMORY.md`:
+```markdown
+# Memory
+
+## Key Facts
+- Project uses TypeScript strict mode → @memory/typescript_patterns.md
+- Deployment target is GCP → @memory/gcp_architecture.md
+```
+
+Curation between short-form and long-form is a continuous habit built into the agent prompts.
 
 ---
 
-## 8.4.3 — Agent Role Permissions
+## Agent Role Permissions
 
-Each agent role has a specific set of file access permissions. The `PermissionChecker` enforces these at runtime.
+Each agent role has specific file access permissions enforced by `PermissionChecker` at runtime.
 
 | File | EGO Read | EGO Write | SUB Read | SUB Write | SUPEREGO Read | SUPEREGO Write | ID Read |
 |------|----------|-----------|----------|-----------|---------------|----------------|---------|
-| PLAN | ✅ | ✅ (overwrite) | ✅ | ✅ (overwrite) | ✅ | — | ✅ |
+| PLAN | ✅ | ✅ overwrite | ✅ | ✅ overwrite | ✅ | — | ✅ |
 | PROGRESS | ✅ | — | ✅ | append | ✅ | append | ✅ |
-| CONVERSATION | ✅ | append | — | — | ✅ | — | — |
-| MEMORY | ✅ | — | ✅ | — | ✅ | — | — |
+| CONVERSATION | ✅ | append | — | append | ✅ | — | — |
+| MEMORY | ✅ | — | ✅ | ✅ overwrite | ✅ | — | ✅ |
 | HABITS | ✅ | — | ✅ | — | ✅ | — | — |
-| SKILLS | ✅ | — | ✅ | ✅ (overwrite) | ✅ | — | ✅ |
+| SKILLS | ✅ | — | ✅ | ✅ overwrite | ✅ | — | ✅ |
 | VALUES | ✅ | — | ✅ | — | ✅ | — | ✅ |
 | ID | ✅ | — | — | — | ✅ | — | ✅ |
 | SECURITY | — | — | — | — | ✅ | — | — |
@@ -113,56 +167,63 @@ Each agent role has a specific set of file access permissions. The `PermissionCh
 
 **Key constraints:**
 - **Superego** has read access to all 12 files but can only append to PROGRESS
-- **Id** has read-only access to ID, VALUES, PLAN, PROGRESS, SKILLS — no writes at all
+- **Id** has read-only access to 6 files (ID, VALUES, PLAN, PROGRESS, SKILLS, MEMORY) — no writes
 - **Ego** can overwrite PLAN and append to CONVERSATION
-- **Subconscious** can overwrite PLAN and SKILLS, and append to PROGRESS
+- **Subconscious** can overwrite PLAN, SKILLS, and MEMORY, append to PROGRESS and CONVERSATION
 
 ---
 
-## 8.4.4 — Developer Guide
+## Developer Guide
 
 ### Project Structure
 
 ```
 rook_wiggums/
-├── server/                    # Node.js + TypeScript backend
+├── server/                       # Node.js + TypeScript backend
 │   ├── src/
-│   │   ├── agents/            # Agent roles, permissions, Claude integration
-│   │   │   ├── claude/        # ClaudeSessionLauncher, prompt builder
-│   │   │   ├── permissions.ts # PermissionChecker
-│   │   │   ├── roles.ts       # AgentRole enum
-│   │   │   └── ego.ts, subconscious.ts, superego.ts, id.ts
-│   │   ├── evaluation/        # Heuristic analyzers
-│   │   │   ├── DriftAnalyzer.ts
-│   │   │   ├── ConsistencyChecker.ts
-│   │   │   ├── SecurityAnalyzer.ts
-│   │   │   ├── PlanQualityEvaluator.ts
-│   │   │   ├── ReasoningValidator.ts
-│   │   │   ├── HealthCheck.ts
-│   │   │   └── GovernanceReportStore.ts
-│   │   ├── loop/              # Runtime loop and execution engine
-│   │   │   ├── LoopOrchestrator.ts
-│   │   │   ├── LoopHttpServer.ts
-│   │   │   ├── LoopWebSocketServer.ts
-│   │   │   ├── IdleHandler.ts
-│   │   │   └── types.ts
-│   │   ├── substrate/         # File-based memory system
-│   │   │   ├── io/            # FileReader, OverwriteWriter, AppendOnlyWriter, FileLock
-│   │   │   ├── abstractions/  # IFileSystem, IClock, IProcessRunner interfaces
-│   │   │   ├── types.ts       # SubstrateFileType, WriteMode enums
-│   │   │   └── config.ts      # SubstrateConfig path resolver
-│   │   ├── startup.ts         # initializeSubstrate() + startServer()
-│   │   └── index.ts           # Entry point
-│   └── tests/                 # Jest test suites (344 tests)
-├── client/                    # React + Vite frontend
+│   │   ├── agents/
+│   │   │   ├── claude/           # ClaudeSessionLauncher, NodeProcessRunner, StreamJsonParser
+│   │   │   ├── parsers/          # PlanParser, extractJson
+│   │   │   ├── prompts/          # PromptBuilder, templates
+│   │   │   ├── roles/            # Ego, Subconscious, Superego, Id
+│   │   │   └── permissions.ts    # PermissionChecker with role→file matrix
+│   │   ├── evaluation/           # Heuristic analyzers
+│   │   │   ├── DriftAnalyzer, ConsistencyChecker, SecurityAnalyzer
+│   │   │   ├── PlanQualityEvaluator, ReasoningValidator, HealthCheck
+│   │   │   └── GovernanceReportStore
+│   │   ├── loop/                 # Runtime engine
+│   │   │   ├── LoopOrchestrator  # Cycle runner, dispatches agents
+│   │   │   ├── LoopHttpServer    # REST API endpoints
+│   │   │   ├── LoopWebSocketServer # Live event broadcasting
+│   │   │   ├── IdleHandler       # Idle detection → Id activation pipeline
+│   │   │   ├── createApplication # Dependency wiring factory
+│   │   │   └── types             # LoopState, CycleResult, LoopEvent
+│   │   ├── substrate/
+│   │   │   ├── io/               # FileReader, OverwriteWriter, AppendOnlyWriter, FileLock
+│   │   │   ├── abstractions/     # IFileSystem, IClock, InMemoryFileSystem, FixedClock
+│   │   │   ├── initialization/   # SubstrateInitializer, SubstrateBackup
+│   │   │   ├── templates/        # Initial content templates for all 12 files
+│   │   │   ├── validation/       # Validators for substrate file structure
+│   │   │   ├── types.ts          # SubstrateFileType, WriteMode enums
+│   │   │   └── config.ts         # SubstrateConfig path resolver
+│   │   ├── backup.ts             # createBackup, restoreBackup, findLatestBackup
+│   │   ├── transfer.ts           # rsync-based transfer with SSH identity support
+│   │   ├── cli.ts                # CLI arg parser + main() entry point
+│   │   ├── config.ts             # RookConfig, resolveConfig (XDG-compliant)
+│   │   ├── paths.ts              # getAppPaths (XDG on Linux, ~/Library on macOS)
+│   │   ├── init.ts               # initWorkspace (creates dirs, config, substrate)
+│   │   ├── startup.ts            # startServer (wires and launches everything)
+│   │   ├── logging.ts            # ILogger, FileLogger (500KB rotation)
+│   │   └── index.ts              # Pure exports (no side effects)
+│   └── tests/                    # Jest test suites (488 tests, 54 suites)
+├── client/                       # React + Vite frontend
 │   ├── src/
-│   │   ├── components/        # 11 React components
-│   │   ├── hooks/             # useWebSocket, useApi, useNotifications
-│   │   ├── parsers/           # planParser, progressParser
-│   │   ├── App.tsx            # Main app layout
-│   │   └── App.css            # Dark theme styles
-│   └── tests/                 # Vitest test suites (38 tests)
-└── package.json               # Workspace root
+│   │   ├── components/           # 11 React components
+│   │   ├── hooks/                # useWebSocket, useApi, useNotifications
+│   │   ├── parsers/              # planParser, progressParser
+│   │   ├── App.tsx + App.css     # Main app layout, dark theme
+│   └── tests/                    # Vitest + happy-dom (45 tests)
+└── package.json                  # Workspace root
 ```
 
 ### Dependency Injection Pattern
@@ -170,15 +231,15 @@ rook_wiggums/
 All I/O is abstracted behind interfaces for testability:
 
 ```typescript
-// Production implementations
+// Production
 import { NodeFileSystem } from "./substrate/abstractions/NodeFileSystem";
-import { RealClock } from "./substrate/abstractions/RealClock";
-import { ChildProcessRunner } from "./substrate/abstractions/ChildProcessRunner";
+import { SystemClock } from "./substrate/abstractions/SystemClock";
+import { NodeProcessRunner } from "./agents/claude/NodeProcessRunner";
 
 // Test doubles
 import { InMemoryFileSystem } from "./substrate/abstractions/InMemoryFileSystem";
 import { FixedClock } from "./substrate/abstractions/FixedClock";
-import { InMemoryProcessRunner } from "./substrate/abstractions/InMemoryProcessRunner";
+import { InMemoryProcessRunner } from "./agents/claude/InMemoryProcessRunner";
 ```
 
 All timestamps are injected via `IClock` so tests can exercise with known values.
@@ -188,99 +249,130 @@ All timestamps are injected via `IClock` so tests can exercise with known values
 1. Add the type to `SubstrateFileType` enum in `server/src/substrate/types.ts`
 2. Add a spec to `SUBSTRATE_FILE_SPECS` with `fileName`, `writeMode`, and `required`
 3. Update `PermissionChecker` in `server/src/agents/permissions.ts` with role access
-4. Add an initial template in `SubstrateInitializer` if needed
+4. Add an initial template in `server/src/substrate/templates/templates.ts`
 
 ### Adding a New Agent Role
 
 1. Add the role to `AgentRole` enum in `server/src/agents/roles.ts`
 2. Define file permissions in `server/src/agents/permissions.ts`
-3. Create the agent class with `IFileSystem`, `IClock`, and reader/writer dependencies
-4. Wire into `createApplication()` factory in `server/src/index.ts`
+3. Create the agent class in `server/src/agents/roles/` with reader/writer dependencies
+4. Wire into `createApplication()` factory in `server/src/loop/createApplication.ts`
 5. Add tests using `InMemoryFileSystem` and `FixedClock`
 
 ---
 
-## 8.4.5 — User Guide
-
-### Starting the System
-
-1. Run `npm run server:dev` — initializes substrate files and starts the HTTP/WebSocket server on port 3000
-2. Run `npm run client:dev` — starts the Vite dev server (proxies API calls to port 3000)
-3. Open `http://localhost:5173` in your browser
-
-### Using the Frontend
-
-The dashboard is a single-page grid layout with five panels:
-
-- **System Status** (top) — Shows loop state (STOPPED, RUNNING, PAUSED), cycle metrics, health indicators, and loop controls (Start/Pause/Resume/Stop)
-- **Plan View** (left) — Hierarchical task tree parsed from PLAN.md with checkboxes for complete/pending status
-- **Progress Log** (right) — Visual timeline of execution events, color-coded by agent role (cyan=EGO, green=SUBCONSCIOUS, gold=SUPEREGO, magenta=ID)
-- **Conversation** (below) — Message transcript with input field for sending messages to the system
-- **Substrate Viewer** (bottom) — Dropdown to inspect any of the 12 substrate files in raw markdown format
-
-Toast notifications appear in the bottom-right for important events (audit completions, state changes, errors).
-
-### Sending Messages
-
-Type a message in the conversation input and press Enter or click Send. The message is posted to the system via `POST /api/conversation/send` and appended to CONVERSATION.md.
-
-### Monitoring Health
-
-The health indicators panel runs all 5 evaluation analyzers:
-
-- **Drift** — Score (0–1) measuring how far the system has drifted from its charter
-- **Consistency** — Number of cross-file contradictions detected
-- **Security** — Whether security policies are being followed
-- **Plan Quality** — Score (0–1) based on task structure, pending items, and goal clarity
-- **Reasoning** — Whether current activity aligns with MEMORY and SKILLS
-
-### Requesting an Audit
-
-Click the "Audit" button in Loop Controls to trigger a Superego audit on the next cycle. The Superego reads all 12 substrate files and evaluates drift, consistency, and security compliance.
-
----
-
-## 8.4.6 — Claude Code Integration
+## Claude Code Integration
 
 ### ClaudeSessionLauncher
 
 The `ClaudeSessionLauncher` wraps the Claude CLI to execute agent prompts:
 
 ```typescript
-const launcher = new ClaudeSessionLauncher(processRunner, clock);
+const launcher = new ClaudeSessionLauncher(processRunner, clock, "sonnet");
 
 const result = await launcher.launch({
   systemPrompt: "You are the Ego agent...",
-  message: "Read the PLAN and select the next task",
+  message: "@/substrate/PLAN.md\n@/substrate/MEMORY.md\n\nAnalyze and decide next action",
 }, {
-  maxRetries: 1,
-  retryDelayMs: 1000,
+  onLogEntry: (entry) => console.log(entry),
+  cwd: "/path/to/substrate",
 });
-
-// result: { rawOutput, exitCode, durationMs, success, error? }
 ```
 
 Under the hood, it runs:
 ```bash
-claude --print --output-format text --system-prompt "<prompt>" "<message>"
+claude --print --verbose --dangerously-skip-permissions \
+  --model sonnet --output-format stream-json \
+  --system-prompt "<prompt>" "<message>"
 ```
 
-### Prompt Builder
+### Prompt Builder & Context References
 
-Each agent role has a prompt builder that constructs system prompts from substrate file contents. The Ego prompt, for example, includes PLAN.md, MEMORY.md, and HABITS.md contents so Claude can make informed decisions about the next action.
-
-### Process Runner Abstraction
-
-The `IProcessRunner` interface wraps `child_process.spawn` so tests can use `InMemoryProcessRunner` to simulate Claude CLI responses:
+Prompts are built synchronously with `buildSystemPrompt(role)` — no file I/O at build time. Substrate file contents are included via Claude Code's `@`-file reference syntax:
 
 ```typescript
-const runner = new InMemoryProcessRunner();
-runner.setResponse("claude", { stdout: "Task completed", exitCode: 0 });
+const systemPrompt = promptBuilder.buildSystemPrompt(AgentRole.EGO);
+const contextRefs = promptBuilder.getContextReferences(AgentRole.EGO);
+// contextRefs = "@/substrate/PLAN.md\n@/substrate/MEMORY.md\n..."
+
+const result = await launcher.launch({
+  systemPrompt,
+  message: `${contextRefs}\n\nAnalyze the current context.`,
+});
 ```
+
+This lets Claude Code read the files directly rather than embedding their contents in the prompt.
+
+### Process Output Streaming
+
+Claude output is parsed as stream-json (one JSON object per line). The `StreamJsonParser` converts stdout chunks into typed `ProcessLogEntry` objects:
+
+- `thinking` — Claude's chain-of-thought
+- `text` — Natural language response
+- `tool_use` — Tool invocation
+- `tool_result` — Tool output
+- `status` — Session status changes
+
+These are broadcast as `process_output` WebSocket events, color-coded by agent role in the frontend.
+
+### Dual-Timer Process Management
+
+The `NodeProcessRunner` uses two timers to manage Claude subprocesses:
+
+- **Hard ceiling**: 30 minutes — absolute maximum runtime
+- **Idle watchdog**: 2 minutes — kills the process if no stdout/stderr output for 2 minutes
+
+The idle timer resets on any output, so long-running sessions that are actively working continue uninterrupted.
 
 ---
 
-## 8.4.7 — Architecture Diagram
+## Backup, Restore & Transfer
+
+### Backup
+
+Creates a portable tar.gz snapshot of the substrate directory using relative paths:
+
+```bash
+npm run backup                          # To configured backupPath
+npm run backup -- --output /mnt/usb     # To specific directory
+```
+
+Archives use relative paths (`-C substratePath .`) so they can be restored to any location.
+
+### Restore
+
+Extracts a backup archive into the current config's substrate directory:
+
+```bash
+npm run restore                         # Auto-finds latest in backupPath
+npm run restore -- --input /path/to/backup.tar.gz  # Specific archive
+```
+
+### Transfer
+
+Uses rsync for live sync between agent spaces, including remote hosts:
+
+```bash
+# Local transfer
+npm run transfer -- --source /space-a/substrate --dest /space-b/substrate
+
+# Remote (source defaults to current config's substratePath)
+npm run transfer -- --dest rook@34.63.182.98
+
+# Remote with SSH identity
+npm run transfer -- -i ~/.ssh/google_compute_engine --dest rook@34.63.182.98
+
+# Remote with explicit path
+npm run transfer -- -i ~/.ssh/key --dest rook@host:/custom/path
+```
+
+When `--dest` is `user@host` without a path, it defaults to `.local/share/rook-wiggums/substrate` on the remote. The `--source` defaults to the current config's `substratePath`.
+
+Transfer is additive (no `--delete`) — it adds/updates files without removing extras from the destination.
+
+---
+
+## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────┐
@@ -288,8 +380,8 @@ runner.setResponse("claude", { stdout: "Task completed", exitCode: 0 });
 │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌────────┐ │
 │  │SystemStat│ │ PlanView │ │ Progress │ │Convers.│ │
 │  │  Health  │ │ TaskTree │ │ Timeline │ │ Input  │ │
+│  │ProcessLog│ │          │ │          │ │        │ │
 │  └────┬─────┘ └────┬─────┘ └────┬─────┘ └───┬────┘ │
-│       │             │            │            │      │
 │       └─────────────┴────────────┴────────────┘      │
 │                 REST API  │  WebSocket               │
 └─────────────────────────┬─┬──────────────────────────┘
@@ -301,8 +393,8 @@ runner.setResponse("claude", { stdout: "Task completed", exitCode: 0 });
 │  │              LoopOrchestrator                   │   │
 │  │                                                 │   │
 │  │  ┌───────┐  ┌──────────────┐  ┌───────────┐   │   │
-│  │  │  EGO  │  │ SUBCONSCIOUS │  │  SUPEREGO  │   │   │
-│  │  │ plan  │  │   execute    │  │   audit    │   │   │
+│  │  │  EGO  │  │ SUBCONSCIOUS │  │ SUPEREGO  │   │   │
+│  │  │ plan  │  │   execute    │  │   audit   │   │   │
 │  │  └───┬───┘  └──────┬───────┘  └─────┬─────┘   │   │
 │  │      │              │                │          │   │
 │  │  ┌───┴──────────────┴────────────────┴───┐     │   │
@@ -324,6 +416,11 @@ runner.setResponse("claude", { stdout: "Task completed", exitCode: 0 });
 │  │  DriftAnalyzer │ ConsistencyChecker │ Security  │   │
 │  │  PlanQuality   │ ReasoningValidator │ Health    │   │
 │  └────────────────────────────────────────────────┘   │
+│                                                       │
+│  ┌────────────────────────────────────────────────┐   │
+│  │             FileLogger (debug.log)              │   │
+│  │  Append mode │ 500KB rotation │ Session headers │   │
+│  └────────────────────────────────────────────────┘   │
 └───────────────────────────┬───────────────────────────┘
                             │
 ┌───────────────────────────┴───────────────────────────┐
@@ -331,51 +428,70 @@ runner.setResponse("claude", { stdout: "Task completed", exitCode: 0 });
 │  PLAN │ PROGRESS │ CONVERSATION │ MEMORY │ HABITS     │
 │  SKILLS │ VALUES │ ID │ SECURITY │ CHARTER            │
 │  SUPEREGO │ CLAUDE                                    │
+│  memory/ │ skills/ │ habits/ │ id/ │ ...  (long-form) │
 └───────────────────────────────────────────────────────┘
 ```
 
 **Data flow:**
-1. LoopOrchestrator runs cycles: Ego reads PLAN → selects task → Subconscious executes via Claude CLI → writes results
+1. LoopOrchestrator runs cycles: Ego reads PLAN → selects task → Subconscious executes via Claude CLI → writes results to PLAN, PROGRESS, SKILLS, MEMORY
 2. IdleHandler activates when consecutive idle cycles exceed threshold → Id generates drives → Ego writes new PLAN
 3. Superego audits can be triggered manually or automatically → reads all files → writes governance report
-4. Frontend connects via WebSocket for live events and REST API for substrate reads/writes
+4. Frontend connects via WebSocket for live process_output events and REST API for substrate reads/writes
 5. Evaluation system provides health metrics by analyzing substrate files heuristically (no Claude calls)
+6. FileLogger records debug output to `debug.log` with 500KB size-based rotation
 
 ---
 
-## 8.4.8 — Troubleshooting
+## Using the Frontend
 
-### Common Issues
+The dashboard is a single-page grid layout with panels:
 
-**`SUBSTRATE_PATH does not exist`**
-- The startup process creates the substrate directory automatically. If you see validation errors, check file system permissions for the configured path.
+- **System Status** — Loop state (STOPPED/RUNNING/PAUSED), cycle metrics, health indicators, loop controls
+- **Plan View** — Hierarchical task tree parsed from PLAN.md with checkboxes
+- **Progress Log** — Visual timeline of execution events, color-coded by role (cyan=EGO, green=SUBCONSCIOUS, gold=SUPEREGO, magenta=ID)
+- **Process Log** — Live streaming of Claude's thinking, text, and tool use, color-coded by role
+- **Conversation** — Message transcript with input field for sending messages
+- **Substrate Viewer** — Dropdown to inspect any of the 12 substrate files
 
-**Port 3000 already in use**
-- Set the `PORT` environment variable: `PORT=3001 npm run server:dev`
-- Or kill the existing process: `lsof -i :3000`
+### Health Indicators
+
+The health panel runs 5 heuristic analyzers:
+
+- **Drift** — Score (0-1) measuring divergence from charter
+- **Consistency** — Number of cross-file contradictions
+- **Security** — Whether security policies are followed
+- **Plan Quality** — Score (0-1) based on task structure, pending items, goal clarity
+- **Reasoning** — Whether current activity aligns with MEMORY and SKILLS
+
+---
+
+## Troubleshooting
+
+**Substrate validation fails on startup**
+- Each substrate file must have a `# Heading` as its first line
+- Run `npm run init` to re-initialize from templates
+
+**Port already in use**
+- Set via config: `{ "port": 3001 }` in config.json
+- Or env var: `PORT=3001 npm run start`
 
 **Claude CLI not found / authentication error**
-- Ensure `claude` is installed and on your PATH: `claude --version`
-- Re-authenticate if needed: `claude auth`
+- Ensure `claude` is on PATH: `claude --version`
+- Re-authenticate if needed
 
-**WebSocket disconnects in the frontend**
-- The frontend shows "Disconnected" in the header when the WebSocket connection drops
-- Check that the backend is running on the expected port
-- The Vite dev server proxies `/ws` to `ws://localhost:3000` — ensure no firewall or proxy issues
+**Process idle timeout (killed after 2 minutes)**
+- The idle watchdog kills Claude if no output for 2 minutes
+- This usually means Claude is stuck; check `debug.log` for the last activity
+
+**WebSocket disconnects**
+- Check the backend is running on the expected port
+- Vite proxies `/ws` to `ws://localhost:3000`
 
 **Tests fail with workspace resolution errors**
-- Run tests directly from the workspace directory: `cd server && npx jest`
-- Do not use `npm test -w server` — workspace resolution can fail with some npm versions
+- Run directly: `cd server && npx jest`
+- Do not use `npm test -w server`
 
-**Jest "open handles" warning**
-- This is expected from WebSocket tests with timers. It does not indicate test failures.
-
-**Substrate file validation fails**
-- Each substrate file must have a `# Heading` as its first line
-- APPEND-mode files (PROGRESS, CONVERSATION) must exist but can be empty after the heading
-- Delete the substrate directory and restart to re-initialize from templates
-
-### API Endpoints Reference
+### API Endpoints
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -397,5 +513,5 @@ runner.setResponse("claude", { stdout: "Task completed", exitCode: 0 });
 
 - **Backend**: Node.js, TypeScript (strict, ES2022), REST API, WebSocket (`ws`)
 - **Frontend**: React 19, Vite, TypeScript
-- **Testing**: Jest + ts-jest (server, 344 tests), Vitest + happy-dom (client, 38 tests)
-- **AI**: Claude Code CLI via `IProcessRunner` abstraction
+- **Testing**: Jest + ts-jest (server, 488 tests / 54 suites), Vitest + happy-dom (client, 45 tests)
+- **AI**: Claude Code CLI via `IProcessRunner` abstraction with stream-json parsing

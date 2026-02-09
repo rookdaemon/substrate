@@ -1,4 +1,4 @@
-import { transfer, resolveRemotePath } from "../src/transfer";
+import { transfer, resolveRemotePath, resolveRemoteConfigPath, extractHost } from "../src/transfer";
 import { InMemoryProcessRunner } from "../src/agents/claude/InMemoryProcessRunner";
 
 describe("transfer", () => {
@@ -106,6 +106,20 @@ describe("transfer", () => {
     expect(calls[0].args).not.toContain("--delete");
   });
 
+  it("includes --mkpath to create destination directories", async () => {
+    const runner = new InMemoryProcessRunner();
+    runner.enqueue({ stdout: "", stderr: "", exitCode: 0 });
+
+    await transfer({
+      runner,
+      sourceSubstrate: "/space-a/substrate",
+      destSubstrate: "/space-b/substrate",
+    });
+
+    const calls = runner.getCalls();
+    expect(calls[0].args).toContain("--mkpath");
+  });
+
   it("passes SSH identity via -e flag when provided", async () => {
     const runner = new InMemoryProcessRunner();
     runner.enqueue({ stdout: "", stderr: "", exitCode: 0 });
@@ -175,5 +189,37 @@ describe("resolveRemotePath", () => {
     expect(resolveRemotePath("user@my.server.com")).toBe(
       "user@my.server.com:.local/share/rook-wiggums/substrate"
     );
+  });
+});
+
+describe("resolveRemoteConfigPath", () => {
+  it("returns null for local path", () => {
+    expect(resolveRemoteConfigPath("/local/path")).toBeNull();
+  });
+
+  it("appends default config path for user@host", () => {
+    expect(resolveRemoteConfigPath("rook@34.63.182.98")).toBe(
+      "rook@34.63.182.98:.config/rook-wiggums"
+    );
+  });
+
+  it("appends default config path even when dest has explicit substrate path", () => {
+    expect(resolveRemoteConfigPath("rook@host:/custom/substrate")).toBe(
+      "rook@host:.config/rook-wiggums"
+    );
+  });
+});
+
+describe("extractHost", () => {
+  it("returns null for local path", () => {
+    expect(extractHost("/local/path")).toBeNull();
+  });
+
+  it("extracts user@host from user@host", () => {
+    expect(extractHost("rook@34.63.182.98")).toBe("rook@34.63.182.98");
+  });
+
+  it("extracts user@host from user@host:path", () => {
+    expect(extractHost("rook@host:/custom/path")).toBe("rook@host");
   });
 });

@@ -6,7 +6,7 @@ import { resolveConfig } from "./config";
 import { initWorkspace } from "./init";
 import { startServer } from "./startup";
 import { createBackup, restoreBackup } from "./backup";
-import { transfer, resolveRemotePath } from "./transfer";
+import { transfer, resolveRemotePath, resolveRemoteConfigPath } from "./transfer";
 
 export interface ParsedArgs {
   command: "init" | "start" | "backup" | "restore" | "transfer";
@@ -109,14 +109,20 @@ async function main(): Promise<void> {
     }
     const resolvedSource = source ?? config.substratePath;
     const resolvedDest = resolveRemotePath(dest);
+    const destConfig = resolveRemoteConfigPath(dest);
     const result = await transfer({
       runner: new NodeProcessRunner(),
       sourceSubstrate: resolvedSource,
       destSubstrate: resolvedDest,
+      sourceConfig: destConfig ? appPaths.config : undefined,
+      destConfig: destConfig ?? undefined,
       identity,
     });
     if (result.success) {
       console.log(`Transfer complete: ${resolvedSource} → ${resolvedDest}`);
+      if (destConfig) {
+        console.log(`Config synced: ${appPaths.config} → ${destConfig}`);
+      }
     } else {
       console.error(`Transfer failed: ${result.error}`);
       process.exit(1);

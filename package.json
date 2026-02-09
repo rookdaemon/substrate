@@ -8,8 +8,11 @@
     "client"
   ],
   "scripts": {
-    "init": "npm run init --workspace=server",
-    "backup": "npm run backup --workspace=server",
+    "init": "tsx server/src/cli.ts init",
+    "start": "tsx server/src/cli.ts start",
+    "backup": "tsx server/src/cli.ts backup",
+    "restore": "tsx server/src/cli.ts restore",
+    "transfer": "tsx server/src/cli.ts transfer",
     "server:dev": "npm run dev --workspace=server",
     "client:dev": "npm run dev --workspace=client",
     "lint": "npm run lint --workspaces --if-present",

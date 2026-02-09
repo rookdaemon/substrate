@@ -1,6 +1,7 @@
 import type { IProcessRunner } from "./agents/claude/IProcessRunner";
 
 const DEFAULT_REMOTE_SUBSTRATE = ".local/share/rook-wiggums/substrate";
+const DEFAULT_REMOTE_CONFIG = ".config/rook-wiggums";
 
 export interface TransferOptions {
   runner: IProcessRunner;
@@ -29,8 +30,27 @@ export function resolveRemotePath(dest: string): string {
   return `${dest}:${DEFAULT_REMOTE_SUBSTRATE}`;
 }
 
+/**
+ * Extracts user@host from a remote dest, or null for local paths.
+ */
+export function extractHost(dest: string): string | null {
+  if (!dest.includes("@")) return null;
+  const colonIdx = dest.indexOf(":");
+  return colonIdx >= 0 ? dest.substring(0, colonIdx) : dest;
+}
+
+/**
+ * Returns the default remote config path for a dest, or null for local paths.
+ * Always uses the host portion — ignores any explicit path in dest.
+ */
+export function resolveRemoteConfigPath(dest: string): string | null {
+  const host = extractHost(dest);
+  if (!host) return null;
+  return `${host}:${DEFAULT_REMOTE_CONFIG}`;
+}
+
 function buildRsyncArgs(source: string, dest: string, identity?: string): string[] {
-  const args = ["-a"];
+  const args = ["-a", "--mkpath"];
   if (identity) {
     args.push("-e", `ssh -i ${identity}`);
   }
