@@ -51,9 +51,10 @@ export class Subconscious {
       }, { onLogEntry, cwd: this.workingDirectory });
 
       if (!result.success) {
+        const errorDetail = result.rawOutput || result.error || "Claude session error";
         return {
           result: "failure",
-          summary: `Task execution failed: ${result.error || "Claude session error"}`,
+          summary: `Task execution failed: ${errorDetail}`,
           progressEntry: "",
           skillUpdates: null,
           memoryUpdates: null,

@@ -23,9 +23,9 @@ export class InMemorySessionLauncher implements ISessionLauncher {
     });
   }
 
-  enqueueFailure(error: string): void {
+  enqueueFailure(error: string, rawOutput?: string): void {
     this.responses.push({
-      rawOutput: "",
+      rawOutput: rawOutput ?? "",
       exitCode: 1,
       durationMs: 0,
       success: false,

@@ -619,6 +619,41 @@ describe("LoopOrchestrator", () => {
       expect(calls.length).toBeGreaterThan(0);
       expect(calls.every(c => c === 500)).toBe(true);
     });
+
+    it("backs off until rate limit reset time when rate limited", async () => {
+      await deps.fs.writeFile("/substrate/PLAN.md", "# Plan\n\n## Tasks\n- [ ] Task A");
+      const config = defaultLoopConfig({ maxConsecutiveIdleCycles: 2 });
+      orchestrator = new LoopOrchestrator(
+        deps.ego, deps.subconscious, deps.superego, deps.id,
+        deps.appendWriter, deps.clock, timer, eventSink, config, logger
+      );
+
+      // Task A fails with rate limit message (rawOutput has the limit text)
+      deps.launcher.enqueueFailure(
+        "Claude Code process exited with code 1",
+        "You've hit your limit · resets 7pm (UTC)"
+      );
+
+      // Set clock to 6:30pm so backoff should be ~30 minutes
+      deps.clock.setNow(new Date("2026-02-09T18:30:00Z"));
+
+      // Stop after the first delay to prevent infinite loop
+      const originalDelay = timer.delay.bind(timer);
+      timer.delay = async (ms: number) => {
+        await originalDelay(ms);
+        orchestrator.stop();
+      };
+
+      orchestrator.start();
+      await orchestrator.runLoop();
+
+      // The delay should be ~30 minutes (1800000ms) for backoff to 7pm
+      const calls = timer.getCalls();
+      expect(calls[0]).toBe(1800000);
+
+      // Should also log the backoff
+      expect(logger.getEntries().some(e => e.includes("rate limited"))).toBe(true);
+    });
   });
 
   describe("runLoop with IdleHandler", () => {

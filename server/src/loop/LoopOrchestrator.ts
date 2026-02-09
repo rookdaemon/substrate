@@ -20,6 +20,7 @@ import {
 import { SessionManager, SessionConfig } from "../session/SessionManager";
 import { TickPromptBuilder } from "../session/TickPromptBuilder";
 import { SdkSessionFactory } from "../session/ISdkSession";
+import { parseRateLimitReset } from "./rateLimitParser";
 
 export class LoopOrchestrator {
   private state: LoopState = LoopState.STOPPED;
@@ -232,7 +233,7 @@ export class LoopOrchestrator {
   async runLoop(): Promise<void> {
     this.logger.debug("runLoop() entered");
     while (this.state === LoopState.RUNNING) {
-      await this.runOneCycle();
+      const cycleResult = await this.runOneCycle();
 
       if (this.metrics.consecutiveIdleCycles >= this.config.maxConsecutiveIdleCycles) {
         if (this.idleHandler) {
@@ -259,8 +260,21 @@ export class LoopOrchestrator {
         break;
       }
 
-      this.logger.debug(`runLoop: delaying ${this.config.cycleDelayMs}ms before next cycle`);
-      await this.timer.delay(this.config.cycleDelayMs);
+      // Check for rate limit backoff
+      const rateLimitReset = parseRateLimitReset(cycleResult.summary, this.clock.now());
+      if (rateLimitReset) {
+        const waitMs = rateLimitReset.getTime() - this.clock.now().getTime();
+        this.logger.debug(`runLoop: rate limited — backing off ${waitMs}ms until ${rateLimitReset.toISOString()}`);
+        this.eventSink.emit({
+          type: "idle",
+          timestamp: this.clock.now().toISOString(),
+          data: { rateLimitUntil: rateLimitReset.toISOString(), waitMs },
+        });
+        await this.timer.delay(waitMs);
+      } else {
+        this.logger.debug(`runLoop: delaying ${this.config.cycleDelayMs}ms before next cycle`);
+        await this.timer.delay(this.config.cycleDelayMs);
+      }
     }
     this.logger.debug("runLoop() exited");
   }
