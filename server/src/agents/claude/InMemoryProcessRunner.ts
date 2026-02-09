@@ -28,6 +28,9 @@ export class InMemoryProcessRunner implements IProcessRunner {
     if (!response) {
       throw new Error("No more canned responses in InMemoryProcessRunner");
     }
+    if (options?.onStdout && response.stdout) {
+      options.onStdout(response.stdout);
+    }
     return response;
   }
 

@@ -9,6 +9,7 @@ import { FileLock } from "../../../src/substrate/io/FileLock";
 import { SubstrateConfig } from "../../../src/substrate/config";
 import { InMemoryFileSystem } from "../../../src/substrate/abstractions/InMemoryFileSystem";
 import { FixedClock } from "../../../src/substrate/abstractions/FixedClock";
+import { asStreamJson } from "../../helpers/streamJson";
 
 describe("Superego agent", () => {
   let fs: InMemoryFileSystem;
@@ -55,7 +56,7 @@ describe("Superego agent", () => {
         proposalEvaluations: [],
         summary: "Overall good shape",
       });
-      runner.enqueue({ stdout: claudeResponse, stderr: "", exitCode: 0 });
+      runner.enqueue({ stdout: asStreamJson(claudeResponse), stderr: "", exitCode: 0 });
 
       const report = await superego.audit();
       expect(report.findings).toHaveLength(2);
@@ -83,7 +84,7 @@ describe("Superego agent", () => {
         ],
         summary: "Mixed results",
       });
-      runner.enqueue({ stdout: claudeResponse, stderr: "", exitCode: 0 });
+      runner.enqueue({ stdout: asStreamJson(claudeResponse), stderr: "", exitCode: 0 });
 
       const evaluations = await superego.evaluateProposals([
         { target: "MEMORY", content: "Remember this" },

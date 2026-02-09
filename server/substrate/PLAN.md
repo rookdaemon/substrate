@@ -1,9 +1,9 @@
 # Plan
 
-## Current Goal
+## Current Goals
 
-No goal set yet. Awaiting initialization.
+- Review substrate files for consistency.
 
 ## Next Steps
 
-- Initialize agent substrate
+- Review my source code for consistency with substrate.

@@ -48,7 +48,7 @@ export function createInitialMetrics(): LoopMetrics {
 }
 
 export interface LoopEvent {
-  type: "state_changed" | "cycle_complete" | "idle" | "error" | "audit_complete" | "idle_handler" | "evaluation_requested";
+  type: "state_changed" | "cycle_complete" | "idle" | "error" | "audit_complete" | "idle_handler" | "evaluation_requested" | "process_output";
   timestamp: string;
   data: Record<string, unknown>;
 }

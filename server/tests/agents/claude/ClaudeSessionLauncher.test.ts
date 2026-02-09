@@ -1,6 +1,16 @@
 import { ClaudeSessionLauncher } from "../../../src/agents/claude/ClaudeSessionLauncher";
 import { InMemoryProcessRunner } from "../../../src/agents/claude/InMemoryProcessRunner";
 import { FixedClock } from "../../../src/substrate/abstractions/FixedClock";
+import { ProcessLogEntry } from "../../../src/agents/claude/StreamJsonParser";
+import { asStreamJson } from "../../helpers/streamJson";
+
+function makeAssistantLine(content: Array<Record<string, unknown>>): string {
+  return JSON.stringify({ type: "assistant", message: { content } });
+}
+
+function makeResultLine(result: string): string {
+  return JSON.stringify({ type: "result", subtype: "success", result, total_cost_usd: 0, duration_ms: 0 });
+}
 
 describe("ClaudeSessionLauncher", () => {
   let runner: InMemoryProcessRunner;
@@ -14,7 +24,7 @@ describe("ClaudeSessionLauncher", () => {
   });
 
   it("sends system prompt and message via claude CLI", async () => {
-    runner.enqueue({ stdout: '{"action":"idle"}', stderr: "", exitCode: 0 });
+    runner.enqueue({ stdout: asStreamJson('{"action":"idle"}'), stderr: "", exitCode: 0 });
 
     await launcher.launch({
       systemPrompt: "You are the Ego",
@@ -25,8 +35,9 @@ describe("ClaudeSessionLauncher", () => {
     expect(calls).toHaveLength(1);
     expect(calls[0].command).toBe("claude");
     expect(calls[0].args).toContain("--print");
+    expect(calls[0].args).toContain("--verbose");
     expect(calls[0].args).toContain("--output-format");
-    expect(calls[0].args).toContain("text");
+    expect(calls[0].args).toContain("stream-json");
 
     const spIdx = calls[0].args.indexOf("--system-prompt");
     expect(spIdx).toBeGreaterThanOrEqual(0);
@@ -36,8 +47,8 @@ describe("ClaudeSessionLauncher", () => {
     expect(lastArg).toBe("What should we do?");
   });
 
-  it("returns success result on exit code 0", async () => {
-    runner.enqueue({ stdout: '{"action":"idle"}', stderr: "", exitCode: 0 });
+  it("returns success result on exit code 0 with parsed text", async () => {
+    runner.enqueue({ stdout: asStreamJson('{"action":"idle"}'), stderr: "", exitCode: 0 });
 
     const result = await launcher.launch({
       systemPrompt: "sys",
@@ -82,7 +93,7 @@ describe("ClaudeSessionLauncher", () => {
   it("retries on failure up to maxRetries", async () => {
     runner.enqueue({ stdout: "", stderr: "fail1", exitCode: 1 });
     runner.enqueue({ stdout: "", stderr: "fail2", exitCode: 1 });
-    runner.enqueue({ stdout: '{"ok":true}', stderr: "", exitCode: 0 });
+    runner.enqueue({ stdout: asStreamJson('{"ok":true}'), stderr: "", exitCode: 0 });
 
     const result = await launcher.launch(
       { systemPrompt: "sys", message: "msg" },
@@ -117,5 +128,67 @@ describe("ClaudeSessionLauncher", () => {
 
     expect(result.success).toBe(false);
     expect(runner.getCalls()).toHaveLength(1);
+  });
+
+  describe("stream-json parsing", () => {
+    it("forwards parsed log entries via onLogEntry callback", async () => {
+      const streamOutput =
+        makeAssistantLine([
+          { type: "thinking", thinking: "hmm" },
+          { type: "text", text: "answer" },
+        ]) + "\n" +
+        makeResultLine("answer") + "\n";
+      runner.enqueue({ stdout: streamOutput, stderr: "", exitCode: 0 });
+
+      const logEntries: ProcessLogEntry[] = [];
+      await launcher.launch(
+        { systemPrompt: "sys", message: "msg" },
+        { onLogEntry: (entry) => logEntries.push(entry) }
+      );
+
+      expect(logEntries.some((e) => e.type === "thinking" && e.content === "hmm")).toBe(true);
+      expect(logEntries.some((e) => e.type === "text" && e.content === "answer")).toBe(true);
+      expect(logEntries.some((e) => e.type === "status")).toBe(true); // result line
+    });
+
+    it("uses result field for rawOutput", async () => {
+      const streamOutput =
+        makeAssistantLine([
+          { type: "thinking", thinking: "step1" },
+          { type: "text", text: "part1 part2" },
+        ]) + "\n" +
+        makeResultLine("part1 part2") + "\n";
+      runner.enqueue({ stdout: streamOutput, stderr: "", exitCode: 0 });
+
+      const result = await launcher.launch({
+        systemPrompt: "sys",
+        message: "msg",
+      });
+
+      expect(result.rawOutput).toBe("part1 part2");
+    });
+
+    it("works without onLogEntry callback", async () => {
+      runner.enqueue({ stdout: asStreamJson("hello"), stderr: "", exitCode: 0 });
+
+      const result = await launcher.launch({
+        systemPrompt: "sys",
+        message: "msg",
+      });
+
+      expect(result.rawOutput).toBe("hello");
+    });
+
+    it("uses onStdout to pipe chunks through parser", async () => {
+      runner.enqueue({ stdout: asStreamJson("streamed"), stderr: "", exitCode: 0 });
+
+      await launcher.launch({
+        systemPrompt: "sys",
+        message: "msg",
+      });
+
+      const calls = runner.getCalls();
+      expect(calls[0].options?.onStdout).toBeDefined();
+    });
   });
 });

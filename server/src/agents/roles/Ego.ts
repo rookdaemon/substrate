@@ -6,6 +6,7 @@ import { AppendOnlyWriter } from "../../substrate/io/AppendOnlyWriter";
 import { PermissionChecker } from "../permissions";
 import { PromptBuilder } from "../prompts/PromptBuilder";
 import { ClaudeSessionLauncher } from "../claude/ClaudeSessionLauncher";
+import { ProcessLogEntry } from "../claude/StreamJsonParser";
 import { PlanParser } from "../parsers/PlanParser";
 import { AgentRole } from "../types";
 
@@ -31,13 +32,13 @@ export class Ego {
     private readonly clock: IClock
   ) {}
 
-  async decide(): Promise<EgoDecision> {
+  async decide(onLogEntry?: (entry: ProcessLogEntry) => void): Promise<EgoDecision> {
     try {
       const systemPrompt = await this.promptBuilder.buildSystemPrompt(AgentRole.EGO);
       const result = await this.sessionLauncher.launch({
         systemPrompt,
         message: "Analyze the current context. What should we do next?",
-      });
+      }, { onLogEntry });
 
       if (!result.success) {
         return { action: "idle", reason: "Claude session error" };

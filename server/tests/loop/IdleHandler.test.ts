@@ -13,6 +13,7 @@ import { FileLock } from "../../src/substrate/io/FileLock";
 import { PermissionChecker } from "../../src/agents/permissions";
 import { PromptBuilder } from "../../src/agents/prompts/PromptBuilder";
 import { ClaudeSessionLauncher } from "../../src/agents/claude/ClaudeSessionLauncher";
+import { asStreamJson } from "../helpers/streamJson";
 
 function createTestDeps() {
   const fs = new InMemoryFileSystem();
@@ -80,24 +81,24 @@ describe("IdleHandler", () => {
   it("creates plan from approved goals", async () => {
     // Id.generateDrives returns goals
     deps.runner.enqueue({
-      stdout: JSON.stringify({
+      stdout: asStreamJson(JSON.stringify({
         goalCandidates: [
           { title: "Learn Rust", description: "Study the Rust programming language", priority: "high" },
           { title: "Write docs", description: "Document the API", priority: "medium" },
         ],
-      }),
+      })),
       stderr: "",
       exitCode: 0,
     });
 
     // Superego evaluates proposals — approves first, rejects second
     deps.runner.enqueue({
-      stdout: JSON.stringify({
+      stdout: asStreamJson(JSON.stringify({
         proposalEvaluations: [
           { approved: true, reason: "Aligned with values" },
           { approved: false, reason: "Not a priority" },
         ],
-      }),
+      })),
       stderr: "",
       exitCode: 0,
     });
@@ -115,21 +116,21 @@ describe("IdleHandler", () => {
 
   it("returns all_rejected when superego rejects all goals", async () => {
     deps.runner.enqueue({
-      stdout: JSON.stringify({
+      stdout: asStreamJson(JSON.stringify({
         goalCandidates: [
           { title: "Bad idea", description: "Do something wrong", priority: "high" },
         ],
-      }),
+      })),
       stderr: "",
       exitCode: 0,
     });
 
     deps.runner.enqueue({
-      stdout: JSON.stringify({
+      stdout: asStreamJson(JSON.stringify({
         proposalEvaluations: [
           { approved: false, reason: "Against values" },
         ],
-      }),
+      })),
       stderr: "",
       exitCode: 0,
     });
@@ -141,21 +142,21 @@ describe("IdleHandler", () => {
 
   it("logs idle handling to PROGRESS", async () => {
     deps.runner.enqueue({
-      stdout: JSON.stringify({
+      stdout: asStreamJson(JSON.stringify({
         goalCandidates: [
           { title: "Learn Rust", description: "Study Rust", priority: "high" },
         ],
-      }),
+      })),
       stderr: "",
       exitCode: 0,
     });
 
     deps.runner.enqueue({
-      stdout: JSON.stringify({
+      stdout: asStreamJson(JSON.stringify({
         proposalEvaluations: [
           { approved: true, reason: "Good idea" },
         ],
-      }),
+      })),
       stderr: "",
       exitCode: 0,
     });
@@ -168,25 +169,25 @@ describe("IdleHandler", () => {
 
   it("creates plan with multiple approved goals", async () => {
     deps.runner.enqueue({
-      stdout: JSON.stringify({
+      stdout: asStreamJson(JSON.stringify({
         goalCandidates: [
           { title: "Goal A", description: "Do A", priority: "high" },
           { title: "Goal B", description: "Do B", priority: "medium" },
           { title: "Goal C", description: "Do C", priority: "low" },
         ],
-      }),
+      })),
       stderr: "",
       exitCode: 0,
     });
 
     deps.runner.enqueue({
-      stdout: JSON.stringify({
+      stdout: asStreamJson(JSON.stringify({
         proposalEvaluations: [
           { approved: true, reason: "Good" },
           { approved: true, reason: "Good" },
           { approved: false, reason: "Bad" },
         ],
-      }),
+      })),
       stderr: "",
       exitCode: 0,
     });
@@ -211,11 +212,11 @@ describe("IdleHandler", () => {
 
   it("handles Superego.evaluateProposals error gracefully", async () => {
     deps.runner.enqueue({
-      stdout: JSON.stringify({
+      stdout: asStreamJson(JSON.stringify({
         goalCandidates: [
           { title: "Goal A", description: "Do A", priority: "high" },
         ],
-      }),
+      })),
       stderr: "",
       exitCode: 0,
     });

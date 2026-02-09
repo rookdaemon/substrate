@@ -17,6 +17,7 @@ import { FileLock } from "../../src/substrate/io/FileLock";
 import { PermissionChecker } from "../../src/agents/permissions";
 import { PromptBuilder } from "../../src/agents/prompts/PromptBuilder";
 import { ClaudeSessionLauncher } from "../../src/agents/claude/ClaudeSessionLauncher";
+import { asStreamJson } from "../helpers/streamJson";
 
 function createDeps() {
   const fs = new InMemoryFileSystem();
@@ -70,11 +71,11 @@ describe("Integration: Superego Audit", () => {
 
     // Cycle 2 will trigger audit — superego.audit() needs a Claude response
     deps.runner.enqueue({
-      stdout: JSON.stringify({
+      stdout: asStreamJson(JSON.stringify({
         findings: [{ severity: "info", message: "All is well" }],
         proposalEvaluations: [],
         summary: "System healthy",
-      }),
+      })),
       stderr: "",
       exitCode: 0,
     });
@@ -105,11 +106,11 @@ describe("Integration: Superego Audit", () => {
 
     // Prepare audit response
     deps.runner.enqueue({
-      stdout: JSON.stringify({
+      stdout: asStreamJson(JSON.stringify({
         findings: [],
         proposalEvaluations: [],
         summary: "On-demand audit clean",
-      }),
+      })),
       stderr: "",
       exitCode: 0,
     });
@@ -141,11 +142,11 @@ describe("Integration: Superego Audit", () => {
     );
 
     deps.runner.enqueue({
-      stdout: JSON.stringify({
+      stdout: asStreamJson(JSON.stringify({
         findings: [],
         proposalEvaluations: [],
         summary: "Audit complete: system in good shape",
-      }),
+      })),
       stderr: "",
       exitCode: 0,
     });

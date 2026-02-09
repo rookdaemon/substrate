@@ -4,6 +4,7 @@ import { SubstrateFileReader } from "../../substrate/io/FileReader";
 import { PermissionChecker } from "../permissions";
 import { PromptBuilder } from "../prompts/PromptBuilder";
 import { ClaudeSessionLauncher } from "../claude/ClaudeSessionLauncher";
+import { ProcessLogEntry } from "../claude/StreamJsonParser";
 import { PlanParser } from "../parsers/PlanParser";
 import { AgentRole } from "../types";
 
@@ -43,13 +44,13 @@ export class Id {
     return { idle: false, reason: "Plan has pending tasks" };
   }
 
-  async generateDrives(): Promise<GoalCandidate[]> {
+  async generateDrives(onLogEntry?: (entry: ProcessLogEntry) => void): Promise<GoalCandidate[]> {
     try {
       const systemPrompt = await this.promptBuilder.buildSystemPrompt(AgentRole.ID);
       const result = await this.sessionLauncher.launch({
         systemPrompt,
         message: "Analyze the current state. Are we idle? What goals should we pursue?",
-      });
+      }, { onLogEntry });
 
       if (!result.success) return [];
 

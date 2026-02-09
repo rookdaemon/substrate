@@ -6,6 +6,7 @@ import { AppendOnlyWriter } from "../../substrate/io/AppendOnlyWriter";
 import { PermissionChecker } from "../permissions";
 import { PromptBuilder } from "../prompts/PromptBuilder";
 import { ClaudeSessionLauncher } from "../claude/ClaudeSessionLauncher";
+import { ProcessLogEntry } from "../claude/StreamJsonParser";
 import { PlanParser } from "../parsers/PlanParser";
 import { AgentRole } from "../types";
 
@@ -38,13 +39,13 @@ export class Subconscious {
     private readonly clock: IClock
   ) {}
 
-  async execute(task: TaskAssignment): Promise<TaskResult> {
+  async execute(task: TaskAssignment, onLogEntry?: (entry: ProcessLogEntry) => void): Promise<TaskResult> {
     try {
       const systemPrompt = await this.promptBuilder.buildSystemPrompt(AgentRole.SUBCONSCIOUS);
       const result = await this.sessionLauncher.launch({
         systemPrompt,
         message: `Execute this task:\nID: ${task.taskId}\nDescription: ${task.description}`,
-      });
+      }, { onLogEntry });
 
       if (!result.success) {
         return {

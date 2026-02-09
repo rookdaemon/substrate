@@ -2,6 +2,7 @@ import { Ego } from "../agents/roles/Ego";
 import { Subconscious } from "../agents/roles/Subconscious";
 import { Superego } from "../agents/roles/Superego";
 import { Id } from "../agents/roles/Id";
+import { ProcessLogEntry } from "../agents/claude/StreamJsonParser";
 import { AppendOnlyWriter } from "../substrate/io/AppendOnlyWriter";
 import { IClock } from "../substrate/abstractions/IClock";
 import { ITimer } from "./ITimer";
@@ -108,7 +109,7 @@ export class LoopOrchestrator {
       const taskResult = await this.subconscious.execute({
         taskId: dispatch.taskId,
         description: dispatch.description,
-      });
+      }, this.createLogCallback("SUBCONSCIOUS"));
 
       const success = taskResult.result === "success";
 
@@ -130,7 +131,7 @@ export class LoopOrchestrator {
       }
 
       if (taskResult.proposals.length > 0) {
-        await this.superego.evaluateProposals(taskResult.proposals);
+        await this.superego.evaluateProposals(taskResult.proposals, this.createLogCallback("SUPEREGO"));
       }
 
       result = {
@@ -163,7 +164,7 @@ export class LoopOrchestrator {
 
       if (this.metrics.consecutiveIdleCycles >= this.config.maxConsecutiveIdleCycles) {
         if (this.idleHandler) {
-          const result = await this.idleHandler.handleIdle();
+          const result = await this.idleHandler.handleIdle((role) => this.createLogCallback(role));
           this.eventSink.emit({
             type: "idle_handler",
             timestamp: this.clock.now().toISOString(),
@@ -196,10 +197,20 @@ export class LoopOrchestrator {
     });
   }
 
+  private createLogCallback(role: string): (entry: ProcessLogEntry) => void {
+    return (entry) => {
+      this.eventSink.emit({
+        type: "process_output",
+        timestamp: this.clock.now().toISOString(),
+        data: { role, cycleNumber: this.cycleNumber, entry },
+      });
+    };
+  }
+
   private async runAudit(): Promise<void> {
     this.metrics.superegoAudits++;
     try {
-      const report = await this.superego.audit();
+      const report = await this.superego.audit(this.createLogCallback("SUPEREGO"));
       await this.superego.logAudit(report.summary);
     } catch {
       // Audit failures are non-fatal

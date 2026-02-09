@@ -1,6 +1,7 @@
 import { Id } from "../agents/roles/Id";
 import { Superego } from "../agents/roles/Superego";
 import { Ego } from "../agents/roles/Ego";
+import { ProcessLogEntry } from "../agents/claude/StreamJsonParser";
 import { AppendOnlyWriter } from "../substrate/io/AppendOnlyWriter";
 import { SubstrateFileType } from "../substrate/types";
 import { IClock } from "../substrate/abstractions/IClock";
@@ -19,7 +20,7 @@ export class IdleHandler {
     private readonly clock: IClock
   ) {}
 
-  async handleIdle(): Promise<IdleHandlerResult> {
+  async handleIdle(createLogCallback?: (role: string) => (entry: ProcessLogEntry) => void): Promise<IdleHandlerResult> {
     // Step 1: Confirm idle via Id
     const detection = await this.id.detectIdle();
     if (!detection.idle) {
@@ -27,7 +28,7 @@ export class IdleHandler {
     }
 
     // Step 2: Generate goal candidates
-    const candidates = await this.id.generateDrives();
+    const candidates = await this.id.generateDrives(createLogCallback?.("ID"));
     if (candidates.length === 0) {
       return { action: "no_goals" };
     }
@@ -44,7 +45,7 @@ export class IdleHandler {
       content: `${c.title}: ${c.description}`,
     }));
 
-    const evaluations = await this.superego.evaluateProposals(proposals);
+    const evaluations = await this.superego.evaluateProposals(proposals, createLogCallback?.("SUPEREGO"));
 
     // Step 5: Filter to approved goals
     const approved = candidates.filter((_, i) => evaluations[i]?.approved);

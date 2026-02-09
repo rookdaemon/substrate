@@ -11,6 +11,8 @@ import { SubstrateConfig } from "../../../src/substrate/config";
 import { InMemoryFileSystem } from "../../../src/substrate/abstractions/InMemoryFileSystem";
 import { FixedClock } from "../../../src/substrate/abstractions/FixedClock";
 import { AgentRole } from "../../../src/agents/types";
+import { ProcessLogEntry } from "../../../src/agents/claude/StreamJsonParser";
+import { asStreamJson } from "../../helpers/streamJson";
 
 describe("Ego agent", () => {
   let fs: InMemoryFileSystem;
@@ -57,7 +59,7 @@ describe("Ego agent", () => {
         taskId: "task-1",
         description: "Implement task A",
       });
-      runner.enqueue({ stdout: claudeResponse, stderr: "", exitCode: 0 });
+      runner.enqueue({ stdout: asStreamJson(claudeResponse), stderr: "", exitCode: 0 });
 
       const decision = await ego.decide();
       expect(decision.action).toBe("dispatch");
@@ -71,10 +73,36 @@ describe("Ego agent", () => {
     });
 
     it("returns idle decision on invalid JSON", async () => {
-      runner.enqueue({ stdout: "not json", stderr: "", exitCode: 0 });
+      runner.enqueue({ stdout: asStreamJson("not json"), stderr: "", exitCode: 0 });
 
       const decision = await ego.decide();
       expect(decision.action).toBe("idle");
+    });
+
+    it("forwards onLogEntry callback to session launcher", async () => {
+      const assistantLine = JSON.stringify({
+        type: "assistant",
+        message: {
+          content: [
+            { type: "thinking", thinking: "analyzing" },
+            { type: "text", text: '{"action":"idle"}' },
+          ],
+        },
+      });
+      const resultLine = JSON.stringify({
+        type: "result",
+        subtype: "success",
+        result: '{"action":"idle"}',
+        total_cost_usd: 0,
+        duration_ms: 0,
+      });
+      runner.enqueue({ stdout: `${assistantLine}\n${resultLine}\n`, stderr: "", exitCode: 0 });
+
+      const logEntries: ProcessLogEntry[] = [];
+      await ego.decide((entry) => logEntries.push(entry));
+
+      expect(logEntries.length).toBeGreaterThan(0);
+      expect(logEntries[0].type).toBe("thinking");
     });
   });
 

@@ -10,6 +10,7 @@ import { FileLock } from "../../../src/substrate/io/FileLock";
 import { SubstrateConfig } from "../../../src/substrate/config";
 import { InMemoryFileSystem } from "../../../src/substrate/abstractions/InMemoryFileSystem";
 import { FixedClock } from "../../../src/substrate/abstractions/FixedClock";
+import { asStreamJson } from "../../helpers/streamJson";
 
 describe("Subconscious agent", () => {
   let fs: InMemoryFileSystem;
@@ -58,7 +59,7 @@ describe("Subconscious agent", () => {
         skillUpdates: null,
         proposals: [],
       });
-      runner.enqueue({ stdout: claudeResponse, stderr: "", exitCode: 0 });
+      runner.enqueue({ stdout: asStreamJson(claudeResponse), stderr: "", exitCode: 0 });
 
       const result = await subconscious.execute({
         taskId: "task-1",
@@ -91,7 +92,7 @@ describe("Subconscious agent", () => {
           { target: "MEMORY", content: "Learned something new" },
         ],
       });
-      runner.enqueue({ stdout: claudeResponse, stderr: "", exitCode: 0 });
+      runner.enqueue({ stdout: asStreamJson(claudeResponse), stderr: "", exitCode: 0 });
 
       const result = await subconscious.execute({
         taskId: "task-1",

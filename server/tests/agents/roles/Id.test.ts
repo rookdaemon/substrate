@@ -7,6 +7,7 @@ import { SubstrateFileReader } from "../../../src/substrate/io/FileReader";
 import { SubstrateConfig } from "../../../src/substrate/config";
 import { InMemoryFileSystem } from "../../../src/substrate/abstractions/InMemoryFileSystem";
 import { FixedClock } from "../../../src/substrate/abstractions/FixedClock";
+import { asStreamJson } from "../../helpers/streamJson";
 
 describe("Id agent", () => {
   let fs: InMemoryFileSystem;
@@ -72,7 +73,7 @@ describe("Id agent", () => {
           { title: "Write docs", description: "Document the system", priority: "medium" },
         ],
       });
-      runner.enqueue({ stdout: claudeResponse, stderr: "", exitCode: 0 });
+      runner.enqueue({ stdout: asStreamJson(claudeResponse), stderr: "", exitCode: 0 });
 
       const drives = await id.generateDrives();
       expect(drives).toHaveLength(2);
@@ -89,7 +90,7 @@ describe("Id agent", () => {
     });
 
     it("returns empty array when Claude returns invalid JSON", async () => {
-      runner.enqueue({ stdout: "not json at all", stderr: "", exitCode: 0 });
+      runner.enqueue({ stdout: asStreamJson("not json at all"), stderr: "", exitCode: 0 });
 
       const drives = await id.generateDrives();
       expect(drives).toEqual([]);

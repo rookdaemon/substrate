@@ -1,5 +1,6 @@
 import { IClock } from "../../substrate/abstractions/IClock";
 import { IProcessRunner } from "./IProcessRunner";
+import { StreamJsonParser, ProcessLogEntry } from "./StreamJsonParser";
 
 export interface ClaudeSessionRequest {
   systemPrompt: string;
@@ -17,6 +18,7 @@ export interface ClaudeSessionResult {
 export interface LaunchOptions {
   maxRetries?: number;
   retryDelayMs?: number;
+  onLogEntry?: (entry: ProcessLogEntry) => void;
 }
 
 export class ClaudeSessionLauncher {
@@ -41,21 +43,31 @@ export class ClaudeSessionLauncher {
 
       const startTime = this.clock.now();
 
+      const parser = new StreamJsonParser((entry) => {
+        options?.onLogEntry?.(entry);
+      });
+
       const args = [
         "--print",
+        "--verbose",
         "--output-format",
-        "text",
+        "stream-json",
         "--system-prompt",
         request.systemPrompt,
         request.message,
       ];
 
-      const processResult = await this.processRunner.run("claude", args);
+      const processResult = await this.processRunner.run("claude", args, {
+        onStdout: (chunk) => parser.push(chunk),
+      });
+
+      parser.flush();
+
       const endTime = this.clock.now();
       const durationMs = endTime.getTime() - startTime.getTime();
 
       lastResult = {
-        rawOutput: processResult.stdout,
+        rawOutput: parser.getTextContent(),
         exitCode: processResult.exitCode,
         durationMs,
         success: processResult.exitCode === 0,

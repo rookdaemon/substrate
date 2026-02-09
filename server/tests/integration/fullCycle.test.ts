@@ -17,6 +17,7 @@ import { FileLock } from "../../src/substrate/io/FileLock";
 import { PermissionChecker } from "../../src/agents/permissions";
 import { PromptBuilder } from "../../src/agents/prompts/PromptBuilder";
 import { ClaudeSessionLauncher } from "../../src/agents/claude/ClaudeSessionLauncher";
+import { asStreamJson } from "../helpers/streamJson";
 
 function createFullDeps() {
   const fs = new InMemoryFileSystem();
@@ -68,13 +69,13 @@ describe("Integration: Full Cycle", () => {
     );
 
     deps.runner.enqueue({
-      stdout: JSON.stringify({
+      stdout: asStreamJson(JSON.stringify({
         result: "success",
         summary: "Task A completed",
         progressEntry: "Finished Task A successfully",
         skillUpdates: null,
         proposals: [],
-      }),
+      })),
       stderr: "",
       exitCode: 0,
     });
@@ -108,26 +109,26 @@ describe("Integration: Full Cycle", () => {
 
     // Task A
     deps.runner.enqueue({
-      stdout: JSON.stringify({
+      stdout: asStreamJson(JSON.stringify({
         result: "success",
         summary: "Task A done",
         progressEntry: "Did A",
         skillUpdates: null,
         proposals: [],
-      }),
+      })),
       stderr: "",
       exitCode: 0,
     });
 
     // Task B
     deps.runner.enqueue({
-      stdout: JSON.stringify({
+      stdout: asStreamJson(JSON.stringify({
         result: "success",
         summary: "Task B done",
         progressEntry: "Did B",
         skillUpdates: null,
         proposals: [],
-      }),
+      })),
       stderr: "",
       exitCode: 0,
     });
@@ -157,13 +158,13 @@ describe("Integration: Full Cycle", () => {
     );
 
     deps.runner.enqueue({
-      stdout: JSON.stringify({
+      stdout: asStreamJson(JSON.stringify({
         result: "failure",
         summary: "Task A failed miserably",
         progressEntry: "",
         skillUpdates: null,
         proposals: [],
-      }),
+      })),
       stderr: "",
       exitCode: 0,
     });

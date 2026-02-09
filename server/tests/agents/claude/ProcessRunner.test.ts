@@ -77,6 +77,31 @@ describe("InMemoryProcessRunner", () => {
     runner.reset();
     expect(runner.getCalls()).toHaveLength(0);
   });
+
+  it("calls onStdout with stdout content before resolving", async () => {
+    runner.enqueue({ stdout: "hello world", stderr: "", exitCode: 0 });
+    const chunks: string[] = [];
+
+    await runner.run("cmd", [], { onStdout: (chunk) => chunks.push(chunk) });
+
+    expect(chunks).toEqual(["hello world"]);
+  });
+
+  it("does not call onStdout when callback is not provided", async () => {
+    runner.enqueue({ stdout: "hello", stderr: "", exitCode: 0 });
+
+    const result = await runner.run("cmd", []);
+    expect(result.stdout).toBe("hello");
+  });
+
+  it("does not call onStdout when stdout is empty", async () => {
+    runner.enqueue({ stdout: "", stderr: "", exitCode: 0 });
+    const chunks: string[] = [];
+
+    await runner.run("cmd", [], { onStdout: (chunk) => chunks.push(chunk) });
+
+    expect(chunks).toEqual([]);
+  });
 });
 
 describe("ProcessResult", () => {

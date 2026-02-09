@@ -5,6 +5,7 @@ import { AppendOnlyWriter } from "../../substrate/io/AppendOnlyWriter";
 import { PermissionChecker } from "../permissions";
 import { PromptBuilder } from "../prompts/PromptBuilder";
 import { ClaudeSessionLauncher } from "../claude/ClaudeSessionLauncher";
+import { ProcessLogEntry } from "../claude/StreamJsonParser";
 import { AgentRole } from "../types";
 
 export interface Finding {
@@ -38,13 +39,13 @@ export class Superego {
     private readonly clock: IClock
   ) {}
 
-  async audit(): Promise<GovernanceReport> {
+  async audit(onLogEntry?: (entry: ProcessLogEntry) => void): Promise<GovernanceReport> {
     try {
       const systemPrompt = await this.promptBuilder.buildSystemPrompt(AgentRole.SUPEREGO);
       const result = await this.sessionLauncher.launch({
         systemPrompt,
         message: "Perform a full audit of all substrate files. Report findings.",
-      });
+      }, { onLogEntry });
 
       if (!result.success) {
         return {
@@ -69,13 +70,13 @@ export class Superego {
     }
   }
 
-  async evaluateProposals(proposals: Proposal[]): Promise<ProposalEvaluation[]> {
+  async evaluateProposals(proposals: Proposal[], onLogEntry?: (entry: ProcessLogEntry) => void): Promise<ProposalEvaluation[]> {
     try {
       const systemPrompt = await this.promptBuilder.buildSystemPrompt(AgentRole.SUPEREGO);
       const result = await this.sessionLauncher.launch({
         systemPrompt,
         message: `Evaluate these proposals:\n${JSON.stringify(proposals, null, 2)}`,
-      });
+      }, { onLogEntry });
 
       if (!result.success) {
         return proposals.map(() => ({

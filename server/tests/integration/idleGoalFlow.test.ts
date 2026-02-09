@@ -18,6 +18,7 @@ import { FileLock } from "../../src/substrate/io/FileLock";
 import { PermissionChecker } from "../../src/agents/permissions";
 import { PromptBuilder } from "../../src/agents/prompts/PromptBuilder";
 import { ClaudeSessionLauncher } from "../../src/agents/claude/ClaudeSessionLauncher";
+import { asStreamJson } from "../helpers/streamJson";
 
 function createDeps() {
   const fs = new InMemoryFileSystem();
@@ -75,31 +76,31 @@ describe("Integration: Idle → Goal Flow", () => {
 
     // IdleHandler: Id.generateDrives → 1 goal
     deps.runner.enqueue({
-      stdout: JSON.stringify({
+      stdout: asStreamJson(JSON.stringify({
         goalCandidates: [{ title: "Explore new topic", description: "Learn something new", priority: "high" }],
-      }),
+      })),
       stderr: "",
       exitCode: 0,
     });
 
     // IdleHandler: Superego.evaluateProposals → approved
     deps.runner.enqueue({
-      stdout: JSON.stringify({
+      stdout: asStreamJson(JSON.stringify({
         proposalEvaluations: [{ approved: true, reason: "Good goal" }],
-      }),
+      })),
       stderr: "",
       exitCode: 0,
     });
 
     // After plan_created, loop dispatches the new task
     deps.runner.enqueue({
-      stdout: JSON.stringify({
+      stdout: asStreamJson(JSON.stringify({
         result: "success",
         summary: "Explored new topic",
         progressEntry: "Learned about new topic",
         skillUpdates: null,
         proposals: [],
-      }),
+      })),
       stderr: "",
       exitCode: 0,
     });

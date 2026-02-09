@@ -18,6 +18,7 @@ import { FileLock } from "../../src/substrate/io/FileLock";
 import { PermissionChecker } from "../../src/agents/permissions";
 import { PromptBuilder } from "../../src/agents/prompts/PromptBuilder";
 import { ClaudeSessionLauncher } from "../../src/agents/claude/ClaudeSessionLauncher";
+import { asStreamJson } from "../helpers/streamJson";
 
 function createTestDeps() {
   const fs = new InMemoryFileSystem();
@@ -192,13 +193,13 @@ describe("LoopOrchestrator", () => {
       // Ego's dispatchNext reads PLAN.md — plan has "Task A" pending
       // Subconscious execute needs Claude response
       deps.runner.enqueue({
-        stdout: JSON.stringify({
+        stdout: asStreamJson(JSON.stringify({
           result: "success",
           summary: "Task A done",
           progressEntry: "Completed Task A",
           skillUpdates: null,
           proposals: [],
-        }),
+        })),
         stderr: "",
         exitCode: 0,
       });
@@ -215,13 +216,13 @@ describe("LoopOrchestrator", () => {
       orchestrator.start();
 
       deps.runner.enqueue({
-        stdout: JSON.stringify({
+        stdout: asStreamJson(JSON.stringify({
           result: "success",
           summary: "Done",
           progressEntry: "Progress",
           skillUpdates: null,
           proposals: [],
-        }),
+        })),
         stderr: "",
         exitCode: 0,
       });
@@ -238,13 +239,13 @@ describe("LoopOrchestrator", () => {
       orchestrator.start();
 
       deps.runner.enqueue({
-        stdout: JSON.stringify({
+        stdout: asStreamJson(JSON.stringify({
           result: "failure",
           summary: "Task failed",
           progressEntry: "",
           skillUpdates: null,
           proposals: [],
-        }),
+        })),
         stderr: "",
         exitCode: 0,
       });
@@ -264,13 +265,13 @@ describe("LoopOrchestrator", () => {
       eventSink.reset();
 
       deps.runner.enqueue({
-        stdout: JSON.stringify({
+        stdout: asStreamJson(JSON.stringify({
           result: "success",
           summary: "Done",
           progressEntry: "Progress",
           skillUpdates: null,
           proposals: [],
-        }),
+        })),
         stderr: "",
         exitCode: 0,
       });
@@ -288,13 +289,13 @@ describe("LoopOrchestrator", () => {
       orchestrator.start();
 
       deps.runner.enqueue({
-        stdout: JSON.stringify({
+        stdout: asStreamJson(JSON.stringify({
           result: "success",
           summary: "Done",
           progressEntry: "Completed",
           skillUpdates: null,
           proposals: [],
-        }),
+        })),
         stderr: "",
         exitCode: 0,
       });
@@ -310,13 +311,13 @@ describe("LoopOrchestrator", () => {
       orchestrator.start();
 
       deps.runner.enqueue({
-        stdout: JSON.stringify({
+        stdout: asStreamJson(JSON.stringify({
           result: "success",
           summary: "Done",
           progressEntry: "Task A completed successfully",
           skillUpdates: null,
           proposals: [],
-        }),
+        })),
         stderr: "",
         exitCode: 0,
       });
@@ -331,13 +332,13 @@ describe("LoopOrchestrator", () => {
       orchestrator.start();
 
       deps.runner.enqueue({
-        stdout: JSON.stringify({
+        stdout: asStreamJson(JSON.stringify({
           result: "success",
           summary: "Done",
           progressEntry: "Progress",
           skillUpdates: "# Skills\n\nLearned TypeScript",
           proposals: [],
-        }),
+        })),
         stderr: "",
         exitCode: 0,
       });
@@ -353,22 +354,22 @@ describe("LoopOrchestrator", () => {
 
       // Subconscious returns proposals
       deps.runner.enqueue({
-        stdout: JSON.stringify({
+        stdout: asStreamJson(JSON.stringify({
           result: "success",
           summary: "Done",
           progressEntry: "Progress",
           skillUpdates: null,
           proposals: [{ target: "MEMORY", content: "Remember this" }],
-        }),
+        })),
         stderr: "",
         exitCode: 0,
       });
 
       // Superego evaluates proposals
       deps.runner.enqueue({
-        stdout: JSON.stringify({
+        stdout: asStreamJson(JSON.stringify({
           proposalEvaluations: [{ approved: true, reason: "Looks good" }],
-        }),
+        })),
         stderr: "",
         exitCode: 0,
       });
@@ -428,13 +429,13 @@ describe("LoopOrchestrator", () => {
       // Add pending task
       await deps.fs.writeFile("/substrate/PLAN.md", "# Plan\n\n## Tasks\n- [ ] New Task");
       deps.runner.enqueue({
-        stdout: JSON.stringify({
+        stdout: asStreamJson(JSON.stringify({
           result: "success",
           summary: "Done",
           progressEntry: "Progress",
           skillUpdates: null,
           proposals: [],
-        }),
+        })),
         stderr: "",
         exitCode: 0,
       });
@@ -477,11 +478,11 @@ describe("LoopOrchestrator", () => {
       // Cycle 3 — audit triggers
       // Superego audit needs Claude response
       deps.runner.enqueue({
-        stdout: JSON.stringify({
+        stdout: asStreamJson(JSON.stringify({
           findings: [],
           proposalEvaluations: [],
           summary: "All clear",
-        }),
+        })),
         stderr: "",
         exitCode: 0,
       });
@@ -521,11 +522,11 @@ describe("LoopOrchestrator", () => {
       await deps.fs.writeFile("/substrate/PLAN.md", "# Plan\n\n## Tasks\n- [x] Done");
 
       deps.runner.enqueue({
-        stdout: JSON.stringify({
+        stdout: asStreamJson(JSON.stringify({
           findings: [],
           proposalEvaluations: [],
           summary: "All clear",
-        }),
+        })),
         stderr: "",
         exitCode: 0,
       });
@@ -550,25 +551,25 @@ describe("LoopOrchestrator", () => {
 
       // Task A execution
       deps.runner.enqueue({
-        stdout: JSON.stringify({
+        stdout: asStreamJson(JSON.stringify({
           result: "success",
           summary: "Task A done",
           progressEntry: "Did A",
           skillUpdates: null,
           proposals: [],
-        }),
+        })),
         stderr: "",
         exitCode: 0,
       });
       // Task B execution
       deps.runner.enqueue({
-        stdout: JSON.stringify({
+        stdout: asStreamJson(JSON.stringify({
           result: "success",
           summary: "Task B done",
           progressEntry: "Did B",
           skillUpdates: null,
           proposals: [],
-        }),
+        })),
         stderr: "",
         exitCode: 0,
       });
@@ -657,19 +658,19 @@ describe("LoopOrchestrator", () => {
 
       // IdleHandler will: detectIdle → idle, generateDrives → 1 goal, superego → approved
       deps.runner.enqueue({
-        stdout: JSON.stringify({
+        stdout: asStreamJson(JSON.stringify({
           goalCandidates: [
             { title: "New Goal", description: "Do something new", priority: "high" },
           ],
-        }),
+        })),
         stderr: "",
         exitCode: 0,
       });
 
       deps.runner.enqueue({
-        stdout: JSON.stringify({
+        stdout: asStreamJson(JSON.stringify({
           proposalEvaluations: [{ approved: true, reason: "Good" }],
-        }),
+        })),
         stderr: "",
         exitCode: 0,
       });
@@ -677,13 +678,13 @@ describe("LoopOrchestrator", () => {
       // After plan_created, orchestrator resets idle counter and continues.
       // The new plan has a pending task, so next cycle dispatches it.
       deps.runner.enqueue({
-        stdout: JSON.stringify({
+        stdout: asStreamJson(JSON.stringify({
           result: "success",
           summary: "New Goal done",
           progressEntry: "Completed new goal",
           skillUpdates: null,
           proposals: [],
-        }),
+        })),
         stderr: "",
         exitCode: 0,
       });
@@ -735,17 +736,17 @@ describe("LoopOrchestrator", () => {
       );
 
       deps.runner.enqueue({
-        stdout: JSON.stringify({
+        stdout: asStreamJson(JSON.stringify({
           goalCandidates: [{ title: "Bad", description: "Bad idea", priority: "low" }],
-        }),
+        })),
         stderr: "",
         exitCode: 0,
       });
 
       deps.runner.enqueue({
-        stdout: JSON.stringify({
+        stdout: asStreamJson(JSON.stringify({
           proposalEvaluations: [{ approved: false, reason: "Nope" }],
-        }),
+        })),
         stderr: "",
         exitCode: 0,
       });
@@ -787,30 +788,30 @@ describe("LoopOrchestrator", () => {
       );
 
       deps.runner.enqueue({
-        stdout: JSON.stringify({
+        stdout: asStreamJson(JSON.stringify({
           goalCandidates: [{ title: "Goal", description: "Do it", priority: "high" }],
-        }),
+        })),
         stderr: "",
         exitCode: 0,
       });
 
       deps.runner.enqueue({
-        stdout: JSON.stringify({
+        stdout: asStreamJson(JSON.stringify({
           proposalEvaluations: [{ approved: true, reason: "OK" }],
-        }),
+        })),
         stderr: "",
         exitCode: 0,
       });
 
       // Dispatch the new task
       deps.runner.enqueue({
-        stdout: JSON.stringify({
+        stdout: asStreamJson(JSON.stringify({
           result: "success",
           summary: "Done",
           progressEntry: "Did it",
           skillUpdates: null,
           proposals: [],
-        }),
+        })),
         stderr: "",
         exitCode: 0,
       });
@@ -823,6 +824,79 @@ describe("LoopOrchestrator", () => {
       const idleHandlerEvent = events.find(e => e.type === "idle_handler");
       expect(idleHandlerEvent).toBeDefined();
       expect(idleHandlerEvent!.data.action).toBe("plan_created");
+    });
+  });
+
+  describe("process_output events", () => {
+    it("emits process_output events during dispatch cycle", async () => {
+      orchestrator.start();
+      eventSink.reset();
+
+      const taskJson = JSON.stringify({
+        result: "success",
+        summary: "Done",
+        progressEntry: "Progress",
+        skillUpdates: null,
+        proposals: [],
+      });
+      const assistantLine = JSON.stringify({
+        type: "assistant",
+        message: {
+          content: [
+            { type: "thinking", thinking: "analyzing task" },
+            { type: "text", text: taskJson },
+          ],
+        },
+      });
+      const resultLine = JSON.stringify({
+        type: "result",
+        subtype: "success",
+        result: taskJson,
+        total_cost_usd: 0,
+        duration_ms: 0,
+      });
+      deps.runner.enqueue({ stdout: `${assistantLine}\n${resultLine}\n`, stderr: "", exitCode: 0 });
+
+      await orchestrator.runOneCycle();
+
+      const processEvents = eventSink.getEvents().filter(e => e.type === "process_output");
+      expect(processEvents.length).toBeGreaterThan(0);
+      expect(processEvents[0].data.role).toBe("SUBCONSCIOUS");
+      expect(processEvents[0].data.cycleNumber).toBe(1);
+      expect(processEvents[0].data.entry).toBeDefined();
+    });
+
+    it("tags process_output events with the correct agent role", async () => {
+      orchestrator.start();
+      eventSink.reset();
+
+      const taskJson = JSON.stringify({
+        result: "success",
+        summary: "Done",
+        progressEntry: "Progress",
+        skillUpdates: null,
+        proposals: [],
+      });
+      const assistantLine = JSON.stringify({
+        type: "assistant",
+        message: {
+          content: [{ type: "text", text: taskJson }],
+        },
+      });
+      const resultLine = JSON.stringify({
+        type: "result",
+        subtype: "success",
+        result: taskJson,
+        total_cost_usd: 0,
+        duration_ms: 0,
+      });
+      deps.runner.enqueue({ stdout: `${assistantLine}\n${resultLine}\n`, stderr: "", exitCode: 0 });
+
+      await orchestrator.runOneCycle();
+
+      const processEvents = eventSink.getEvents().filter(e => e.type === "process_output");
+      const roles = processEvents.map(e => e.data.role);
+      expect(roles).toContain("SUBCONSCIOUS");
     });
   });
 });

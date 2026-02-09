@@ -22,7 +22,9 @@ export class NodeProcessRunner implements IProcessRunner {
       let stderr = "";
 
       child.stdout.on("data", (data: Buffer) => {
-        stdout += data.toString();
+        const chunk = data.toString();
+        stdout += chunk;
+        options?.onStdout?.(chunk);
       });
 
       child.stderr.on("data", (data: Buffer) => {

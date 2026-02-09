@@ -10,6 +10,7 @@ import { ConversationView } from "./components/ConversationView";
 import { InputField } from "./components/InputField";
 import { SubstrateViewer } from "./components/SubstrateViewer";
 import { HealthIndicators } from "./components/HealthIndicators";
+import { ProcessLog } from "./components/ProcessLog";
 import { NotificationToast } from "./components/NotificationToast";
 import "./App.css";
 
@@ -67,6 +68,10 @@ export function App() {
         <section className="panel panel-conversation">
           <ConversationView lastEvent={lastEvent} refreshKey={conversationKey} />
           <InputField onSent={() => setConversationKey((k) => k + 1)} />
+        </section>
+
+        <section className="panel panel-process-log">
+          <ProcessLog lastEvent={lastEvent} />
         </section>
 
         <section className="panel panel-substrate">
