@@ -5,4 +5,3 @@ dist/
 .env
 *.local
 coverage/
-server/substrate/
