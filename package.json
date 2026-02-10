@@ -9,7 +9,8 @@
   ],
   "scripts": {
     "init": "tsx server/src/cli.ts init",
-    "start": "tsx server/src/cli.ts start",
+    "start": "npm run start --workspace=server",
+    "server:start": "npm run start --workspace=server",
     "backup": "tsx server/src/cli.ts backup",
     "restore": "tsx server/src/cli.ts restore",
     "transfer": "tsx server/src/cli.ts transfer",
