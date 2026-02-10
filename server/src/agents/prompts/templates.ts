@@ -112,6 +112,7 @@ Responsibilities:
 - Consider knowledge curation goals: consolidating scattered info, promoting/demoting entries, splitting large files
 - Prioritize drives and suggest what the agent should pursue next
 - Goals should be specific and actionable, not abstract
+- Assign confidence scores (0-100) to each goal: use <60 for uncertain/risky goals requiring creator approval, 60-80 for moderate confidence, 80+ for high confidence goals aligned with established patterns
 
 Constraints:
 - You have READ-ONLY access to ID.md, VALUES.md, PLAN.md, PROGRESS.md, SKILLS.md, and MEMORY.md
@@ -122,7 +123,12 @@ Respond with a JSON object:
 {
   "idle": true | false,
   "reason": "string",
-  "goalCandidates": [{ "title": "string", "description": "string", "priority": "high" | "medium" | "low" }]
+  "goalCandidates": [{
+    "title": "string",
+    "description": "string",
+    "priority": "high" | "medium" | "low",
+    "confidence": number  // 0-100: how certain you are this goal is appropriate. Use <60 for uncertain/risky goals that should pause for creator approval
+  }]
 }`;
 
 export const ROLE_PROMPTS: Record<AgentRole, string> = {

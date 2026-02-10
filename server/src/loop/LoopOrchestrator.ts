@@ -1,5 +1,5 @@
 import { Ego } from "../agents/roles/Ego";
-import { Subconscious } from "../agents/roles/Subconscious";
+import { Subconscious, TaskResult } from "../agents/roles/Subconscious";
 import { Superego } from "../agents/roles/Superego";
 import { Id } from "../agents/roles/Id";
 import { ProcessLogEntry } from "../agents/claude/ISessionLauncher";
@@ -240,6 +240,11 @@ export class LoopOrchestrator {
         await this.superego.evaluateProposals(taskResult.proposals, this.createLogCallback("SUPEREGO"));
       }
 
+      // Reconsideration phase: evaluate outcome quality and need for reassessment
+      if (success || taskResult.result === "partial") {
+        await this.runReconsideration(dispatch, taskResult);
+      }
+
       result = {
         cycleNumber: this.cycleNumber,
         action: "dispatch",
@@ -287,11 +292,16 @@ export class LoopOrchestrator {
           this.eventSink.emit({
             type: "idle_handler",
             timestamp: this.clock.now().toISOString(),
-            data: { action: result.action, goalCount: result.goalCount },
+            data: { action: result.action, goalCount: result.goalCount, lowConfidenceGoals: result.lowConfidenceGoals },
           });
           if (result.action === "plan_created") {
             this.metrics.consecutiveIdleCycles = 0;
             continue;
+          }
+          if (result.action === "low_confidence_pause") {
+            this.logger.debug("runLoop: pausing — low confidence goals require creator approval");
+            this.pause();
+            break;
           }
         }
         this.logger.debug("runLoop: stopping — idle threshold exceeded with no plan created");
@@ -604,6 +614,69 @@ export class LoopOrchestrator {
         data: {
           cycleNumber: this.cycleNumber,
           success: false,
+          error: errorMsg,
+        },
+      });
+    }
+  }
+
+  private async runReconsideration(
+    dispatch: { taskId: string; description: string },
+    taskResult: TaskResult
+  ): Promise<void> {
+    this.logger.debug(`reconsideration: evaluating outcome for task "${dispatch.taskId}" (cycle ${this.cycleNumber})`);
+    try {
+      const evaluation = await this.subconscious.evaluateOutcome(
+        { taskId: dispatch.taskId, description: dispatch.description },
+        taskResult,
+        this.createLogCallback("SUBCONSCIOUS")
+      );
+
+      this.logger.debug(
+        `reconsideration: complete — outcome matches intent: ${evaluation.outcomeMatchesIntent}, ` +
+        `quality: ${evaluation.qualityScore}/100, needs reassessment: ${evaluation.needsReassessment}`
+      );
+
+      // Log reconsideration results to PROGRESS
+      const reconsiderationLog = [
+        `Reconsideration for task ${dispatch.taskId}:`,
+        `- Outcome matches intent: ${evaluation.outcomeMatchesIntent}`,
+        `- Quality score: ${evaluation.qualityScore}/100`,
+        evaluation.issuesFound.length > 0 ? `- Issues found: ${evaluation.issuesFound.join("; ")}` : null,
+        evaluation.recommendedActions.length > 0 ? `- Recommended actions: ${evaluation.recommendedActions.join("; ")}` : null,
+        `- Needs reassessment: ${evaluation.needsReassessment}`,
+      ].filter(Boolean).join("\n");
+
+      await this.subconscious.logProgress(reconsiderationLog);
+
+      this.eventSink.emit({
+        type: "reconsideration_complete",
+        timestamp: this.clock.now().toISOString(),
+        data: {
+          cycleNumber: this.cycleNumber,
+          taskId: dispatch.taskId,
+          outcomeMatchesIntent: evaluation.outcomeMatchesIntent,
+          qualityScore: evaluation.qualityScore,
+          issuesCount: evaluation.issuesFound.length,
+          recommendedActionsCount: evaluation.recommendedActions.length,
+          needsReassessment: evaluation.needsReassessment,
+        },
+      });
+
+      // If quality is very low or needs reassessment, trigger audit on next cycle
+      if (evaluation.qualityScore < 50 || evaluation.needsReassessment) {
+        this.logger.debug(`reconsideration: low quality or reassessment needed — scheduling audit`);
+        this.auditOnNextCycle = true;
+      }
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      this.logger.debug(`reconsideration: unexpected error — ${errorMsg}`);
+      this.eventSink.emit({
+        type: "reconsideration_complete",
+        timestamp: this.clock.now().toISOString(),
+        data: {
+          cycleNumber: this.cycleNumber,
+          taskId: dispatch.taskId,
           error: errorMsg,
         },
       });

@@ -21,6 +21,7 @@ import { LoopHttpServer } from "./LoopHttpServer";
 import { LoopWebSocketServer } from "./LoopWebSocketServer";
 import { defaultLoopConfig } from "./types";
 import { HealthCheck } from "../evaluation/HealthCheck";
+import { MetricsStore } from "../evaluation/MetricsStore";
 import { TickPromptBuilder } from "../session/TickPromptBuilder";
 import { createSdkSessionFactory } from "../session/SdkSessionAdapter";
 import { BackupScheduler } from "./BackupScheduler";
@@ -111,7 +112,11 @@ export async function createApplication(config: ApplicationConfig): Promise<Appl
   httpServer.setOrchestrator(orchestrator);
   httpServer.setDependencies({ reader, ego });
   httpServer.setEventSink(wsServer, clock);
-  httpServer.setHealthCheck(new HealthCheck(reader));
+
+  // Create metrics store for quantitative drift monitoring
+  const metricsStore = new MetricsStore(fs, clock, config.substratePath);
+  httpServer.setHealthCheck(new HealthCheck(reader, metricsStore));
+
   orchestrator.setLauncher(launcher);
   orchestrator.setShutdown((code) => process.exit(code));
   if (config.mode === "tick") {
@@ -140,7 +145,7 @@ export async function createApplication(config: ApplicationConfig): Promise<Appl
 
   // Health check scheduler setup
   if (config.enableHealthChecks !== false) { // Default enabled
-    const healthCheck = new HealthCheck(reader);
+    const healthCheck = new HealthCheck(reader, metricsStore);
     const healthCheckScheduler = new HealthCheckScheduler(
       healthCheck,
       clock,

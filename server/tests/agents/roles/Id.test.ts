@@ -66,8 +66,8 @@ describe("Id agent", () => {
         idle: true,
         reason: "All tasks done",
         goalCandidates: [
-          { title: "Learn TypeScript", description: "Improve coding skills", priority: "high" },
-          { title: "Write docs", description: "Document the system", priority: "medium" },
+          { title: "Learn TypeScript", description: "Improve coding skills", priority: "high", confidence: 85 },
+          { title: "Write docs", description: "Document the system", priority: "medium", confidence: 90 },
         ],
       });
       launcher.enqueueSuccess(claudeResponse);
@@ -76,7 +76,24 @@ describe("Id agent", () => {
       expect(drives).toHaveLength(2);
       expect(drives[0].title).toBe("Learn TypeScript");
       expect(drives[0].priority).toBe("high");
+      expect(drives[0].confidence).toBe(85);
       expect(drives[1].title).toBe("Write docs");
+      expect(drives[1].confidence).toBe(90);
+    });
+
+    it("parses confidence scores correctly from response", async () => {
+      const claudeResponse = JSON.stringify({
+        goalCandidates: [
+          { title: "High confidence goal", description: "Safe goal", priority: "high", confidence: 95 },
+          { title: "Low confidence goal", description: "Risky goal", priority: "low", confidence: 45 },
+        ],
+      });
+      launcher.enqueueSuccess(claudeResponse);
+
+      const drives = await id.generateDrives();
+      expect(drives).toHaveLength(2);
+      expect(drives[0].confidence).toBe(95);
+      expect(drives[1].confidence).toBe(45);
     });
 
     it("passes substratePath as cwd to session launcher", async () => {

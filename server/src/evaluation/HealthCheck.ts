@@ -4,6 +4,7 @@ import { ConsistencyChecker, ConsistencyResult } from "./ConsistencyChecker";
 import { SecurityAnalyzer, SecurityResult } from "./SecurityAnalyzer";
 import { PlanQualityEvaluator, PlanQualityResult } from "./PlanQualityEvaluator";
 import { ReasoningValidator, ReasoningResult } from "./ReasoningValidator";
+import { MetricsStore, TrendAnalysis } from "./MetricsStore";
 
 export interface HealthCheckResult {
   overall: "healthy" | "degraded" | "unhealthy";
@@ -12,6 +13,7 @@ export interface HealthCheckResult {
   security: SecurityResult;
   planQuality: PlanQualityResult;
   reasoning: ReasoningResult;
+  trends?: TrendAnalysis; // Optional trend analysis (only available after baseline is established)
 }
 
 export class HealthCheck {
@@ -20,13 +22,15 @@ export class HealthCheck {
   private readonly securityAnalyzer: SecurityAnalyzer;
   private readonly planQualityEvaluator: PlanQualityEvaluator;
   private readonly reasoningValidator: ReasoningValidator;
+  private readonly metricsStore: MetricsStore | null;
 
-  constructor(reader: SubstrateFileReader) {
+  constructor(reader: SubstrateFileReader, metricsStore: MetricsStore | null = null) {
     this.driftAnalyzer = new DriftAnalyzer(reader);
     this.consistencyChecker = new ConsistencyChecker(reader);
     this.securityAnalyzer = new SecurityAnalyzer(reader);
     this.planQualityEvaluator = new PlanQualityEvaluator(reader);
     this.reasoningValidator = new ReasoningValidator(reader);
+    this.metricsStore = metricsStore;
   }
 
   async run(): Promise<HealthCheckResult> {
@@ -40,7 +44,19 @@ export class HealthCheck {
 
     const overall = this.determineOverall(drift, consistency, security, planQuality, reasoning);
 
-    return { overall, drift, consistency, security, planQuality, reasoning };
+    // Record metrics and analyze trends if MetricsStore is available
+    let trends: TrendAnalysis | undefined;
+    if (this.metricsStore) {
+      await this.metricsStore.record({
+        driftScore: drift.score,
+        consistencyScore: consistency.score,
+        securityScore: security.score,
+      });
+
+      trends = await this.metricsStore.analyzeTrends();
+    }
+
+    return { overall, drift, consistency, security, planQuality, reasoning, trends };
   }
 
   private determineOverall(
@@ -52,8 +68,8 @@ export class HealthCheck {
   ): "healthy" | "degraded" | "unhealthy" {
     const issues =
       (drift.score > 0.5 ? 1 : 0) +
-      (consistency.inconsistencies.length > 0 ? 1 : 0) +
-      (!security.compliant ? 1 : 0) +
+      (consistency.score < 0.75 ? 1 : 0) + // Use quantitative score
+      (security.score < 0.75 ? 1 : 0) + // Use quantitative score
       (planQuality.score < 0.5 ? 1 : 0) +
       (!reasoning.valid ? 1 : 0);
 

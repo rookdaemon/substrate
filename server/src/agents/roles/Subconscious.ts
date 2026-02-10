@@ -24,6 +24,14 @@ export interface TaskResult {
   proposals: SubconsciousProposal[];
 }
 
+export interface OutcomeEvaluation {
+  outcomeMatchesIntent: boolean;
+  qualityScore: number; // 0-100
+  issuesFound: string[];
+  recommendedActions: string[];
+  needsReassessment: boolean;
+}
+
 export interface TaskAssignment {
   taskId: string;
   description: string;
@@ -109,5 +117,77 @@ export class Subconscious {
   async updateMemory(content: string): Promise<void> {
     this.checker.assertCanWrite(AgentRole.SUBCONSCIOUS, SubstrateFileType.MEMORY);
     await this.writer.write(SubstrateFileType.MEMORY, content);
+  }
+
+  async evaluateOutcome(
+    task: TaskAssignment,
+    result: TaskResult,
+    onLogEntry?: (entry: ProcessLogEntry) => void
+  ): Promise<OutcomeEvaluation> {
+    try {
+      const systemPrompt = this.promptBuilder.buildSystemPrompt(AgentRole.SUBCONSCIOUS);
+      const contextRefs = this.promptBuilder.getContextReferences(AgentRole.SUBCONSCIOUS);
+
+      const evaluationPrompt = `${contextRefs}
+
+You just completed this task:
+ID: ${task.taskId}
+Description: ${task.description}
+
+The execution result was:
+Result: ${result.result}
+Summary: ${result.summary}
+Progress Entry: ${result.progressEntry}
+
+Now perform a reconsideration evaluation. Assess:
+1. Did this task achieve its intended outcome?
+2. What is the quality of the work (0-100)?
+3. Were there any issues or gaps?
+4. What follow-up actions are recommended?
+5. Does the goal need reassessment?
+
+Respond with ONLY a JSON object:
+{
+  "outcomeMatchesIntent": boolean,
+  "qualityScore": number (0-100),
+  "issuesFound": string[],
+  "recommendedActions": string[],
+  "needsReassessment": boolean
+}`;
+
+      const evalResult = await this.sessionLauncher.launch({
+        systemPrompt,
+        message: evaluationPrompt,
+      }, { onLogEntry, cwd: this.workingDirectory });
+
+      if (!evalResult.success) {
+        // Default to conservative evaluation on failure
+        return {
+          outcomeMatchesIntent: false,
+          qualityScore: 0,
+          issuesFound: [`Evaluation failed: ${evalResult.error || "unknown error"}`],
+          recommendedActions: ["Re-attempt task", "Review error logs"],
+          needsReassessment: true,
+        };
+      }
+
+      const parsed = extractJson(evalResult.rawOutput);
+      return {
+        outcomeMatchesIntent: (parsed.outcomeMatchesIntent as boolean | undefined) ?? false,
+        qualityScore: (parsed.qualityScore as number | undefined) ?? 0,
+        issuesFound: (parsed.issuesFound as string[] | undefined) ?? [],
+        recommendedActions: (parsed.recommendedActions as string[] | undefined) ?? [],
+        needsReassessment: (parsed.needsReassessment as boolean | undefined) ?? false,
+      };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return {
+        outcomeMatchesIntent: false,
+        qualityScore: 0,
+        issuesFound: [`Evaluation error: ${msg}`],
+        recommendedActions: ["Review evaluation system", "Check logs"],
+        needsReassessment: true,
+      };
+    }
   }
 }

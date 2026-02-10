@@ -12,6 +12,7 @@ export interface GoalCandidate {
   title: string;
   description: string;
   priority: "high" | "medium" | "low";
+  confidence: number; // 0-100: how certain the ID is that this goal is appropriate
 }
 
 export interface IdleDetectionResult {
