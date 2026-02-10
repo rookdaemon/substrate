@@ -63,6 +63,43 @@ describe("ConversationView", () => {
     expect(screen.getByText("No conversation yet.")).toBeInTheDocument();
   });
 
+  it("refetches conversation on conversation_response event", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ rawMarkdown: "# Conversation\n\n" }),
+    } as Response);
+
+    const { rerender } = render(<ConversationView lastEvent={null} refreshKey={0} />);
+
+    await waitFor(() => {
+      expect(screen.getByText("No conversation yet.")).toBeInTheDocument();
+    });
+
+    // Now the ego has responded — update mock to return conversation with response
+    fetchSpy.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({
+        rawMarkdown: "# Conversation\n\n[2025-01-01T10:00:00.000Z] [EGO] Hi there!\n",
+      }),
+    } as Response);
+
+    // Simulate conversation_response event
+    rerender(
+      <ConversationView
+        lastEvent={{
+          type: "conversation_response",
+          timestamp: "2025-01-01T10:00:01.000Z",
+          data: { response: "Hi there!" },
+        }}
+        refreshKey={0}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("conversation-entries")).toHaveTextContent("Hi there!");
+    });
+  });
+
   it("shows empty state when no entries", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue({
       ok: true,

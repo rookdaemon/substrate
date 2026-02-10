@@ -42,7 +42,7 @@ export function ConversationView({ lastEvent, refreshKey }: ConversationViewProp
   useEffect(() => { fetchConversation(); }, [refreshKey]);
 
   useEffect(() => {
-    if (lastEvent?.type === "cycle_complete") {
+    if (lastEvent?.type === "cycle_complete" || lastEvent?.type === "conversation_response") {
       fetchConversation();
     }
   }, [lastEvent]);
