@@ -46,6 +46,30 @@ describe("parseRateLimitReset", () => {
     expect(parseRateLimitReset(undefined, new Date())).toBeNull();
   });
 
+  it("parses 'resets Feb 14, 10am (UTC)' with date prefix", () => {
+    const result = parseRateLimitReset(
+      "You've hit your limit · resets Feb 14, 10am (UTC)",
+      new Date("2026-02-10T06:35:00Z"),
+    );
+    expect(result).toEqual(new Date("2026-02-14T10:00:00Z"));
+  });
+
+  it("parses 'resets Mar 1, 3pm (UTC)' with date prefix", () => {
+    const result = parseRateLimitReset(
+      "You've hit your limit · resets Mar 1, 3pm (UTC)",
+      new Date("2026-02-28T20:00:00Z"),
+    );
+    expect(result).toEqual(new Date("2026-03-01T15:00:00Z"));
+  });
+
+  it("parses 'resets Jan 5, 12am (UTC)' as midnight", () => {
+    const result = parseRateLimitReset(
+      "You've hit your limit · resets Jan 5, 12am (UTC)",
+      new Date("2026-01-04T22:00:00Z"),
+    );
+    expect(result).toEqual(new Date("2026-01-05T00:00:00Z"));
+  });
+
   it("handles rate limit in longer output text", () => {
     const result = parseRateLimitReset(
       "Some prefix text\nYou've hit your limit · resets 5pm (UTC)\nSome suffix",

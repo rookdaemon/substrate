@@ -135,6 +135,7 @@ export class AgentSdkLauncher implements ISessionLauncher {
         });
 
         if (msg.type === "result") {
+          this.logger.debug(`sdk-launch: result message: ${JSON.stringify(msg)}`);
           const resultMsg = msg as SdkResultSuccess | SdkResultError;
           if (resultMsg.subtype === "success") {
             resultOutput = (resultMsg as SdkResultSuccess).result;
