@@ -32,6 +32,7 @@ export class LoopOrchestrator {
 
   // Message injection — works in both cycle and tick mode
   private launcher: { inject(message: string): void } | null = null;
+  private shutdownFn: ((exitCode: number) => void) | null = null;
 
   // Tick mode
   private tickPromptBuilder: TickPromptBuilder | null = null;
@@ -97,6 +98,24 @@ export class LoopOrchestrator {
 
   setLauncher(launcher: { inject(message: string): void }): void {
     this.launcher = launcher;
+  }
+
+  setShutdown(fn: (exitCode: number) => void): void {
+    this.shutdownFn = fn;
+  }
+
+  requestRestart(): void {
+    this.logger.debug("requestRestart() called — persisting and shutting down for rebuild");
+    this.injectMessage("Persist all changes and exit. Write any pending updates to PLAN.md, PROGRESS.md, and MEMORY.md, then finish.");
+    this.eventSink.emit({
+      type: "restart_requested",
+      timestamp: this.clock.now().toISOString(),
+      data: {},
+    });
+    this.transition(LoopState.STOPPED);
+    if (this.shutdownFn) {
+      this.shutdownFn(75);
+    }
   }
 
   nudge(): void {
@@ -368,7 +387,7 @@ export class LoopOrchestrator {
     this.logger.debug(`handleUserMessage: "${message}"`);
 
     try {
-      const response = await this.ego.respondToMessage(message, this.createLogCallback("EGO"));
+      const response = await this.ego.respondToMessage(message, this.createLogCallback("EGO", "conversation"));
 
       if (response) {
         this.eventSink.emit({
@@ -432,12 +451,12 @@ export class LoopOrchestrator {
     });
   }
 
-  private createLogCallback(role: string): (entry: ProcessLogEntry) => void {
+  private createLogCallback(role: string, source: "cycle" | "conversation" = "cycle"): (entry: ProcessLogEntry) => void {
     return (entry) => {
       this.eventSink.emit({
         type: "process_output",
         timestamp: this.clock.now().toISOString(),
-        data: { role, cycleNumber: this.cycleNumber, entry },
+        data: { role, cycleNumber: this.cycleNumber, entry, source },
       });
     };
   }

@@ -6,7 +6,7 @@
   "main": "dist/index.js",
   "scripts": {
     "init": "tsx src/cli.ts init",
-    "start": "tsx src/cli.ts start",
+    "start": "tsc && node dist/supervisor.js",
     "dev": "tsx watch src/cli.ts start",
     "build": "tsc",
     "test": "jest",

@@ -2,7 +2,7 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { describe, it, expect } from "vitest";
 import { ProcessLog } from "../../src/components/ProcessLog";
 
-function makeProcessOutputEvent(role: string, type: string, content: string) {
+function makeProcessOutputEvent(role: string, type: string, content: string, source?: string) {
   return {
     type: "process_output" as const,
     timestamp: "2025-06-15T10:00:00.000Z",
@@ -10,6 +10,7 @@ function makeProcessOutputEvent(role: string, type: string, content: string) {
       role,
       cycleNumber: 1,
       entry: { type, content },
+      ...(source && { source }),
     },
   };
 }
@@ -57,6 +58,22 @@ describe("ProcessLog", () => {
     fireEvent.click(screen.getByText("Clear"));
 
     expect(screen.getByText("No process output yet.")).toBeInTheDocument();
+  });
+
+  it("applies conversation styling when source is 'conversation'", () => {
+    const event = makeProcessOutputEvent("EGO", "text", "Hello!", "conversation");
+    render(<ProcessLog lastEvent={event} />);
+
+    const entry = screen.getByText(/Hello!/).closest(".process-log-entry");
+    expect(entry).toHaveClass("process-log-entry--conversation");
+  });
+
+  it("applies cycle styling by default", () => {
+    const event = makeProcessOutputEvent("SUBCONSCIOUS", "text", "working...", "cycle");
+    render(<ProcessLog lastEvent={event} />);
+
+    const entry = screen.getByText(/working/).closest(".process-log-entry");
+    expect(entry).not.toHaveClass("process-log-entry--conversation");
   });
 
   it("ignores non-process_output events", () => {

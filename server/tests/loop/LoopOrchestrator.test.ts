@@ -846,6 +846,30 @@ describe("LoopOrchestrator", () => {
       expect(launches[0].options?.onLogEntry).toBeDefined();
     });
 
+    it("emits process_output events with source 'cycle' during runOneCycle", async () => {
+      orchestrator.start();
+
+      deps.launcher.enqueueSuccess(JSON.stringify({
+        result: "success",
+        summary: "Done",
+        progressEntry: "Progress",
+        skillUpdates: null,
+        proposals: [],
+      }));
+
+      await orchestrator.runOneCycle();
+
+      // Grab the onLogEntry callback and invoke it
+      const launches = deps.launcher.getLaunches();
+      const onLogEntry = launches[0].options!.onLogEntry!;
+      onLogEntry({ type: "text", content: "working..." });
+
+      const events = eventSink.getEvents();
+      const processEvent = events.find((e) => e.type === "process_output");
+      expect(processEvent).toBeDefined();
+      expect(processEvent!.data.source).toBe("cycle");
+    });
+
     it("passes onLogEntry callback tagged with correct role for audit", async () => {
       const config = defaultLoopConfig({ superegoAuditInterval: 1 });
       orchestrator = new LoopOrchestrator(
@@ -934,6 +958,23 @@ describe("LoopOrchestrator", () => {
       const launches = deps.launcher.getLaunches();
       expect(launches[0].options?.onLogEntry).toBeDefined();
     });
+
+    it("emits process_output events with source 'conversation'", async () => {
+      deps.launcher.enqueueSuccess("Hi!");
+
+      await orchestrator.handleUserMessage("Hello");
+
+      // Grab the onLogEntry callback and invoke it
+      const launches = deps.launcher.getLaunches();
+      const onLogEntry = launches[0].options!.onLogEntry!;
+      onLogEntry({ type: "text", content: "thinking..." });
+
+      const events = eventSink.getEvents();
+      const processEvent = events.find((e) => e.type === "process_output");
+      expect(processEvent).toBeDefined();
+      expect(processEvent!.data.source).toBe("conversation");
+      expect(processEvent!.data.role).toBe("EGO");
+    });
   });
 
   describe("graceful stop", () => {
@@ -965,6 +1006,45 @@ describe("LoopOrchestrator", () => {
       orchestrator.start();
       orchestrator.stop();
 
+      expect(orchestrator.getState()).toBe(LoopState.STOPPED);
+    });
+  });
+
+  describe("requestRestart", () => {
+    it("injects persist message and calls shutdown callback", () => {
+      const injected: string[] = [];
+      const shutdownCalls: number[] = [];
+      orchestrator.setLauncher({ inject: (msg) => injected.push(msg) });
+      orchestrator.setShutdown((code) => shutdownCalls.push(code));
+      orchestrator.start();
+
+      orchestrator.requestRestart();
+
+      expect(injected.length).toBe(1);
+      expect(injected[0]).toContain("Persist");
+      expect(shutdownCalls).toEqual([75]);
+      expect(orchestrator.getState()).toBe(LoopState.STOPPED);
+    });
+
+    it("emits restart_requested event", () => {
+      orchestrator.setShutdown(() => {});
+      orchestrator.start();
+
+      orchestrator.requestRestart();
+
+      const events = eventSink.getEvents();
+      const restartEvent = events.find((e) => e.type === "restart_requested");
+      expect(restartEvent).toBeDefined();
+    });
+
+    it("works without launcher set", () => {
+      const shutdownCalls: number[] = [];
+      orchestrator.setShutdown((code) => shutdownCalls.push(code));
+      orchestrator.start();
+
+      orchestrator.requestRestart();
+
+      expect(shutdownCalls).toEqual([75]);
       expect(orchestrator.getState()).toBe(LoopState.STOPPED);
     });
   });

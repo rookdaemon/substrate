@@ -62,7 +62,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
 }
 
 async function main(): Promise<void> {
-  const { command, configPath, model, outputDir, source, dest, identity, lines } = parseArgs(process.argv);
+  const { command, configPath, model, outputDir, inputPath, source, dest, identity, lines } = parseArgs(process.argv);
   const fs = new NodeFileSystem();
   const appPaths = getAppPaths();
 

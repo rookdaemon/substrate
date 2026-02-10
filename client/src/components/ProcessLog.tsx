@@ -14,6 +14,7 @@ interface ProcessEntry {
   type: string;
   content: string;
   timestamp: string;
+  source: string;
 }
 
 interface ProcessLogProps {
@@ -26,10 +27,11 @@ export function ProcessLog({ lastEvent }: ProcessLogProps) {
 
   useEffect(() => {
     if (lastEvent?.type !== "process_output") return;
-    const { role, cycleNumber, entry } = lastEvent.data as {
+    const { role, cycleNumber, entry, source } = lastEvent.data as {
       role: string;
       cycleNumber: number;
       entry: { type: string; content: string };
+      source?: string;
     };
     setEntries((prev) => [
       ...prev,
@@ -39,6 +41,7 @@ export function ProcessLog({ lastEvent }: ProcessLogProps) {
         type: entry.type,
         content: entry.content,
         timestamp: lastEvent.timestamp,
+        source: source ?? "cycle",
       },
     ]);
   }, [lastEvent]);
@@ -61,8 +64,11 @@ export function ProcessLog({ lastEvent }: ProcessLogProps) {
         ) : (
           entries.map((entry, i) => {
             const color = AGENT_COLORS[entry.role] ?? "#888";
+            const cls = entry.source === "conversation"
+              ? "process-log-entry process-log-entry--conversation"
+              : "process-log-entry";
             return (
-              <div key={i} className="process-log-entry">
+              <div key={i} className={cls}>
                 <span className="process-log-role" style={{ color }}>{entry.role}</span>
                 <span className="process-log-type">{entry.type}</span>
                 <span className="process-log-content">{entry.content}</span>

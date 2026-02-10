@@ -380,6 +380,13 @@ body {
   font-size: 0.8rem;
   padding: 0.15rem 0;
   border-bottom: 1px solid #1a1a2e;
+  border-left: 2px solid transparent;
+  padding-left: 0.4rem;
+}
+
+.process-log-entry--conversation {
+  background: #0d1a2d;
+  border-left-color: #00d4ff;
 }
 
 .process-log-role {

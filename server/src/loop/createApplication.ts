@@ -9,7 +9,6 @@ import { FileLock } from "../substrate/io/FileLock";
 import { PermissionChecker } from "../agents/permissions";
 import { PromptBuilder } from "../agents/prompts/PromptBuilder";
 import { AgentSdkLauncher, SdkQueryFn } from "../agents/claude/AgentSdkLauncher";
-import { query as sdkQuery } from "@anthropic-ai/claude-agent-sdk";
 import { Ego } from "../agents/roles/Ego";
 import { Subconscious } from "../agents/roles/Subconscious";
 import { Superego } from "../agents/roles/Superego";
@@ -35,6 +34,7 @@ export interface ApplicationConfig {
   superegoAuditInterval?: number;
   maxConsecutiveIdleCycles?: number;
   mode?: "cycle" | "tick";
+  sdkQueryFn?: SdkQueryFn;
 }
 
 export interface Application {
@@ -47,7 +47,12 @@ export interface Application {
   stop(): Promise<void>;
 }
 
-export function createApplication(config: ApplicationConfig): Application {
+export async function createApplication(config: ApplicationConfig): Promise<Application> {
+  // SDK — dynamic import required (ESM package in CommonJS project)
+  // Tests inject sdkQueryFn directly to avoid dynamic import issues in Jest
+  const sdkQuery = config.sdkQueryFn
+    ?? (await import("@anthropic-ai/claude-agent-sdk")).query as unknown as SdkQueryFn;
+
   // Substrate layer
   const fs = new NodeFileSystem();
   const clock = new SystemClock();
@@ -67,7 +72,7 @@ export function createApplication(config: ApplicationConfig): Application {
     substratePath: config.substratePath,
     sourceCodePath: config.sourceCodePath,
   });
-  const launcher = new AgentSdkLauncher(sdkQuery as unknown as SdkQueryFn, clock, config.model, logger);
+  const launcher = new AgentSdkLauncher(sdkQuery, clock, config.model, logger);
 
   const cwd = config.workingDirectory;
   const ego = new Ego(reader, writer, appendWriter, checker, promptBuilder, launcher, clock, cwd);
@@ -100,6 +105,7 @@ export function createApplication(config: ApplicationConfig): Application {
   httpServer.setEventSink(wsServer, clock);
   httpServer.setHealthCheck(new HealthCheck(reader));
   orchestrator.setLauncher(launcher);
+  orchestrator.setShutdown((code) => process.exit(code));
   if (config.mode === "tick") {
     httpServer.setMode("tick");
   }
@@ -110,7 +116,7 @@ export function createApplication(config: ApplicationConfig): Application {
       substratePath: config.substratePath,
       sourceCodePath: config.sourceCodePath,
     });
-    const sdkSessionFactory = createSdkSessionFactory(sdkQuery as unknown as SdkQueryFn);
+    const sdkSessionFactory = createSdkSessionFactory(sdkQuery);
     orchestrator.setTickDependencies({ tickPromptBuilder, sdkSessionFactory });
   }
 

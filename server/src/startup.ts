@@ -48,7 +48,7 @@ export async function startServer(config: RookConfig): Promise<StartedServer> {
 
   await initializeSubstrate(fs, config.substratePath);
 
-  const app = createApplication({
+  const app = await createApplication({
     substratePath: config.substratePath,
     workingDirectory: config.workingDirectory,
     sourceCodePath: config.sourceCodePath,

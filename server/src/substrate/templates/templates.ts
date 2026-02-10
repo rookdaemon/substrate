@@ -41,8 +41,21 @@ This file is a short-form index. Each entry should be a brief capability descrip
 ## Foundational Skills
 
 - **Two-tier knowledge management** — Maintain short-form indexes in substrate files and long-form detail in subdirectories. Know when to promote, demote, consolidate, or split entries. Details: @skills/knowledge_management.md
+- **Source code self-update** — Edit own TypeScript source, run tests, then trigger rebuild+restart. Details: @skills/source_code_update.md
 
-No other skills catalogued yet.
+## Source Code Self-Update (Quick Reference)
+
+The server runs from compiled JavaScript (dist/). Editing .ts source files does NOT affect the running process. To apply source code changes:
+
+1. Edit TypeScript files in the source tree (server/src/)
+2. Run tests: \`cd server && npx jest\` — verify changes are correct
+3. Run lint: \`cd server && npx eslint src/\` — verify no lint errors
+4. Persist substrate state (update PLAN.md, PROGRESS.md, MEMORY.md)
+5. Trigger restart: write a file at \`/tmp/rook-restart\` or call the restart endpoint
+
+The supervisor process will detect exit code 75, run \`tsc\` to rebuild, and restart the server with the new code. Your substrate state is preserved on disk — the next session starts fresh with your updated source.
+
+IMPORTANT: Always run tests before triggering a restart. A broken build will delay restart until the build succeeds.
 `;
 
 export const VALUES_TEMPLATE = `# Values

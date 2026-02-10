@@ -128,6 +128,11 @@ export class LoopHttpServer {
         this.handleConversationSend(req, res);
         break;
 
+      case "POST /api/loop/restart":
+        this.orchestrator.requestRestart();
+        this.json(res, 200, { success: true, message: "Restart requested — rebuilding" });
+        break;
+
       case "POST /api/loop/audit":
         this.orchestrator.requestAudit();
         this.json(res, 200, { success: true });
