@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import Markdown from "react-markdown";
 import { apiGet } from "../hooks/useApi";
 import { LoopEvent } from "../hooks/useWebSocket";
 
@@ -16,11 +17,24 @@ interface ConversationViewProps {
   refreshKey: number;
 }
 
-// Parse "[2025-01-01T10:00:00.000Z] [ROLE] message" into { role, message }
-function parseLine(line: string): ConversationEntry | null {
-  const match = line.match(/^\[.*?\]\s*\[(\w+)\]\s*(.*)$/);
-  if (!match) return null;
-  return { role: match[1], message: match[2] };
+const ENTRY_RE = /^\[[\d\-T:.Z]+\]\s*\[(\w+)\]\s*/;
+
+function parseEntries(raw: string): ConversationEntry[] {
+  const lines = raw.split("\n");
+  const entries: ConversationEntry[] = [];
+  let current: ConversationEntry | null = null;
+
+  for (const line of lines) {
+    const match = line.match(ENTRY_RE);
+    if (match) {
+      if (current) entries.push(current);
+      current = { role: match[1], message: line.replace(ENTRY_RE, "") };
+    } else if (current) {
+      current.message += "\n" + line;
+    }
+  }
+  if (current) entries.push(current);
+  return entries;
 }
 
 export function ConversationView({ lastEvent, refreshKey }: ConversationViewProps) {
@@ -29,12 +43,7 @@ export function ConversationView({ lastEvent, refreshKey }: ConversationViewProp
   const fetchConversation = () => {
     apiGet<SubstrateContent>("/api/substrate/CONVERSATION")
       .then((data) => {
-        const parsed = data.rawMarkdown
-          .split("\n")
-          .filter((line) => line.startsWith("["))
-          .map(parseLine)
-          .filter((e): e is ConversationEntry => e !== null);
-        setEntries(parsed);
+        setEntries(parseEntries(data.rawMarkdown));
       })
       .catch(() => {});
   };
@@ -57,7 +66,9 @@ export function ConversationView({ lastEvent, refreshKey }: ConversationViewProp
           entries.map((entry, i) => (
             <div key={i} className="conversation-entry">
               <span className={`role-dot role-${entry.role.toLowerCase()}`} title={entry.role} />
-              {entry.message}
+              <div className="conversation-message">
+                <Markdown>{entry.message}</Markdown>
+              </div>
             </div>
           ))
         )}

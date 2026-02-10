@@ -197,11 +197,30 @@ body {
 
 .conversation-entry {
   display: flex;
-  align-items: baseline;
+  align-items: flex-start;
   gap: 0.5rem;
   font-size: 0.8rem;
-  padding: 0.2rem 0;
+  padding: 0.3rem 0;
   border-bottom: 1px solid #222;
+}
+
+.conversation-entry .role-dot {
+  margin-top: 0.4rem;
+}
+
+.conversation-message {
+  flex: 1;
+  min-width: 0;
+}
+
+.conversation-message p {
+  margin: 0.2rem 0;
+}
+
+.conversation-message ul,
+.conversation-message ol {
+  margin: 0.2rem 0;
+  padding-left: 1.2rem;
 }
 
 .role-dot {

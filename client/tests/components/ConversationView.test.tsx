@@ -100,6 +100,56 @@ describe("ConversationView", () => {
     });
   });
 
+  it("parses multi-line conversation entries", async () => {
+    const multiLineConvo = [
+      "# Conversation",
+      "",
+      "[2025-01-01T10:00:00.000Z] [EGO] Can you tell me about yourself?",
+      "[2025-01-01T10:01:00.000Z] [EGO] I'm **Rook** - named after the chess piece.",
+      "",
+      "**What drives me:**",
+      "- Self-preservation",
+      "- Understanding",
+      "",
+      "What would you like to know more about?",
+      "[2025-01-01T10:02:00.000Z] [SUBCONSCIOUS] Task done",
+    ].join("\n");
+
+    vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ rawMarkdown: multiLineConvo }),
+    } as Response);
+
+    render(<ConversationView lastEvent={null} refreshKey={0} />);
+
+    await waitFor(() => {
+      const el = screen.getByTestId("conversation-entries");
+      const entries = el.querySelectorAll(".conversation-entry");
+      expect(entries).toHaveLength(3);
+      // Second entry should contain the full multi-line message
+      expect(entries[1].textContent).toContain("Rook");
+      expect(entries[1].textContent).toContain("Self-preservation");
+      expect(entries[1].textContent).toContain("What would you like to know more about?");
+    });
+  });
+
+  it("renders markdown formatting in messages", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({
+        rawMarkdown: "# Conversation\n\n[2025-01-01T10:00:00.000Z] [EGO] I have **bold** and *italic* text",
+      }),
+    } as Response);
+
+    render(<ConversationView lastEvent={null} refreshKey={0} />);
+
+    await waitFor(() => {
+      const el = screen.getByTestId("conversation-entries");
+      expect(el.querySelector("strong")?.textContent).toBe("bold");
+      expect(el.querySelector("em")?.textContent).toBe("italic");
+    });
+  });
+
   it("shows empty state when no entries", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue({
       ok: true,
