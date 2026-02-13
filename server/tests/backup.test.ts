@@ -129,7 +129,7 @@ describe("createRemoteBackup", () => {
       fs,
       runner,
       clock,
-      remoteSource: "user@host:.local/share/substrate/substrate",
+      remoteSource: "user@host:.local/share/substrate",
       outputDir: "/backups",
     });
 
@@ -140,7 +140,7 @@ describe("createRemoteBackup", () => {
     // 1: rsync, 2: tar, 3: rm cleanup
     expect(calls).toHaveLength(3);
     expect(calls[0].command).toBe("rsync");
-    expect(calls[0].args).toContain("user@host:.local/share/substrate/substrate/");
+    expect(calls[0].args).toContain("user@host:.local/share/substrate/");
     expect(calls[1].command).toBe("tar");
     expect(calls[1].args).toContain("-czf");
     expect(calls[2].command).toBe("rm");
@@ -159,7 +159,7 @@ describe("createRemoteBackup", () => {
       fs,
       runner,
       clock,
-      remoteSource: "user@host:.local/share/substrate/substrate",
+      remoteSource: "user@host:.local/share/substrate",
       outputDir: "/backups",
       identity: "~/.ssh/my_key",
     });

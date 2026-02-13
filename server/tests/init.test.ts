@@ -11,7 +11,7 @@ const TEST_PATHS: AppPaths = {
 };
 
 const TEST_CONFIG: AppConfig = {
-  substratePath: "/xdg/data/substrate/substrate",
+  substratePath: "/xdg/data/substrate",
   workingDirectory: "/xdg/data/substrate",
   sourceCodePath: "/xdg/data/substrate",
   backupPath: "/xdg/data/substrate-backups",

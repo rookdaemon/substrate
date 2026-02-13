@@ -127,7 +127,7 @@ describe("transfer", () => {
     await transfer({
       runner,
       sourceSubstrate: "/local/substrate",
-      destSubstrate: "user@34.63.182.98:.local/share/substrate/substrate",
+      destSubstrate: "user@34.63.182.98:.local/share/substrate",
       identity: "~/.ssh/google_compute_engine",
     });
 
@@ -158,7 +158,7 @@ describe("transfer", () => {
     await transfer({
       runner,
       sourceSubstrate: "/local/substrate",
-      destSubstrate: "user@host:.local/share/substrate/substrate",
+      destSubstrate: "user@host:.local/share/substrate",
       sourceConfig: "/local/config",
       destConfig: "user@host:.config/substrate",
       identity: "/keys/id_rsa",
@@ -181,13 +181,13 @@ describe("resolveRemotePath", () => {
 
   it("appends default substrate path when user@host has no path", () => {
     expect(resolveRemotePath("user@34.63.182.98")).toBe(
-      "user@34.63.182.98:.local/share/substrate/substrate"
+      "user@34.63.182.98:.local/share/substrate"
     );
   });
 
   it("handles hostnames with dots", () => {
     expect(resolveRemotePath("user@my.server.com")).toBe(
-      "user@my.server.com:.local/share/substrate/substrate"
+      "user@my.server.com:.local/share/substrate"
     );
   });
 });

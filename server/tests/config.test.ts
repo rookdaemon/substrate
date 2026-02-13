@@ -17,7 +17,7 @@ describe("resolveConfig", () => {
   it("returns defaults when no config file exists", async () => {
     const config = await resolveConfig(fs, { appPaths: TEST_PATHS, env: {} });
 
-    expect(config.substratePath).toBe("/xdg/data/substrate/substrate");
+    expect(config.substratePath).toBe("/xdg/data/substrate");
     expect(config.workingDirectory).toBe("/xdg/data/substrate");
     expect(config.backupPath).toBe("/xdg/data/substrate-backups");
     expect(config.port).toBe(3000);
@@ -63,7 +63,7 @@ describe("resolveConfig", () => {
     });
 
     expect(config.port).toBe(4000);
-    expect(config.substratePath).toBe("/xdg/data/substrate/substrate");
+    expect(config.substratePath).toBe("/xdg/data/substrate");
   });
 
   it("falls back to config-dir config.json when CWD has none", async () => {
@@ -113,7 +113,7 @@ describe("resolveConfig", () => {
     });
 
     expect(config.port).toBe(9000);
-    expect(config.substratePath).toBe("/xdg/data/substrate/substrate");
+    expect(config.substratePath).toBe("/xdg/data/substrate");
     expect(config.workingDirectory).toBe("/xdg/data/substrate");
   });
 

@@ -26,7 +26,7 @@ export async function resolveConfig(
   const { appPaths, env = {} } = options;
 
   const defaults: AppConfig = {
-    substratePath: path.join(appPaths.data, "substrate"),
+    substratePath: appPaths.data,
     workingDirectory: appPaths.data,
     sourceCodePath: options.cwd ?? appPaths.data,
     backupPath: path.join(path.dirname(appPaths.data), "substrate-backups"),
