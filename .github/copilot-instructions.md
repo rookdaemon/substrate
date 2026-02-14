@@ -355,7 +355,7 @@ The following memories have been stored for this codebase:
 2. **Testing Patterns**: Use IClock (FixedClock for tests) for time operations and ISessionLauncher (InMemorySessionLauncher for tests) for Claude interactions
 3. **Model Selection**: TaskClassifier routes operations to strategicModel (opus) or tacticalModel (sonnet) based on operation complexity
 
-When working on this codebase, verify these facts against current implementation and store new patterns you discover using the store_memory tool.
+When working on this codebase, verify these facts against current implementation. If you're a coding agent with access to the store_memory tool, store new patterns you discover to help future agents.
 
 ## Key Files to Reference
 
