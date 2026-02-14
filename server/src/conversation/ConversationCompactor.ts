@@ -4,7 +4,7 @@ import { ISessionLauncher, ClaudeSessionRequest } from "../agents/claude/ISessio
 export class ConversationCompactor implements IConversationCompactor {
   constructor(
     private readonly sessionLauncher: ISessionLauncher,
-    private readonly workingDirectory?: string
+    private readonly cwd?: string
   ) {}
 
   async compact(currentContent: string, oneHourAgo: string): Promise<string> {
@@ -12,8 +12,15 @@ export class ConversationCompactor implements IConversationCompactor {
     const lines = currentContent.split('\n');
     const recentLines: string[] = [];
     const oldLines: string[] = [];
+    const headerLines: string[] = [];
 
     for (const line of lines) {
+      // Extract headers separately to avoid duplication
+      if (line.startsWith('#')) {
+        headerLines.push(line);
+        continue;
+      }
+
       // Parse timestamp from line format: [ISO-timestamp] content
       const timestampMatch = line.match(/^\[([^\]]+)\]/);
       if (timestampMatch) {
@@ -24,7 +31,7 @@ export class ConversationCompactor implements IConversationCompactor {
           oldLines.push(line);
         }
       } else {
-        // Lines without timestamps (e.g., headers) go with recent
+        // Lines without timestamps (non-headers) go with recent
         recentLines.push(line);
       }
     }
@@ -51,7 +58,7 @@ export class ConversationCompactor implements IConversationCompactor {
     };
 
     const result = await this.sessionLauncher.launch(request, {
-      cwd: this.workingDirectory
+      cwd: this.cwd
     });
 
     let summary: string;
@@ -66,7 +73,6 @@ export class ConversationCompactor implements IConversationCompactor {
     // 1. Header (if present)
     // 2. Summary of old content
     // 3. Recent detailed content
-    const headerLines = lines.filter(line => line.startsWith('#'));
     const header = headerLines.length > 0 ? headerLines.join('\n') + '\n\n' : '';
     
     const compacted = 
