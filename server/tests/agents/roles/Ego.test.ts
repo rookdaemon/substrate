@@ -5,6 +5,8 @@ import { InMemorySessionLauncher } from "../../../src/agents/claude/InMemorySess
 import { SubstrateFileReader } from "../../../src/substrate/io/FileReader";
 import { SubstrateFileWriter } from "../../../src/substrate/io/FileWriter";
 import { AppendOnlyWriter } from "../../../src/substrate/io/AppendOnlyWriter";
+import { ConversationManager } from "../../../src/conversation/ConversationManager";
+import { ConversationCompactor } from "../../../src/conversation/ConversationCompactor";
 import { FileLock } from "../../../src/substrate/io/FileLock";
 import { SubstrateConfig } from "../../../src/substrate/config";
 import { InMemoryFileSystem } from "../../../src/substrate/abstractions/InMemoryFileSystem";
@@ -31,9 +33,15 @@ describe("Ego agent", () => {
     const checker = new PermissionChecker();
     const promptBuilder = new PromptBuilder(reader, checker);
     const taskClassifier = new TaskClassifier({ strategicModel: "opus", tacticalModel: "sonnet" });
+    
+    // Create ConversationCompactor and ConversationManager
+    const compactor = new ConversationCompactor(launcher, "/workspace");
+    const conversationManager = new ConversationManager(
+      reader, fs, config, lock, appendWriter, checker, compactor, clock
+    );
 
     ego = new Ego(
-      reader, writer, appendWriter, checker, promptBuilder, launcher, clock, taskClassifier, "/workspace"
+      reader, writer, conversationManager, checker, promptBuilder, launcher, clock, taskClassifier, "/workspace"
     );
 
     await fs.mkdir("/substrate", { recursive: true });

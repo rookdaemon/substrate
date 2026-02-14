@@ -10,6 +10,8 @@ import { PermissionChecker } from "../agents/permissions";
 import { PromptBuilder } from "../agents/prompts/PromptBuilder";
 import { AgentSdkLauncher, SdkQueryFn } from "../agents/claude/AgentSdkLauncher";
 import { TaskClassifier } from "../agents/TaskClassifier";
+import { ConversationCompactor } from "../conversation/ConversationCompactor";
+import { ConversationManager } from "../conversation/ConversationManager";
 import { Ego } from "../agents/roles/Ego";
 import { Subconscious } from "../agents/roles/Subconscious";
 import { Superego } from "../agents/roles/Superego";
@@ -94,7 +96,14 @@ export async function createApplication(config: ApplicationConfig): Promise<Appl
   });
 
   const cwd = config.workingDirectory;
-  const ego = new Ego(reader, writer, appendWriter, checker, promptBuilder, launcher, clock, taskClassifier, cwd);
+  
+  // Conversation manager with compaction
+  const compactor = new ConversationCompactor(launcher, cwd);
+  const conversationManager = new ConversationManager(
+    reader, fs, substrateConfig, lock, appendWriter, checker, compactor, clock
+  );
+
+  const ego = new Ego(reader, writer, conversationManager, checker, promptBuilder, launcher, clock, taskClassifier, cwd);
   const subconscious = new Subconscious(reader, writer, appendWriter, checker, promptBuilder, launcher, clock, taskClassifier, cwd);
   const superego = new Superego(reader, appendWriter, checker, promptBuilder, launcher, clock, taskClassifier, cwd);
   const id = new Id(reader, checker, promptBuilder, launcher, clock, taskClassifier, cwd);
