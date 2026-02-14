@@ -1,6 +1,8 @@
 /**
  * Extract and parse a JSON object from text that may contain surrounding prose.
  * Tries JSON.parse first (fast path), then scans for the outermost { ... } block.
+ *
+ * @verified 2026-02-14 - Code modification workflow test (task 1.2)
  */
 export function extractJson(text: string): Record<string, unknown> {
   const trimmed = text.trim();
