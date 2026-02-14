@@ -9,6 +9,7 @@ import { GovernanceReportStore } from "../evaluation/GovernanceReportStore";
 import { HealthCheck } from "../evaluation/HealthCheck";
 import { AgoraService } from "../agora/AgoraService";
 import { AppendOnlyWriter } from "../substrate/io/AppendOnlyWriter";
+import { BackupScheduler } from "./BackupScheduler";
 
 export interface LoopHttpDependencies {
   reader: SubstrateFileReader;
@@ -27,6 +28,7 @@ export class LoopHttpServer {
   private mode: "cycle" | "tick" = "cycle";
   private agoraService: AgoraService | null = null;
   private appendWriter: AppendOnlyWriter | null = null;
+  private backupScheduler: BackupScheduler | null = null;
 
   constructor(orchestrator: LoopOrchestrator) {
     this.orchestrator = orchestrator;
@@ -62,6 +64,10 @@ export class LoopHttpServer {
   setAgoraService(service: AgoraService, appendWriter: AppendOnlyWriter): void {
     this.agoraService = service;
     this.appendWriter = appendWriter;
+  }
+
+  setBackupScheduler(scheduler: BackupScheduler): void {
+    this.backupScheduler = scheduler;
   }
 
   listen(port: number): Promise<number> {
@@ -157,6 +163,10 @@ export class LoopHttpServer {
 
       case "GET /api/health":
         this.handleHealthCheck(res);
+        break;
+
+      case "POST /api/backup":
+        this.handleBackupRequest(res);
         break;
 
       case "POST /hooks/agent":
@@ -287,6 +297,33 @@ export class LoopHttpServer {
     }
     this.healthCheck.run().then(
       (result) => this.json(res, 200, result),
+      (err) => {
+        const message = err instanceof Error ? err.message : "Unknown error";
+        this.json(res, 500, { error: message });
+      }
+    );
+  }
+
+  private handleBackupRequest(res: http.ServerResponse): void {
+    if (!this.backupScheduler) {
+      this.json(res, 503, { error: "Backup scheduler not configured" });
+      return;
+    }
+    this.backupScheduler.runBackup().then(
+      (result) => {
+        if (result.success) {
+          this.json(res, 200, {
+            success: true,
+            backupPath: result.backupPath,
+            verified: result.verification?.valid ?? false,
+            checksum: result.verification?.checksum,
+            sizeBytes: result.verification?.sizeBytes,
+            timestamp: result.timestamp,
+          });
+        } else {
+          this.json(res, 500, { success: false, error: result.error, timestamp: result.timestamp });
+        }
+      },
       (err) => {
         const message = err instanceof Error ? err.message : "Unknown error";
         this.json(res, 500, { error: message });

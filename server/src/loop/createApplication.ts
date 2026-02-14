@@ -173,6 +173,7 @@ export async function createApplication(config: ApplicationConfig): Promise<Appl
       }
     );
     orchestrator.setBackupScheduler(backupScheduler);
+    httpServer.setBackupScheduler(backupScheduler);
   }
 
   // Health check scheduler setup
