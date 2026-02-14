@@ -11,6 +11,7 @@ export enum SubstrateFileType {
   CLAUDE = "CLAUDE",
   PROGRESS = "PROGRESS",
   CONVERSATION = "CONVERSATION",
+  PEERS = "PEERS",
 }
 
 export enum WriteMode {
@@ -37,4 +38,5 @@ export const SUBSTRATE_FILE_SPECS: Record<SubstrateFileType, SubstrateFileSpec> 
   [SubstrateFileType.CLAUDE]: { fileName: "CLAUDE.md", writeMode: WriteMode.OVERWRITE, required: true },
   [SubstrateFileType.PROGRESS]: { fileName: "PROGRESS.md", writeMode: WriteMode.APPEND, required: true },
   [SubstrateFileType.CONVERSATION]: { fileName: "CONVERSATION.md", writeMode: WriteMode.APPEND, required: true },
+  [SubstrateFileType.PEERS]: { fileName: "PEERS.md", writeMode: WriteMode.OVERWRITE, required: false },
 };

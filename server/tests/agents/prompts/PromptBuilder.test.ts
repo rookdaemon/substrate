@@ -58,8 +58,9 @@ describe("PromptBuilder", () => {
       expect(idFile!.content).toContain("Core identity");
     });
 
-    it("Superego gathers all 12 files", async () => {
+    it("Superego gathers all required files (skips missing optional)", async () => {
       const context = await builder.gatherContext(AgentRole.SUPEREGO);
+      // 12 required files exist in test setup; PEERS is optional and missing
       expect(context).toHaveLength(12);
     });
   });
@@ -101,10 +102,11 @@ describe("PromptBuilder", () => {
       expect(refs).not.toContain("@/substrate/CHARTER.md");
     });
 
-    it("Superego references all 12 files", () => {
+    it("Superego references all files", () => {
       const refs = builder.getContextReferences(AgentRole.SUPEREGO);
       const atRefs = refs.split("\n").filter((l) => l.startsWith("@"));
-      expect(atRefs).toHaveLength(12);
+      const totalFileTypes = Object.values(SubstrateFileType).length;
+      expect(atRefs).toHaveLength(totalFileTypes);
     });
   });
 });

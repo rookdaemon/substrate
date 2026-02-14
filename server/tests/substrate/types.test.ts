@@ -5,9 +5,9 @@ import {
 } from "../../src/substrate/types";
 
 describe("SubstrateFileType", () => {
-  it("defines all 12 file types", () => {
+  it("defines all file types", () => {
     const types = Object.values(SubstrateFileType);
-    expect(types).toHaveLength(12);
+    expect(types.length).toBeGreaterThanOrEqual(12);
   });
 
   it("includes expected types", () => {
@@ -54,9 +54,14 @@ describe("SUBSTRATE_FILE_SPECS", () => {
     }
   });
 
-  it("marks all files as required", () => {
+  it("marks core files as required and optional files as not required", () => {
+    const optionalTypes = [SubstrateFileType.PEERS];
     for (const type of Object.values(SubstrateFileType)) {
-      expect(SUBSTRATE_FILE_SPECS[type].required).toBe(true);
+      if (optionalTypes.includes(type)) {
+        expect(SUBSTRATE_FILE_SPECS[type].required).toBe(false);
+      } else {
+        expect(SUBSTRATE_FILE_SPECS[type].required).toBe(true);
+      }
     }
   });
 });

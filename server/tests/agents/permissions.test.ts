@@ -230,9 +230,9 @@ describe("PermissionChecker", () => {
       expect(readable).toContain(SubstrateFileType.MEMORY);
     });
 
-    it("returns all 12 files for Superego", () => {
+    it("returns all 13 files for Superego", () => {
       const readable = checker.getReadableFiles(AgentRole.SUPEREGO);
-      expect(readable).toHaveLength(12);
+      expect(readable).toHaveLength(13);
     });
   });
 });

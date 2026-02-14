@@ -7,6 +7,8 @@ import { SubstrateFileType } from "../substrate/types";
 import { Ego } from "../agents/roles/Ego";
 import { GovernanceReportStore } from "../evaluation/GovernanceReportStore";
 import { HealthCheck } from "../evaluation/HealthCheck";
+import { AgoraService } from "../agora/AgoraService";
+import { AppendOnlyWriter } from "../substrate/io/AppendOnlyWriter";
 
 export interface LoopHttpDependencies {
   reader: SubstrateFileReader;
@@ -23,6 +25,8 @@ export class LoopHttpServer {
   private eventSink: ILoopEventSink | null = null;
   private clock: IClock | null = null;
   private mode: "cycle" | "tick" = "cycle";
+  private agoraService: AgoraService | null = null;
+  private appendWriter: AppendOnlyWriter | null = null;
 
   constructor(orchestrator: LoopOrchestrator) {
     this.orchestrator = orchestrator;
@@ -53,6 +57,11 @@ export class LoopHttpServer {
 
   setMode(mode: "cycle" | "tick"): void {
     this.mode = mode;
+  }
+
+  setAgoraService(service: AgoraService, appendWriter: AppendOnlyWriter): void {
+    this.agoraService = service;
+    this.appendWriter = appendWriter;
   }
 
   listen(port: number): Promise<number> {
@@ -148,6 +157,10 @@ export class LoopHttpServer {
 
       case "GET /api/health":
         this.handleHealthCheck(res);
+        break;
+
+      case "POST /hooks/agent":
+        this.handleAgoraWebhook(req, res);
         break;
 
       default:
@@ -279,6 +292,71 @@ export class LoopHttpServer {
         this.json(res, 500, { error: message });
       }
     );
+  }
+
+  private handleAgoraWebhook(req: http.IncomingMessage, res: http.ServerResponse): void {
+    if (!this.agoraService || !this.appendWriter || !this.clock) {
+      this.json(res, 503, { error: "Agora service not configured" });
+      return;
+    }
+
+    // Check Authorization header for Bearer token
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      this.json(res, 401, { error: "Missing or invalid Authorization header" });
+      return;
+    }
+
+    let body = "";
+    req.on("data", (chunk: Buffer) => { body += chunk.toString(); });
+    req.on("end", async () => {
+      let parsed: { message?: string };
+      try {
+        parsed = JSON.parse(body);
+      } catch {
+        this.json(res, 400, { error: "Invalid JSON" });
+        return;
+      }
+
+      if (!parsed.message || typeof parsed.message !== "string") {
+        this.json(res, 400, { error: "Missing required field: message" });
+        return;
+      }
+
+      try {
+        // Decode and verify the inbound envelope
+        const result = await this.agoraService!.decodeInbound(parsed.message);
+
+        if (!result.ok) {
+          this.json(res, 400, { error: `Invalid envelope: ${result.reason}` });
+          return;
+        }
+
+        // Log to PROGRESS.md
+        const timestamp = this.clock!.now().toISOString();
+        const logEntry = `[AGORA] Received ${result.envelope!.type} from ${result.envelope!.sender.substring(0, 8)}... — payload: ${JSON.stringify(result.envelope!.payload)}`;
+        await this.appendWriter!.append(SubstrateFileType.PROGRESS, logEntry);
+
+        // Emit WebSocket event for frontend visibility
+        if (this.eventSink) {
+          this.eventSink.emit({
+            type: "agora_message",
+            timestamp,
+            data: {
+              envelopeId: result.envelope!.id,
+              messageType: result.envelope!.type,
+              sender: result.envelope!.sender,
+              payload: result.envelope!.payload,
+            },
+          });
+        }
+
+        this.json(res, 200, { success: true, envelopeId: result.envelope!.id });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Unknown error";
+        this.json(res, 500, { error: message });
+      }
+    });
   }
 
   private tryStateTransition(res: http.ServerResponse, fn: () => void): void {

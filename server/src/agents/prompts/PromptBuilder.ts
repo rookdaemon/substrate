@@ -27,12 +27,20 @@ export class PromptBuilder {
     const contexts: FileContext[] = [];
 
     for (const fileType of readableFiles) {
-      const fileContent = await this.reader.read(fileType);
-      contexts.push({
-        fileType,
-        fileName: SUBSTRATE_FILE_SPECS[fileType].fileName,
-        content: fileContent.rawMarkdown,
-      });
+      try {
+        const fileContent = await this.reader.read(fileType);
+        contexts.push({
+          fileType,
+          fileName: SUBSTRATE_FILE_SPECS[fileType].fileName,
+          content: fileContent.rawMarkdown,
+        });
+      } catch {
+        // Skip optional files that don't exist yet
+        if (!SUBSTRATE_FILE_SPECS[fileType].required) {
+          continue;
+        }
+        throw new Error(`Required substrate file ${fileType} is missing`);
+      }
     }
 
     return contexts;

@@ -201,6 +201,29 @@ Line 4 is also clean`;
       expect(result.matches[0].column).toBeGreaterThan(1);
     });
 
+    it("does not flag prose mentioning 'password' without assignment", () => {
+      const content = '- **Bluesky posting**: App password configured in ~/.config/bluesky/credentials.json';
+      const result = detectSecrets(content);
+
+      expect(result.matches.filter(m => m.type === "Password")).toHaveLength(0);
+    });
+
+    it("still detects password with assignment operator", () => {
+      const content = "password=mySecretPass1234";
+      const result = detectSecrets(content);
+
+      expect(result.hasSecrets).toBe(true);
+      expect(result.matches.some(m => m.type === "Password")).toBe(true);
+    });
+
+    it("still detects password with colon separator", () => {
+      const content = "password: mySecretPass1234";
+      const result = detectSecrets(content);
+
+      expect(result.hasSecrets).toBe(true);
+      expect(result.matches.some(m => m.type === "Password")).toBe(true);
+    });
+
     it("does not detect short strings that happen to match keywords", () => {
       const content = "The word 'token' appears but token=short is not a secret";
       const result = detectSecrets(content);

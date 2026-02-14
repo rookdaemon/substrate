@@ -60,7 +60,7 @@ export interface TickResult {
 }
 
 export interface LoopEvent {
-  type: "state_changed" | "cycle_complete" | "idle" | "error" | "audit_complete" | "idle_handler" | "evaluation_requested" | "process_output" | "conversation_message" | "conversation_response" | "tick_started" | "tick_complete" | "message_injected" | "restart_requested" | "backup_complete" | "health_check_complete" | "reconsideration_complete";
+  type: "state_changed" | "cycle_complete" | "idle" | "error" | "audit_complete" | "idle_handler" | "evaluation_requested" | "process_output" | "conversation_message" | "conversation_response" | "tick_started" | "tick_complete" | "message_injected" | "restart_requested" | "backup_complete" | "health_check_complete" | "reconsideration_complete" | "agora_message";
   timestamp: string;
   data: Record<string, unknown>;
 }

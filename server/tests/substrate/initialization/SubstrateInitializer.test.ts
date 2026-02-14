@@ -20,8 +20,9 @@ describe("SubstrateInitializer", () => {
     expect(await fs.exists("/substrate")).toBe(true);
   });
 
-  it("creates all 12 substrate files from templates", async () => {
+  it("creates all substrate files from templates", async () => {
     const report = await initializer.initialize();
+    const totalFileTypes = Object.values(SubstrateFileType).length;
 
     for (const type of Object.values(SubstrateFileType)) {
       const path = config.getFilePath(type);
@@ -30,7 +31,7 @@ describe("SubstrateInitializer", () => {
       expect(content).toBe(getTemplate(type));
     }
 
-    expect(report.created).toHaveLength(12);
+    expect(report.created).toHaveLength(totalFileTypes);
     expect(report.alreadyExisted).toHaveLength(0);
   });
 
@@ -39,12 +40,13 @@ describe("SubstrateInitializer", () => {
     await fs.writeFile("/substrate/PLAN.md", "# Plan\n\n## Custom\n\nMy plan");
 
     const report = await initializer.initialize();
+    const totalFileTypes = Object.values(SubstrateFileType).length;
 
     const planContent = await fs.readFile("/substrate/PLAN.md");
     expect(planContent).toBe("# Plan\n\n## Custom\n\nMy plan");
     expect(report.alreadyExisted).toContain(SubstrateFileType.PLAN);
     expect(report.created).not.toContain(SubstrateFileType.PLAN);
-    expect(report.created).toHaveLength(11);
+    expect(report.created).toHaveLength(totalFileTypes - 1);
   });
 
   it("creates only missing files when some already exist", async () => {
@@ -53,14 +55,16 @@ describe("SubstrateInitializer", () => {
     await fs.writeFile("/substrate/MEMORY.md", "# Memory\n\nExisting");
 
     const report = await initializer.initialize();
+    const totalFileTypes = Object.values(SubstrateFileType).length;
 
     expect(report.alreadyExisted).toContain(SubstrateFileType.PLAN);
     expect(report.alreadyExisted).toContain(SubstrateFileType.MEMORY);
-    expect(report.created).toHaveLength(10);
+    expect(report.created).toHaveLength(totalFileTypes - 2);
   });
 
   it("returns the full report", async () => {
     const report = await initializer.initialize();
-    expect(report.created.length + report.alreadyExisted.length).toBe(12);
+    const totalFileTypes = Object.values(SubstrateFileType).length;
+    expect(report.created.length + report.alreadyExisted.length).toBe(totalFileTypes);
   });
 });

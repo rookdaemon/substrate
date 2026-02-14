@@ -126,7 +126,7 @@ const SECRET_PATTERNS: Array<{ type: string; pattern: RegExp; description: strin
   // Generic passwords in key-value format
   {
     type: "Password",
-    pattern: /(?:password|passwd|pwd)["\s:=]+["']?([a-zA-Z0-9!@#$%^&*()_+-=]{8,})["']?/gi,
+    pattern: /(?:password|passwd|pwd)\s*[:="']+\s*["']?([a-zA-Z0-9!@#$%^&*()_+-=]{8,})["']?/gi,
     description: "Password in configuration format"
   },
 

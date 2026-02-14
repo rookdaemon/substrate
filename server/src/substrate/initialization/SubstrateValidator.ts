@@ -1,6 +1,6 @@
 import { IFileSystem } from "../abstractions/IFileSystem";
 import { SubstrateConfig } from "../config";
-import { SubstrateFileType } from "../types";
+import { SubstrateFileType, SUBSTRATE_FILE_SPECS } from "../types";
 import { validateSubstrateContent } from "../validation/validators";
 
 export interface InvalidFileEntry {
@@ -28,7 +28,10 @@ export class SubstrateValidator {
       const filePath = this.config.getFilePath(fileType);
 
       if (!(await this.fs.exists(filePath))) {
-        missingFiles.push(fileType);
+        // Only report required files as missing
+        if (SUBSTRATE_FILE_SPECS[fileType].required) {
+          missingFiles.push(fileType);
+        }
         continue;
       }
 

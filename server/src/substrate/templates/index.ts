@@ -27,6 +27,7 @@ const TEMPLATE_MAP: Record<SubstrateFileType, string> = {
   [SubstrateFileType.CLAUDE]: CLAUDE_TEMPLATE,
   [SubstrateFileType.PROGRESS]: PROGRESS_TEMPLATE,
   [SubstrateFileType.CONVERSATION]: CONVERSATION_TEMPLATE,
+  [SubstrateFileType.PEERS]: "# Agora Peers\n\nRegistered agents for Agora coordination protocol.\n\n## Future Peers\n\nAgents will be added here as the network expands.\n",
 };
 
 export function getTemplate(fileType: SubstrateFileType): string {

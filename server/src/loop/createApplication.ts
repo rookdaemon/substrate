@@ -28,6 +28,7 @@ import { createSdkSessionFactory } from "../session/SdkSessionAdapter";
 import { BackupScheduler } from "./BackupScheduler";
 import { NodeProcessRunner } from "../agents/claude/NodeProcessRunner";
 import { HealthCheckScheduler } from "./HealthCheckScheduler";
+import { AgoraService } from "../agora/AgoraService";
 
 export interface ApplicationConfig {
   substratePath: string;
@@ -110,6 +111,16 @@ export async function createApplication(config: ApplicationConfig): Promise<Appl
   const wsServer = new LoopWebSocketServer(httpServer.getServer());
   const timer = new NodeTimer();
 
+  // Agora service for agent-to-agent communication
+  let agoraService: AgoraService | null = null;
+  try {
+    const agoraConfig = await AgoraService.loadConfig();
+    agoraService = new AgoraService(agoraConfig);
+  } catch (err) {
+    // If Agora config doesn't exist, log and continue without Agora capability
+    logger.debug("Agora not configured: " + (err instanceof Error ? err.message : String(err)));
+  }
+
   const idleHandler = new IdleHandler(id, superego, ego, appendWriter, clock, logger);
 
   const orchestrator = new LoopOrchestrator(
@@ -121,6 +132,9 @@ export async function createApplication(config: ApplicationConfig): Promise<Appl
   httpServer.setOrchestrator(orchestrator);
   httpServer.setDependencies({ reader, ego });
   httpServer.setEventSink(wsServer, clock);
+  if (agoraService) {
+    httpServer.setAgoraService(agoraService, appendWriter);
+  }
 
   // Create metrics store for quantitative drift monitoring
   const metricsStore = new MetricsStore(fs, clock, config.substratePath);
