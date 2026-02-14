@@ -43,7 +43,12 @@ export async function initializeSubstrate(
   console.log("Substrate: validated successfully");
 }
 
-export async function startServer(config: AppConfig): Promise<StartedServer> {
+export interface StartServerOptions {
+  /** Set when supervisor passes --forceStart; server just honors the flag (always auto-start when present). */
+  forceStart?: boolean;
+}
+
+export async function startServer(config: AppConfig, options?: StartServerOptions): Promise<StartedServer> {
   const fs = new NodeFileSystem();
 
   await initializeSubstrate(fs, config.substratePath);
@@ -59,7 +64,7 @@ export async function startServer(config: AppConfig): Promise<StartedServer> {
 
   console.log(`Debug log: ${app.logPath}`);
 
-  const boundPort = await app.start(config.port);
+  const boundPort = await app.start(config.port, options?.forceStart);
   console.log(`Server listening on port ${boundPort}`);
 
   return {

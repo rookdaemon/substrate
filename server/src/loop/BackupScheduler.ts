@@ -2,7 +2,7 @@ import { IClock } from "../substrate/abstractions/IClock";
 import { IFileSystem } from "../substrate/abstractions/IFileSystem";
 import { IProcessRunner } from "../agents/claude/IProcessRunner";
 import { ILogger } from "../logging";
-import { createBackup, BackupResult } from "../backup";
+import { createBackup } from "../backup";
 import * as path from "node:path";
 import * as crypto from "node:crypto";
 

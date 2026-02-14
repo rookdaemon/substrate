@@ -21,6 +21,8 @@ export interface ParsedArgs {
   dest?: string;
   identity?: string;
   lines?: number;
+  /** Set when supervisor passes --forceStart (respawn after exit 75); server uses it with config to decide auto-start. */
+  forceStart?: boolean;
 }
 
 export function parseArgs(argv: string[]): ParsedArgs {
@@ -34,11 +36,14 @@ export function parseArgs(argv: string[]): ParsedArgs {
   let dest: string | undefined;
   let identity: string | undefined;
   let lines: number | undefined;
+  let forceStart = false;
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (arg === "init" || arg === "start" || arg === "backup" || arg === "restore" || arg === "transfer" || arg === "logs") {
       command = arg;
+    } else if (arg === "--forceStart") {
+      forceStart = true;
     } else if (arg === "--config" && i + 1 < args.length) {
       configPath = args[++i];
     } else if (arg === "--model" && i + 1 < args.length) {
@@ -58,11 +63,11 @@ export function parseArgs(argv: string[]): ParsedArgs {
     }
   }
 
-  return { command, configPath, model, outputDir, inputPath, source, dest, identity, lines };
+  return { command, configPath, model, outputDir, inputPath, source, dest, identity, lines, forceStart };
 }
 
 async function main(): Promise<void> {
-  const { command, configPath, model, outputDir, inputPath, source, dest, identity, lines } = parseArgs(process.argv);
+  const { command, configPath, model, outputDir, inputPath, source, dest, identity, lines, forceStart } = parseArgs(process.argv);
   const fs = new NodeFileSystem();
   const appPaths = getAppPaths();
 
@@ -170,7 +175,7 @@ async function main(): Promise<void> {
       }
     }
   } else {
-    await startServer(config);
+    await startServer(config, { forceStart });
   }
 }
 
