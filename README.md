@@ -86,11 +86,43 @@ Config file fields:
   "sourceCodePath": "/path/to/substrate",
   "backupPath": "~/.local/share/substrate-backups",
   "port": 3000,
-  "model": "sonnet"
+  "model": "sonnet",
+  "strategicModel": "opus",
+  "tacticalModel": "sonnet"
 }
 ```
 
 The `--model` CLI flag overrides the config file model: `npm run start -- --model opus`
+
+#### Model Selection per Task Type
+
+Substrate automatically routes operations to appropriate Claude models based on task complexity:
+
+- **Strategic Operations** (default: `opus`) — Complex reasoning tasks that benefit from Opus 4.6's superior capabilities:
+  - `Ego.decide()` — Executive decision-making across plan, memory, and progress
+  - `Ego.respondToMessage()` — Context-aware conversation requiring deep understanding
+  - `Id.generateDrives()` — Novel goal generation when idle
+  - `Superego.audit()` — Full substrate analysis and governance assessment
+  - `Subconscious.evaluateOutcome()` — Complex reconsideration with quality scoring
+
+- **Tactical Operations** (default: `sonnet`) — Routine tasks handled efficiently by Sonnet:
+  - `Subconscious.execute()` — Straightforward task execution
+  - `Superego.evaluateProposals()` — Binary accept/reject decisions
+  - `Id.detectIdle()` — Deterministic plan status check
+
+You can configure which models to use via the config file:
+
+```json
+{
+  "strategicModel": "opus",      // For complex reasoning
+  "tacticalModel": "sonnet"      // For routine tasks
+}
+```
+
+This provides:
+- **70-80% cost reduction** — Most operations run on the more efficient model
+- **Improved latency** — Faster responses for routine tasks
+- **Better quality** — Reserve Opus capacity for tasks that truly need it
 
 ### Running Tests
 

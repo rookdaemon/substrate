@@ -36,7 +36,7 @@ export class TaskClassifier {
    * Classify an operation as strategic or tactical based on agent role and operation type.
    */
   classify(context: OperationContext): TaskType {
-    const { role, operation } = context;
+    const { operation } = context;
 
     // Strategic operations that require deep reasoning
     const strategicOperations = [
