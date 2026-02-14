@@ -9,7 +9,6 @@ import { FixedClock } from "../../src/substrate/abstractions/FixedClock";
 import { SubstrateConfig } from "../../src/substrate/config";
 import { FileLock } from "../../src/substrate/io/FileLock";
 import { AgentRole } from "../../src/agents/types";
-import { SubstrateFileType } from "../../src/substrate/types";
 
 // Mock compactor
 class MockCompactor implements IConversationCompactor {
@@ -35,7 +34,6 @@ describe("ConversationManager", () => {
   let clock: FixedClock;
   let config: SubstrateConfig;
   let reader: SubstrateFileReader;
-  let writer: SubstrateFileWriter;
   let appendWriter: AppendOnlyWriter;
   let checker: PermissionChecker;
   let compactor: MockCompactor;

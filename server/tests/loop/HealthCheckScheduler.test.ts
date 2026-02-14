@@ -1,5 +1,5 @@
 import { HealthCheckScheduler } from "../../src/loop/HealthCheckScheduler";
-import { HealthCheck, HealthCheckResult } from "../../src/evaluation/HealthCheck";
+import { HealthCheck } from "../../src/evaluation/HealthCheck";
 import { FixedClock } from "../../src/substrate/abstractions/FixedClock";
 import { InMemoryLogger } from "../../src/logging";
 import { InMemoryFileSystem } from "../../src/substrate/abstractions/InMemoryFileSystem";
@@ -20,18 +20,6 @@ async function setupSubstrateFiles(fs: InMemoryFileSystem) {
   await fs.writeFile("/substrate/CLAUDE.md", "# Claude\n\nConfig here");
   await fs.writeFile("/substrate/PROGRESS.md", "# Progress\n\n");
   await fs.writeFile("/substrate/CONVERSATION.md", "# Conversation\n\n");
-}
-
-function createMockHealthCheckResult(overrides?: Partial<HealthCheckResult>): HealthCheckResult {
-  return {
-    overall: "healthy",
-    drift: { score: 0.1, issues: [] },
-    consistency: { inconsistencies: [] },
-    security: { compliant: true, violations: [] },
-    planQuality: { score: 0.8, issues: [] },
-    reasoning: { valid: true, issues: [] },
-    ...overrides,
-  };
 }
 
 describe("HealthCheckScheduler", () => {

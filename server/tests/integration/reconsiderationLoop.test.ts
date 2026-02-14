@@ -1,7 +1,7 @@
 import { LoopOrchestrator } from "../../src/loop/LoopOrchestrator";
 import { InMemoryEventSink } from "../../src/loop/InMemoryEventSink";
 import { ImmediateTimer } from "../../src/loop/ImmediateTimer";
-import { defaultLoopConfig, LoopEvent } from "../../src/loop/types";
+import { defaultLoopConfig } from "../../src/loop/types";
 import { InMemoryLogger } from "../../src/logging";
 import { Ego } from "../../src/agents/roles/Ego";
 import { Subconscious } from "../../src/agents/roles/Subconscious";

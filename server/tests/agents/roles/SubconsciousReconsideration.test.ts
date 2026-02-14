@@ -1,4 +1,4 @@
-import { Subconscious, TaskResult, OutcomeEvaluation } from "../../../src/agents/roles/Subconscious";
+import { Subconscious, TaskResult } from "../../../src/agents/roles/Subconscious";
 import { PermissionChecker } from "../../../src/agents/permissions";
 import { PromptBuilder } from "../../../src/agents/prompts/PromptBuilder";
 import { InMemorySessionLauncher } from "../../../src/agents/claude/InMemorySessionLauncher";

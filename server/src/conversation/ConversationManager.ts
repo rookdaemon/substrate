@@ -51,7 +51,7 @@ export class ConversationManager {
     }
   }
 
-  private async performCompaction(role: AgentRole): Promise<void> {
+  private async performCompaction(_role: AgentRole): Promise<void> {
     // NOTE: Compaction is a privileged operation that directly overwrites the file
     // without going through permission checks or SubstrateFileWriter.
     // This is intentional since compaction is a maintenance operation.
