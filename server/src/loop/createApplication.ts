@@ -52,7 +52,7 @@ export interface Application {
   wsServer: LoopWebSocketServer;
   logPath: string;
   mode: "cycle" | "tick";
-  start(port?: number): Promise<number>;
+  start(port?: number, forceStart?: boolean): Promise<number>;
   stop(): Promise<void>;
 }
 
@@ -174,9 +174,18 @@ export async function createApplication(config: ApplicationConfig): Promise<Appl
     httpServer,
     wsServer,
     logPath,
-    async start(port?: number): Promise<number> {
+    async start(port?: number, forceStart?: boolean): Promise<number> {
       const p = port ?? config.httpPort ?? 3000;
-      return httpServer.listen(p);
+      const boundPort = await httpServer.listen(p);
+      if (forceStart) {
+        orchestrator.start();
+        if (mode === "tick") {
+          orchestrator.runTickLoop().catch(() => {});
+        } else {
+          orchestrator.runLoop().catch(() => {});
+        }
+      }
+      return boundPort;
     },
     async stop(): Promise<void> {
       try { orchestrator.stop(); } catch { /* already stopped */ }

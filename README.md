@@ -86,9 +86,14 @@ Config file fields:
   "sourceCodePath": "/path/to/substrate",
   "backupPath": "~/.local/share/substrate-backups",
   "port": 3000,
-  "model": "sonnet"
+  "model": "sonnet",
+  "autoStartOnFirstRun": false,
+  "autoStartAfterRestart": true
 }
 ```
+
+- **autoStartOnFirstRun** (default: `false`) — When `true`, the agent loop starts automatically on first/cold start. Default is `false` so you can be present when it starts the first time.
+- **autoStartAfterRestart** (default: `true`) — When `true`, the supervisor passes `--forceStart` when respawning after a restart (Restart button or rebuild). If `--forceStart` is present, the server always auto-starts the loop; the supervisor only adds it when this config is true. Other exit codes exit cleanly without restart.
 
 The `--model` CLI flag overrides the config file model: `npm run start -- --model opus`
 

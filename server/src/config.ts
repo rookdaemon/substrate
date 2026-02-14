@@ -10,6 +10,10 @@ export interface AppConfig {
   port: number;
   model: string;
   mode: "cycle" | "tick";
+  /** If true, the agent loop auto-starts on first/cold start (default: false — you often want to be there). */
+  autoStartOnFirstRun: boolean;
+  /** If true (default), the agent loop auto-starts when the server was restarted (e.g. after Restart button or rebuild). */
+  autoStartAfterRestart: boolean;
 }
 
 export interface ResolveConfigOptions {
@@ -33,6 +37,8 @@ export async function resolveConfig(
     port: 3000,
     model: "sonnet",
     mode: "cycle",
+    autoStartOnFirstRun: false,
+    autoStartAfterRestart: true,
   };
 
   let fileConfig: Partial<AppConfig> = {};
@@ -67,6 +73,8 @@ export async function resolveConfig(
     port: fileConfig.port ?? defaults.port,
     model: fileConfig.model ?? defaults.model,
     mode: (fileConfig as Partial<AppConfig>).mode ?? defaults.mode,
+    autoStartOnFirstRun: fileConfig.autoStartOnFirstRun ?? defaults.autoStartOnFirstRun,
+    autoStartAfterRestart: fileConfig.autoStartAfterRestart ?? defaults.autoStartAfterRestart,
   };
 
   // Env vars override everything
