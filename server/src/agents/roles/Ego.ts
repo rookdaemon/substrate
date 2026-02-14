@@ -2,7 +2,7 @@ import { IClock } from "../../substrate/abstractions/IClock";
 import { SubstrateFileType } from "../../substrate/types";
 import { SubstrateFileReader } from "../../substrate/io/FileReader";
 import { SubstrateFileWriter } from "../../substrate/io/FileWriter";
-import { AppendOnlyWriter } from "../../substrate/io/AppendOnlyWriter";
+import { ConversationManager } from "../../conversation/ConversationManager";
 import { PermissionChecker } from "../permissions";
 import { PromptBuilder } from "../prompts/PromptBuilder";
 import { ISessionLauncher, ProcessLogEntry } from "../claude/ISessionLauncher";
@@ -26,7 +26,7 @@ export class Ego {
   constructor(
     private readonly reader: SubstrateFileReader,
     private readonly writer: SubstrateFileWriter,
-    private readonly appendWriter: AppendOnlyWriter,
+    private readonly conversationManager: ConversationManager,
     private readonly checker: PermissionChecker,
     private readonly promptBuilder: PromptBuilder,
     private readonly sessionLauncher: ISessionLauncher,
@@ -69,8 +69,7 @@ export class Ego {
   }
 
   async appendConversation(entry: string): Promise<void> {
-    this.checker.assertCanAppend(AgentRole.EGO, SubstrateFileType.CONVERSATION);
-    await this.appendWriter.append(SubstrateFileType.CONVERSATION, `[EGO] ${entry}`);
+    await this.conversationManager.append(AgentRole.EGO, entry);
   }
 
   async respondToMessage(
