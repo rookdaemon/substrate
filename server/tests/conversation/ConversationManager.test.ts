@@ -235,7 +235,7 @@ describe("ConversationManager with archiving", () => {
     const archiveConfig: ConversationArchiveConfig = {
       enabled: true,
       linesToKeep: 2,
-      sizeThreshold: 3, // Archive when more than 3 lines
+      sizeThreshold: 3, // Archive when at least 3 lines (before next append)
     };
 
     manager = new ConversationManager(

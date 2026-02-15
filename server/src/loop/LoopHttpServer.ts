@@ -343,7 +343,7 @@ export class LoopHttpServer {
 
   private handleArchiveRequest(res: http.ServerResponse): void {
     if (!this.conversationManager) {
-      this.json(res, 503, { error: "Conversation archive not configured" });
+      this.json(res, 503, { error: "Conversation archiving is not enabled" });
       return;
     }
     this.conversationManager.forceArchive().then(
@@ -355,7 +355,12 @@ export class LoopHttpServer {
             archivedPath: result.archivedPath,
           });
         } else {
-          this.json(res, 500, { success: false, error: "Archive failed" });
+          // Archive not configured or nothing to archive
+          this.json(res, 200, { 
+            success: false, 
+            linesArchived: 0,
+            message: "Archiving is not enabled or no content to archive" 
+          });
         }
       },
       (err) => {
