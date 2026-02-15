@@ -124,7 +124,7 @@ describe("CollapsiblePanel", () => {
     expect(toggleButton.textContent).toBe("↓");
   });
 
-  it("shows correct icon when collapsed (rightward)", () => {
+  it("renders vertical strip when collapsed rightward", () => {
     const onToggle = vi.fn();
     render(
       <CollapsiblePanel
@@ -137,9 +137,11 @@ describe("CollapsiblePanel", () => {
         <div>Content</div>
       </CollapsiblePanel>
     );
-    
-    const toggleButton = screen.getByRole("button", { name: /expand test panel/i });
-    expect(toggleButton.textContent).toBe("←");
+
+    const stripButton = screen.getByRole("button", { name: /expand test panel/i });
+    expect(stripButton).toBeInTheDocument();
+    expect(screen.getByText("Test Panel")).toBeInTheDocument();
+    expect(screen.getByText("←")).toBeInTheDocument();
   });
 
   it("applies custom className", () => {

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Markdown from "react-markdown";
 import { apiGet } from "../hooks/useApi";
 import { LoopEvent } from "../hooks/useWebSocket";
@@ -39,6 +39,7 @@ function parseEntries(raw: string): ConversationEntry[] {
 
 export function ConversationView({ lastEvent, refreshKey }: ConversationViewProps) {
   const [entries, setEntries] = useState<ConversationEntry[]>([]);
+  const bottomRef = useRef<HTMLDivElement>(null);
 
   const fetchConversation = () => {
     apiGet<SubstrateContent>("/api/substrate/CONVERSATION")
@@ -56,6 +57,10 @@ export function ConversationView({ lastEvent, refreshKey }: ConversationViewProp
     }
   }, [lastEvent]);
 
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [entries]);
+
   return (
     <div className="conversation-view">
       <div className="conversation-entries" data-testid="conversation-entries">
@@ -71,6 +76,7 @@ export function ConversationView({ lastEvent, refreshKey }: ConversationViewProp
             </div>
           ))
         )}
+        <div ref={bottomRef} />
       </div>
     </div>
   );

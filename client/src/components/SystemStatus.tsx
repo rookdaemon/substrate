@@ -17,9 +17,10 @@ interface LoopStatus {
 
 interface SystemStatusProps {
   lastEvent: LoopEvent | null;
+  compact?: boolean;
 }
 
-export function SystemStatus({ lastEvent }: SystemStatusProps) {
+export function SystemStatus({ lastEvent, compact }: SystemStatusProps) {
   const [status, setStatus] = useState<LoopStatus | null>(null);
   const [rateLimitUntil, setRateLimitUntil] = useState<string | null>(null);
 
@@ -43,10 +44,17 @@ export function SystemStatus({ lastEvent }: SystemStatusProps) {
 
   if (!status) return <div>Loading...</div>;
 
+  if (compact) {
+    return (
+      <div className="system-status system-status-compact">
+        <CooldownBanner rateLimitUntil={rateLimitUntil} />
+        <span className="status-badge" data-testid="loop-state">{status.state}</span>
+      </div>
+    );
+  }
+
   return (
     <div className="system-status">
-      <h2>System Status</h2>
-      <CooldownBanner rateLimitUntil={rateLimitUntil} />
       <div className="status-state" data-testid="loop-state">{status.state}</div>
       <div className="status-metrics">
         <span>Cycles: {status.metrics.totalCycles}</span>

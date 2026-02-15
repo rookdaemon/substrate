@@ -53,57 +53,67 @@ export function App() {
         </span>
       </header>
 
-      <main className="app-grid">
+      <main className="app-layout">
         <section className="panel panel-status">
-          <SystemStatus lastEvent={lastEvent} />
-          <LoopControls state={loopState} onStateChange={refreshState} />
-          <HealthIndicators />
+          <div className="status-bar">
+            <SystemStatus lastEvent={lastEvent} compact />
+            <LoopControls state={loopState} onStateChange={refreshState} />
+          </div>
+          <details className="status-details">
+            <summary>Metrics & Health</summary>
+            <SystemStatus lastEvent={lastEvent} />
+            <HealthIndicators />
+          </details>
         </section>
 
-        <CollapsiblePanel
-          panelId="plan"
-          title="Plan"
-          isExpanded={isExpanded("plan")}
-          onToggle={togglePanel}
-          collapseDirection="up"
-          className="panel-plan"
-        >
-          <PlanView lastEvent={lastEvent} />
-        </CollapsiblePanel>
+        <div className="panel-row">
+          <CollapsiblePanel
+            panelId="plan"
+            title="Plan"
+            isExpanded={isExpanded("plan")}
+            onToggle={togglePanel}
+            collapseDirection="up"
+            className="panel-plan"
+          >
+            <PlanView lastEvent={lastEvent} />
+          </CollapsiblePanel>
 
-        <CollapsiblePanel
-          panelId="progress"
-          title="Progress Log"
-          isExpanded={isExpanded("progress")}
-          onToggle={togglePanel}
-          collapseDirection="right"
-          className="panel-progress"
-        >
-          <ProgressLog lastEvent={lastEvent} />
-        </CollapsiblePanel>
+          <CollapsiblePanel
+            panelId="progress"
+            title="Progress Log"
+            isExpanded={isExpanded("progress")}
+            onToggle={togglePanel}
+            collapseDirection="right"
+            className="panel-progress"
+          >
+            <ProgressLog lastEvent={lastEvent} />
+          </CollapsiblePanel>
+        </div>
 
-        <CollapsiblePanel
-          panelId="conversation"
-          title="Conversation"
-          isExpanded={isExpanded("conversation")}
-          onToggle={togglePanel}
-          collapseDirection="up"
-          className="panel-conversation"
-        >
-          <ConversationView lastEvent={lastEvent} refreshKey={conversationKey} />
-          <InputField onSent={() => setConversationKey((k) => k + 1)} />
-        </CollapsiblePanel>
+        <div className="panel-row">
+          <CollapsiblePanel
+            panelId="conversation"
+            title="Conversation"
+            isExpanded={isExpanded("conversation")}
+            onToggle={togglePanel}
+            collapseDirection="up"
+            className="panel-conversation"
+          >
+            <ConversationView lastEvent={lastEvent} refreshKey={conversationKey} />
+            <InputField onSent={() => setConversationKey((k) => k + 1)} />
+          </CollapsiblePanel>
 
-        <CollapsiblePanel
-          panelId="processLog"
-          title="Process Log"
-          isExpanded={isExpanded("processLog")}
-          onToggle={togglePanel}
-          collapseDirection="up"
-          className="panel-process-log"
-        >
-          <ProcessLog lastEvent={lastEvent} />
-        </CollapsiblePanel>
+          <CollapsiblePanel
+            panelId="processLog"
+            title="Process Log"
+            isExpanded={isExpanded("processLog")}
+            onToggle={togglePanel}
+            collapseDirection="right"
+            className="panel-process-log"
+          >
+            <ProcessLog lastEvent={lastEvent} />
+          </CollapsiblePanel>
+        </div>
 
         <CollapsiblePanel
           panelId="substrate"

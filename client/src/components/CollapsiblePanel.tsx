@@ -26,11 +26,30 @@ export function CollapsiblePanel({
     onToggle(panelId);
   };
 
+  const dirClass = collapseDirection === "right" ? "collapse-right" : "collapse-up";
+  const stateClass = isExpanded ? "expanded" : "collapsed";
+
+  if (collapseDirection === "right" && !isExpanded) {
+    return (
+      <section className={`panel collapsible-panel ${dirClass} ${stateClass} ${className}`}>
+        <button
+          className="panel-strip"
+          onClick={handleToggle}
+          aria-label={`Expand ${title}`}
+          title={`Expand ${title}`}
+        >
+          <span className="panel-strip-title">{title}</span>
+          <span className="panel-strip-icon">←</span>
+        </button>
+      </section>
+    );
+  }
+
   const collapseIcon = collapseDirection === "right" ? "→" : "↑";
   const expandIcon = collapseDirection === "right" ? "←" : "↓";
 
   return (
-    <section className={`panel collapsible-panel ${className} ${isExpanded ? "expanded" : "collapsed"}`}>
+    <section className={`panel collapsible-panel ${dirClass} ${stateClass} ${className}`}>
       <div className="panel-header">
         <h2>{title}</h2>
         <button

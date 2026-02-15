@@ -56,16 +56,21 @@ body {
   color: #f44336;
 }
 
-.app-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  grid-template-rows: auto;
+.app-layout {
+  display: flex;
+  flex-direction: column;
   gap: 1rem;
 }
 
+.panel-row {
+  display: flex;
+  gap: 1rem;
+  min-height: 0;
+}
+
 @media (max-width: 768px) {
-  .app-grid {
-    grid-template-columns: 1fr;
+  .panel-row {
+    flex-direction: column;
   }
 }
 
@@ -143,36 +148,69 @@ body {
   }
 }
 
-.panel-status {
-  grid-column: 1 / -1;
-}
-
-.panel-plan {
+/* Panels in rows expand to fill available space */
+.panel-row > .collapsible-panel {
+  flex: 1;
+  min-width: 0;
   max-height: 500px;
 }
 
-.panel-plan.collapsed {
+/* Up-collapsed panels in a row keep their width, shrink height */
+.panel-row > .collapsible-panel.collapse-up.collapsed {
   max-height: 60px;
+  flex: 1;
 }
 
-.panel-progress {
+/* Right-collapsed panel: narrow vertical strip */
+.panel-row > .collapsible-panel.collapse-right.collapsed {
+  flex: 0 0 32px;
   max-height: 500px;
+  padding: 0;
+  overflow: hidden;
 }
 
-.panel-progress.collapsed {
-  max-height: 60px;
+/* The clickable strip in a right-collapsed panel */
+.panel-strip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  width: 100%;
+  height: 100%;
+  min-height: 120px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 0.5rem 0;
+  color: var(--color-primary);
+  transition: background 0.2s ease;
 }
 
-.panel-conversation {
-  max-height: 500px;
+.panel-strip:hover {
+  background: var(--bg-hover);
 }
 
-.panel-conversation.collapsed {
+.panel-strip-title {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  font-size: 0.85rem;
+  font-family: monospace;
+  white-space: nowrap;
+  letter-spacing: 0.05em;
+}
+
+.panel-strip-icon {
+  font-family: monospace;
+  font-size: 0.85rem;
+}
+
+/* Up-collapsed panels (substrate, etc.) */
+.collapsible-panel.collapse-up.collapsed {
   max-height: 60px;
 }
 
 .panel-substrate {
-  grid-column: 1 / -1;
   max-height: 500px;
 }
 
@@ -210,6 +248,43 @@ body {
 @keyframes cooldown-pulse {
   0%, 100% { border-color: #f44336; }
   50% { border-color: #ff7043; }
+}
+
+.status-bar {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.status-details {
+  margin-top: 0.5rem;
+}
+
+.status-details summary {
+  cursor: pointer;
+  font-size: 0.8rem;
+  color: #888;
+  padding: 0.3rem 0;
+}
+
+.status-details summary:hover {
+  color: var(--color-primary);
+}
+
+.status-badge {
+  font-size: 0.9rem;
+  font-weight: bold;
+  color: #ffd700;
+  padding: 0.2rem 0.6rem;
+  border: 1px solid #ffd70044;
+  border-radius: 4px;
+  background: #ffd70011;
+}
+
+.system-status-compact {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 
 .status-state {
