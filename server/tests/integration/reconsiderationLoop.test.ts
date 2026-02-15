@@ -179,7 +179,7 @@ describe("Reconsideration Loop Integration", () => {
     expect(reconsiderationEvents).toHaveLength(0);
   });
 
-  it("logs reconsideration results to PROGRESS.md", async () => {
+  it("does not pollute PROGRESS.md with raw reconsideration logs", async () => {
     deps.launcher.enqueueSuccess(JSON.stringify({
       result: "success",
       summary: "Feature implemented",
@@ -201,12 +201,13 @@ describe("Reconsideration Loop Integration", () => {
     await orchestrator.runOneCycle();
 
     const progress = await deps.fs.readFile("/substrate/PROGRESS.md");
-    expect(progress).toContain("Reconsideration for task task-1");
-    expect(progress).toContain("Outcome matches intent: true");
-    expect(progress).toContain("Quality score: 85/100");
-    expect(progress).toContain("Issues found: Minor performance issue");
-    expect(progress).toContain("Recommended actions: Optimize query");
-    expect(progress).toContain("Needs reassessment: false");
+    // PROGRESS.md should NOT contain raw reconsideration logs
+    expect(progress).not.toContain("Reconsideration for task task-1");
+    expect(progress).not.toContain("Outcome matches intent");
+    expect(progress).not.toContain("Quality score: 85/100");
+    expect(progress).not.toContain("Issues found: Minor performance issue");
+    expect(progress).not.toContain("Recommended actions: Optimize query");
+    expect(progress).not.toContain("Needs reassessment");
   });
 
   it("handles reconsideration evaluation errors gracefully", async () => {
@@ -251,5 +252,34 @@ describe("Reconsideration Loop Integration", () => {
     // No reconsideration for idle cycles
     const reconsiderationEvents = eventSink.getEvents().filter(e => e.type === "reconsideration_complete");
     expect(reconsiderationEvents).toHaveLength(0);
+  });
+
+  it("still logs structured progressEntry content to PROGRESS.md", async () => {
+    const structuredEntry = "## 2025-06-15 - Implement Feature X (COMPLETE)\n\n**Summary:** Feature X implemented successfully with all components.";
+    
+    deps.launcher.enqueueSuccess(JSON.stringify({
+      result: "success",
+      summary: "Feature implemented",
+      progressEntry: structuredEntry,
+      skillUpdates: null,
+      memoryUpdates: null,
+      proposals: [],
+    }));
+
+    deps.launcher.enqueueSuccess(JSON.stringify({
+      outcomeMatchesIntent: true,
+      qualityScore: 90,
+      issuesFound: [],
+      recommendedActions: [],
+      needsReassessment: false,
+    }));
+
+    orchestrator.start();
+    await orchestrator.runOneCycle();
+
+    const progress = await deps.fs.readFile("/substrate/PROGRESS.md");
+    // PROGRESS.md SHOULD contain structured progressEntry content
+    expect(progress).toContain(structuredEntry);
+    expect(progress).toContain("Feature X implemented successfully");
   });
 });

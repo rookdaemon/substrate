@@ -64,7 +64,7 @@ describe("Integration: Idle → Goal Flow", () => {
 
     const logger = new InMemoryLogger();
     const idleHandler = new IdleHandler(
-      deps.id, deps.superego, deps.ego, deps.appendWriter, deps.clock, logger
+      deps.id, deps.superego, deps.ego, deps.clock, logger
     );
 
     const eventSink = new InMemoryEventSink();
@@ -115,7 +115,7 @@ describe("Integration: Idle → Goal Flow", () => {
 
     const logger = new InMemoryLogger();
     const idleHandler = new IdleHandler(
-      deps.id, deps.superego, deps.ego, deps.appendWriter, deps.clock, logger
+      deps.id, deps.superego, deps.ego, deps.clock, logger
     );
 
     const eventSink = new InMemoryEventSink();

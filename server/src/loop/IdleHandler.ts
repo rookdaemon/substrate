@@ -2,8 +2,6 @@ import { Id } from "../agents/roles/Id";
 import { Superego } from "../agents/roles/Superego";
 import { Ego } from "../agents/roles/Ego";
 import { ProcessLogEntry } from "../agents/claude/ISessionLauncher";
-import { AppendOnlyWriter } from "../substrate/io/AppendOnlyWriter";
-import { SubstrateFileType } from "../substrate/types";
 import { IClock } from "../substrate/abstractions/IClock";
 import { ILogger } from "../logging";
 
@@ -17,7 +15,6 @@ export class IdleHandler {
     private readonly id: Id,
     private readonly superego: Superego,
     private readonly ego: Ego,
-    private readonly appendWriter: AppendOnlyWriter,
     private readonly clock: IClock,
     private readonly logger: ILogger
   ) {}
@@ -41,11 +38,8 @@ export class IdleHandler {
 
     this.logger.debug(`IdleHandler: generated ${candidates.length} goal candidate(s)`);
 
-    // Step 3: Log idle detection — all goals proceed to Superego, no pausing
-    await this.appendWriter.append(
-      SubstrateFileType.PROGRESS,
-      `[ID] Idle detected: ${detection.reason}. Generated ${candidates.length} goal candidate(s).`
-    );
+    // Idle detection is emitted via eventSink in LoopOrchestrator and available in systemd logs
+    // No need to log to PROGRESS.md as it would pollute the high-level summary file
 
     // Step 5: Have Superego evaluate candidates as proposals
     const proposals = candidates.map((c) => ({

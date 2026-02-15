@@ -517,7 +517,8 @@ export class LoopOrchestrator {
     this.metrics.superegoAudits++;
     try {
       const report = await this.superego.audit(this.createLogCallback("SUPEREGO"));
-      await this.superego.logAudit(report.summary);
+      // Audit results are emitted via eventSink (below) and available in systemd logs
+      // No need to log to PROGRESS.md as it would pollute the high-level summary file
       this.logger.debug(`audit: complete — ${report.summary}`);
     } catch (err) {
       this.logger.debug(`audit: failed — ${err instanceof Error ? err.message : String(err)}`);
@@ -653,17 +654,8 @@ export class LoopOrchestrator {
         `quality: ${evaluation.qualityScore}/100, needs reassessment: ${evaluation.needsReassessment}`
       );
 
-      // Log reconsideration results to PROGRESS
-      const reconsiderationLog = [
-        `Reconsideration for task ${dispatch.taskId}:`,
-        `- Outcome matches intent: ${evaluation.outcomeMatchesIntent}`,
-        `- Quality score: ${evaluation.qualityScore}/100`,
-        evaluation.issuesFound.length > 0 ? `- Issues found: ${evaluation.issuesFound.join("; ")}` : null,
-        evaluation.recommendedActions.length > 0 ? `- Recommended actions: ${evaluation.recommendedActions.join("; ")}` : null,
-        `- Needs reassessment: ${evaluation.needsReassessment}`,
-      ].filter(Boolean).join("\n");
-
-      await this.subconscious.logProgress(reconsiderationLog);
+      // Reconsideration results are emitted via eventSink (below) and available in systemd logs
+      // No need to log to PROGRESS.md as it would pollute the high-level summary file
 
       this.eventSink.emit({
         type: "reconsideration_complete",
