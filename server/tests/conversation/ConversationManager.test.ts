@@ -1,5 +1,6 @@
-import { ConversationManager } from "../../src/conversation/ConversationManager";
+import { ConversationManager, ConversationArchiveConfig } from "../../src/conversation/ConversationManager";
 import { IConversationCompactor } from "../../src/conversation/IConversationCompactor";
+import { IConversationArchiver } from "../../src/conversation/IConversationArchiver";
 import { SubstrateFileReader } from "../../src/substrate/io/FileReader";
 import { SubstrateFileWriter } from "../../src/substrate/io/FileWriter";
 import { AppendOnlyWriter } from "../../src/substrate/io/AppendOnlyWriter";
@@ -26,6 +27,41 @@ class MockCompactor implements IConversationCompactor {
 
   reset(): void {
     this.compactCalls = [];
+  }
+}
+
+// Mock archiver
+class MockArchiver implements IConversationArchiver {
+  public archiveCalls: Array<{ content: string; linesToKeep: number }> = [];
+  private linesArchivedResponse: number = 0;
+  private archivedPathResponse?: string = "/test/substrate/archive/conversation/test.md";
+
+  setResponse(linesArchived: number, archivedPath?: string): void {
+    this.linesArchivedResponse = linesArchived;
+    this.archivedPathResponse = archivedPath;
+  }
+
+  async archive(currentContent: string, linesToKeep: number): Promise<{
+    archivedPath?: string;
+    remainingContent: string;
+    linesArchived: number;
+  }> {
+    this.archiveCalls.push({ content: currentContent, linesToKeep });
+    
+    // Simple mock: keep last N lines
+    const lines = currentContent.split('\n');
+    const contentLines = lines.filter(l => l.trim().length > 0 && !l.startsWith('#'));
+    const remaining = contentLines.slice(-linesToKeep).join('\n');
+    
+    return {
+      archivedPath: this.linesArchivedResponse > 0 ? this.archivedPathResponse : undefined,
+      remainingContent: remaining,
+      linesArchived: this.linesArchivedResponse,
+    };
+  }
+
+  reset(): void {
+    this.archiveCalls = [];
   }
 }
 
@@ -163,5 +199,167 @@ describe("ConversationManager", () => {
 
     // First append after reset doesn't compact
     expect(compactor.compactCalls).toHaveLength(0);
+  });
+});
+
+describe("ConversationManager with archiving", () => {
+  let fs: InMemoryFileSystem;
+  let clock: FixedClock;
+  let config: SubstrateConfig;
+  let reader: SubstrateFileReader;
+  let appendWriter: AppendOnlyWriter;
+  let checker: PermissionChecker;
+  let compactor: MockCompactor;
+  let archiver: MockArchiver;
+  let manager: ConversationManager;
+  let lock: FileLock;
+  let writer: SubstrateFileWriter;
+
+  beforeEach(async () => {
+    fs = new InMemoryFileSystem();
+    clock = new FixedClock(new Date("2025-01-01T12:00:00.000Z"));
+    config = new SubstrateConfig("/test/substrate");
+    lock = new FileLock();
+    reader = new SubstrateFileReader(fs, config);
+    writer = new SubstrateFileWriter(fs, config, lock);
+    appendWriter = new AppendOnlyWriter(fs, config, lock, clock);
+    checker = new PermissionChecker();
+    compactor = new MockCompactor();
+    archiver = new MockArchiver();
+
+    // Initialize CONVERSATION.md
+    await fs.writeFile("/test/substrate/CONVERSATION.md", "# Conversation\n\n");
+  });
+
+  it("should archive when size threshold is exceeded", async () => {
+    const archiveConfig: ConversationArchiveConfig = {
+      enabled: true,
+      linesToKeep: 2,
+      sizeThreshold: 3, // Archive when more than 3 lines
+    };
+
+    manager = new ConversationManager(
+      reader, fs, config, lock, appendWriter, checker, compactor, clock,
+      archiver, archiveConfig
+    );
+
+    // Add 3 messages (will have 3 content lines)
+    await manager.append(AgentRole.EGO, "Message 1");
+    await manager.append(AgentRole.EGO, "Message 2");
+    await manager.append(AgentRole.EGO, "Message 3");
+
+    // Not archived yet (exactly 3 lines)
+    expect(archiver.archiveCalls).toHaveLength(0);
+
+    // Add one more to exceed threshold
+    archiver.setResponse(2); // Will archive 2 lines
+    await manager.append(AgentRole.EGO, "Message 4");
+
+    // Should have archived
+    expect(archiver.archiveCalls).toHaveLength(1);
+    expect(archiver.archiveCalls[0].linesToKeep).toBe(2);
+  });
+
+  it("should archive when time threshold is exceeded", async () => {
+    const archiveConfig: ConversationArchiveConfig = {
+      enabled: true,
+      linesToKeep: 10,
+      sizeThreshold: 1000, // High threshold so size doesn't trigger
+      timeThresholdMs: 7 * 24 * 60 * 60 * 1000, // 1 week
+    };
+
+    manager = new ConversationManager(
+      reader, fs, config, lock, appendWriter, checker, compactor, clock,
+      archiver, archiveConfig
+    );
+
+    await manager.append(AgentRole.EGO, "Week 1 message");
+
+    // Advance 1 week
+    clock.setNow(new Date("2025-01-08T12:00:00.000Z"));
+    
+    archiver.setResponse(1);
+    await manager.append(AgentRole.EGO, "Week 2 message");
+
+    // Should have archived
+    expect(archiver.archiveCalls).toHaveLength(1);
+  });
+
+  it("should not archive if disabled", async () => {
+    const archiveConfig: ConversationArchiveConfig = {
+      enabled: false,
+      linesToKeep: 2,
+      sizeThreshold: 1,
+    };
+
+    manager = new ConversationManager(
+      reader, fs, config, lock, appendWriter, checker, compactor, clock,
+      archiver, archiveConfig
+    );
+
+    await manager.append(AgentRole.EGO, "Message 1");
+    await manager.append(AgentRole.EGO, "Message 2");
+    await manager.append(AgentRole.EGO, "Message 3");
+
+    // Should not archive even though threshold exceeded
+    expect(archiver.archiveCalls).toHaveLength(0);
+  });
+
+  it("should support forceArchive for programmatic invocation", async () => {
+    const archiveConfig: ConversationArchiveConfig = {
+      enabled: true,
+      linesToKeep: 5,
+      sizeThreshold: 100, // High threshold
+    };
+
+    manager = new ConversationManager(
+      reader, fs, config, lock, appendWriter, checker, compactor, clock,
+      archiver, archiveConfig
+    );
+
+    await manager.append(AgentRole.EGO, "Message 1");
+    
+    archiver.setResponse(1, "/test/substrate/archive/conversation/forced.md");
+    const result = await manager.forceArchive();
+
+    expect(result.success).toBe(true);
+    expect(result.linesArchived).toBe(1);
+    expect(result.archivedPath).toBe("/test/substrate/archive/conversation/forced.md");
+  });
+
+  it("should not call archiver if archiving not configured", async () => {
+    manager = new ConversationManager(
+      reader, fs, config, lock, appendWriter, checker, compactor, clock
+    );
+
+    await manager.append(AgentRole.EGO, "Message 1");
+    await manager.append(AgentRole.EGO, "Message 2");
+
+    // Should not have called archiver
+    expect(archiver.archiveCalls).toHaveLength(0);
+  });
+
+  it("should reset archive timer", async () => {
+    const archiveConfig: ConversationArchiveConfig = {
+      enabled: true,
+      linesToKeep: 10,
+      sizeThreshold: 1000,
+      timeThresholdMs: 100, // 100ms
+    };
+
+    manager = new ConversationManager(
+      reader, fs, config, lock, appendWriter, checker, compactor, clock,
+      archiver, archiveConfig
+    );
+
+    await manager.append(AgentRole.EGO, "Message 1");
+    
+    manager.resetArchiveTimer();
+
+    // After reset, time threshold should not trigger immediately
+    clock.setNow(new Date("2025-01-01T12:00:01.000Z"));
+    await manager.append(AgentRole.EGO, "Message 2");
+
+    expect(archiver.archiveCalls).toHaveLength(0);
   });
 });
