@@ -31,6 +31,7 @@ import { BackupScheduler } from "./BackupScheduler";
 import { NodeProcessRunner } from "../agents/claude/NodeProcessRunner";
 import { HealthCheckScheduler } from "./HealthCheckScheduler";
 import { AgoraService } from "../agora/AgoraService";
+import { getAppPaths } from "../paths";
 
 export interface ApplicationConfig {
   substratePath: string;
@@ -158,6 +159,8 @@ export async function createApplication(config: ApplicationConfig): Promise<Appl
   // Backup scheduler setup
   if (config.enableBackups !== false) { // Default enabled
     const backupDir = path.resolve(config.substratePath, "..", "backups");
+    const appPaths = getAppPaths();
+    const stateFilePath = path.join(appPaths.config, "last-backup.txt");
     const runner = new NodeProcessRunner();
     const backupScheduler = new BackupScheduler(
       fs,
@@ -170,6 +173,7 @@ export async function createApplication(config: ApplicationConfig): Promise<Appl
         backupIntervalMs: config.backupIntervalMs ?? 86400000, // Default: 24 hours
         retentionCount: config.backupRetentionCount ?? 7, // Default: keep 7 backups
         verifyBackups: true,
+        stateFilePath,
       }
     );
     orchestrator.setBackupScheduler(backupScheduler);

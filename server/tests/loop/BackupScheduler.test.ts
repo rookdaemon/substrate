@@ -18,7 +18,7 @@ describe("BackupScheduler", () => {
   });
 
   describe("shouldRunBackup", () => {
-    it("should return true on first backup", () => {
+    it("should return true on first backup", async () => {
       const scheduler = new BackupScheduler(fs, runner, clock, logger, {
         substratePath: "/substrate",
         backupDir: "/backups",
@@ -27,7 +27,7 @@ describe("BackupScheduler", () => {
         verifyBackups: true,
       });
 
-      expect(scheduler.shouldRunBackup()).toBe(true);
+      expect(await scheduler.shouldRunBackup()).toBe(true);
     });
 
     it("should return false before interval elapsed", async () => {
@@ -52,7 +52,7 @@ describe("BackupScheduler", () => {
       // Advance clock by 30 minutes
       clock.setNow(new Date(clock.now().getTime() + 1800000));
 
-      expect(scheduler.shouldRunBackup()).toBe(false);
+      expect(await scheduler.shouldRunBackup()).toBe(false);
     });
 
     it("should return true after interval elapsed", async () => {
@@ -77,7 +77,7 @@ describe("BackupScheduler", () => {
       // Advance clock by 65 minutes
       clock.setNow(new Date(clock.now().getTime() + 3900000));
 
-      expect(scheduler.shouldRunBackup()).toBe(true);
+      expect(await scheduler.shouldRunBackup()).toBe(true);
     });
   });
 
@@ -308,6 +308,161 @@ describe("BackupScheduler", () => {
       expect(status.lastBackupTime).toEqual(clock.now());
       expect(status.backupCount).toBe(1);
       expect(status.nextBackupDue).toEqual(new Date(clock.now().getTime() + 3600000));
+    });
+  });
+
+  describe("state persistence", () => {
+    it("should persist last backup time to state file after successful backup", async () => {
+      const scheduler = new BackupScheduler(fs, runner, clock, logger, {
+        substratePath: "/substrate",
+        backupDir: "/backups",
+        backupIntervalMs: 86400000,
+        retentionCount: 7,
+        verifyBackups: false,
+        stateFilePath: "/config/last-backup.txt",
+      });
+
+      // Setup substrate files
+      await fs.mkdir("/substrate", { recursive: true });
+      await fs.writeFile("/substrate/PLAN.md", "# Plan\nTest content");
+
+      // Mock tar
+      runner.enqueue({ exitCode: 0, stdout: "", stderr: "" });
+
+      await scheduler.runBackup();
+
+      // Verify state file was created with timestamp
+      const stateFileExists = await fs.exists("/config/last-backup.txt");
+      expect(stateFileExists).toBe(true);
+
+      const content = await fs.readFile("/config/last-backup.txt");
+      const timestamp = new Date(content.trim());
+      expect(timestamp.toISOString()).toBe(clock.now().toISOString());
+    });
+
+    it("should load last backup time from state file on construction", async () => {
+      // Pre-create state file with a timestamp from 1 hour ago
+      const oneHourAgo = new Date(clock.now().getTime() - 3600000);
+      await fs.mkdir("/config", { recursive: true });
+      await fs.writeFile("/config/last-backup.txt", oneHourAgo.toISOString());
+
+      const scheduler = new BackupScheduler(fs, runner, clock, logger, {
+        substratePath: "/substrate",
+        backupDir: "/backups",
+        backupIntervalMs: 86400000, // 24 hours
+        retentionCount: 7,
+        verifyBackups: false,
+        stateFilePath: "/config/last-backup.txt",
+      });
+
+      // Should not run backup since last backup was only 1 hour ago and interval is 24 hours
+      expect(await scheduler.shouldRunBackup()).toBe(false);
+
+      const status = scheduler.getStatus();
+      expect(status.lastBackupTime?.toISOString()).toBe(oneHourAgo.toISOString());
+    });
+
+    it("should handle missing state file gracefully", async () => {
+      const scheduler = new BackupScheduler(fs, runner, clock, logger, {
+        substratePath: "/substrate",
+        backupDir: "/backups",
+        backupIntervalMs: 86400000,
+        retentionCount: 7,
+        verifyBackups: false,
+        stateFilePath: "/config/last-backup.txt",
+      });
+
+      // Should run backup when state file doesn't exist
+      expect(await scheduler.shouldRunBackup()).toBe(true);
+
+      const status = scheduler.getStatus();
+      expect(status.lastBackupTime).toBeNull();
+    });
+
+    it("should handle corrupt state file gracefully", async () => {
+      // Create corrupt state file with invalid timestamp
+      await fs.mkdir("/config", { recursive: true });
+      await fs.writeFile("/config/last-backup.txt", "not-a-valid-timestamp");
+
+      const scheduler = new BackupScheduler(fs, runner, clock, logger, {
+        substratePath: "/substrate",
+        backupDir: "/backups",
+        backupIntervalMs: 86400000,
+        retentionCount: 7,
+        verifyBackups: false,
+        stateFilePath: "/config/last-backup.txt",
+      });
+
+      // Should treat corrupt file as if no backup has been done
+      expect(await scheduler.shouldRunBackup()).toBe(true);
+
+      const status = scheduler.getStatus();
+      expect(status.lastBackupTime).toBeNull();
+    });
+
+    it("should persist state across restart simulation", async () => {
+      // First instance: run a backup
+      const scheduler1 = new BackupScheduler(fs, runner, clock, logger, {
+        substratePath: "/substrate",
+        backupDir: "/backups",
+        backupIntervalMs: 86400000, // 24 hours
+        retentionCount: 7,
+        verifyBackups: false,
+        stateFilePath: "/config/last-backup.txt",
+      });
+
+      // Setup substrate files
+      await fs.mkdir("/substrate", { recursive: true });
+      await fs.writeFile("/substrate/PLAN.md", "# Plan\nTest content");
+
+      // Mock tar
+      runner.enqueue({ exitCode: 0, stdout: "", stderr: "" });
+
+      const result1 = await scheduler1.runBackup();
+      expect(result1.success).toBe(true);
+
+      // Simulate server restart by creating a new scheduler instance
+      // Advance clock by 1 hour (still within 24h interval)
+      clock.setNow(new Date(clock.now().getTime() + 3600000));
+
+      const scheduler2 = new BackupScheduler(fs, runner, clock, logger, {
+        substratePath: "/substrate",
+        backupDir: "/backups",
+        backupIntervalMs: 86400000, // 24 hours
+        retentionCount: 7,
+        verifyBackups: false,
+        stateFilePath: "/config/last-backup.txt",
+      });
+
+      // Should NOT run backup since we're still within 24h interval
+      expect(await scheduler2.shouldRunBackup()).toBe(false);
+
+      // Now advance clock past 24h interval
+      clock.setNow(new Date(clock.now().getTime() + 23 * 3600000)); // Total 24 hours
+
+      // Should run backup now
+      expect(await scheduler2.shouldRunBackup()).toBe(true);
+    });
+
+    it("should not persist state if backup fails", async () => {
+      const scheduler = new BackupScheduler(fs, runner, clock, logger, {
+        substratePath: "/substrate",
+        backupDir: "/backups",
+        backupIntervalMs: 86400000,
+        retentionCount: 7,
+        verifyBackups: false,
+        stateFilePath: "/config/last-backup.txt",
+      });
+
+      // Don't create substrate directory - backup will fail
+      // Mock tar (won't be called because backup will fail earlier)
+
+      const result = await scheduler.runBackup();
+      expect(result.success).toBe(false);
+
+      // State file should not exist
+      const stateFileExists = await fs.exists("/config/last-backup.txt");
+      expect(stateFileExists).toBe(false);
     });
   });
 });

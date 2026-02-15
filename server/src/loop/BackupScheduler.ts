@@ -12,6 +12,7 @@ export interface BackupSchedulerConfig {
   backupIntervalMs: number; // e.g., 86400000 for daily (24 hours)
   retentionCount: number; // number of backups to keep
   verifyBackups: boolean; // whether to verify backup integrity
+  stateFilePath?: string; // path to persist last backup timestamp
 }
 
 export interface BackupVerificationResult {
@@ -32,6 +33,7 @@ export interface ScheduledBackupResult {
 export class BackupScheduler {
   private lastBackupTime: Date | null = null;
   private backupCount = 0;
+  private stateLoaded = false;
 
   constructor(
     private readonly fs: IFileSystem,
@@ -44,7 +46,12 @@ export class BackupScheduler {
   /**
    * Check if a backup should run based on interval
    */
-  shouldRunBackup(): boolean {
+  async shouldRunBackup(): Promise<boolean> {
+    // Ensure state is loaded from disk on first call
+    if (!this.stateLoaded) {
+      await this.ensureStateLoaded();
+    }
+
     if (!this.lastBackupTime) {
       return true; // First backup
     }
@@ -82,6 +89,10 @@ export class BackupScheduler {
       this.logger.debug(`BackupScheduler: backup created at ${backupResult.outputPath}`);
       this.lastBackupTime = this.clock.now();
       this.backupCount++;
+      this.stateLoaded = true; // Mark state as loaded since we just updated it
+
+      // Persist state after successful backup
+      await this.persistLastBackupTime(this.lastBackupTime);
 
       // Verify backup if enabled
       let verification: BackupVerificationResult | undefined;
@@ -226,5 +237,57 @@ export class BackupScheduler {
       backupCount: this.backupCount,
       nextBackupDue,
     };
+  }
+
+  /**
+   * Ensure state is loaded from disk
+   */
+  private async ensureStateLoaded(): Promise<void> {
+    if (this.stateLoaded) {
+      return;
+    }
+
+    this.lastBackupTime = await this.loadLastBackupTime();
+    this.stateLoaded = true;
+  }
+
+  /**
+   * Load last backup time from state file
+   */
+  private async loadLastBackupTime(): Promise<Date | null> {
+    if (!this.config.stateFilePath) {
+      return null;
+    }
+
+    try {
+      const exists = await this.fs.exists(this.config.stateFilePath);
+      if (!exists) {
+        return null;
+      }
+
+      const content = await this.fs.readFile(this.config.stateFilePath);
+      const date = new Date(content.trim());
+      return isNaN(date.getTime()) ? null : date;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Persist last backup time to state file
+   */
+  private async persistLastBackupTime(time: Date): Promise<void> {
+    if (!this.config.stateFilePath) {
+      return;
+    }
+
+    try {
+      const dir = path.dirname(this.config.stateFilePath);
+      await this.fs.mkdir(dir, { recursive: true });
+      await this.fs.writeFile(this.config.stateFilePath, time.toISOString());
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      this.logger.debug(`BackupScheduler: failed to persist state — ${errorMsg}`);
+    }
   }
 }
