@@ -2,7 +2,6 @@ import { ConversationManager, ConversationArchiveConfig } from "../../src/conver
 import { IConversationCompactor } from "../../src/conversation/IConversationCompactor";
 import { IConversationArchiver } from "../../src/conversation/IConversationArchiver";
 import { SubstrateFileReader } from "../../src/substrate/io/FileReader";
-import { SubstrateFileWriter } from "../../src/substrate/io/FileWriter";
 import { AppendOnlyWriter } from "../../src/substrate/io/AppendOnlyWriter";
 import { PermissionChecker } from "../../src/agents/permissions";
 import { InMemoryFileSystem } from "../../src/substrate/abstractions/InMemoryFileSystem";
@@ -82,7 +81,6 @@ describe("ConversationManager", () => {
     config = new SubstrateConfig("/test/substrate");
     lock = new FileLock();
     reader = new SubstrateFileReader(fs, config);
-    writer = new SubstrateFileWriter(fs, config, lock);
     appendWriter = new AppendOnlyWriter(fs, config, lock, clock);
     checker = new PermissionChecker();
     compactor = new MockCompactor();
@@ -213,7 +211,6 @@ describe("ConversationManager with archiving", () => {
   let archiver: MockArchiver;
   let manager: ConversationManager;
   let lock: FileLock;
-  let writer: SubstrateFileWriter;
 
   beforeEach(async () => {
     fs = new InMemoryFileSystem();
@@ -221,7 +218,6 @@ describe("ConversationManager with archiving", () => {
     config = new SubstrateConfig("/test/substrate");
     lock = new FileLock();
     reader = new SubstrateFileReader(fs, config);
-    writer = new SubstrateFileWriter(fs, config, lock);
     appendWriter = new AppendOnlyWriter(fs, config, lock, clock);
     checker = new PermissionChecker();
     compactor = new MockCompactor();
