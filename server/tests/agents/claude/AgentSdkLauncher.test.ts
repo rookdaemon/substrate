@@ -344,6 +344,42 @@ describe("AgentSdkLauncher", () => {
     });
   });
 
+  describe("timeout behavior", () => {
+    it("returns failure when session exceeds timeoutMs", async () => {
+      const queryFn: SdkQueryFn = () => {
+        return (async function* () {
+          // Simulate a session that hangs — yield one message then stall
+          yield { type: "assistant", message: { content: [{ type: "text", text: "thinking..." }] } } as SdkMessage;
+          await new Promise(() => {}); // Never resolves
+        })();
+      };
+      const launcher = new AgentSdkLauncher(queryFn, clock);
+
+      const result = await launcher.launch(
+        { systemPrompt: "Go", message: "Hi" },
+        { timeoutMs: 100 },
+      );
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("timed out");
+    });
+
+    it("succeeds when session completes before timeout", async () => {
+      const messages: SdkMessage[] = [
+        { type: "result", subtype: "success", result: "ok", total_cost_usd: 0, duration_ms: 0 },
+      ];
+      const queryFn = createMockQueryFn(messages);
+      const launcher = new AgentSdkLauncher(queryFn, clock);
+
+      const result = await launcher.launch(
+        { systemPrompt: "Go", message: "Hi" },
+        { timeoutMs: 5000 },
+      );
+
+      expect(result.success).toBe(true);
+    });
+  });
+
   describe("retry behavior", () => {
     it("retries on failure when maxRetries is set", async () => {
       let attemptCount = 0;

@@ -61,6 +61,7 @@ export type SdkQueryFn = (params: {
 }) => AsyncIterable<SdkMessage>;
 
 const noopLogger: ILogger = { debug() {} };
+const DEFAULT_SESSION_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 
 export class AgentSdkLauncher implements ISessionLauncher {
   private readonly model: string;
@@ -145,6 +146,8 @@ export class AgentSdkLauncher implements ISessionLauncher {
     let isError = false;
     let errorMessage: string | undefined;
 
+    const timeoutMs = options?.timeoutMs ?? DEFAULT_SESSION_TIMEOUT_MS;
+
     try {
       const stream = this.queryFn({ prompt: request.message, options: queryOptions });
 
@@ -157,23 +160,33 @@ export class AgentSdkLauncher implements ISessionLauncher {
         });
       }
 
-      for await (const msg of stream) {
-        this.processMessage(msg, options?.onLogEntry, (text) => {
-          accumulatedText += text;
-        });
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error(`Session timed out after ${timeoutMs}ms`)), timeoutMs);
+      });
 
-        if (msg.type === "result") {
-          this.logger.debug(`sdk-launch: result message: ${JSON.stringify(msg)}`);
-          const resultMsg = msg as SdkResultSuccess | SdkResultError;
-          if (resultMsg.subtype === "success") {
-            resultOutput = (resultMsg as SdkResultSuccess).result;
-          } else {
-            isError = true;
-            const errMsg = resultMsg as SdkResultError;
-            errorMessage = errMsg.errors?.join("; ") ?? resultMsg.subtype;
+      // Race iteration against timeout
+      await Promise.race([
+        (async () => {
+          for await (const msg of stream) {
+            this.processMessage(msg, options?.onLogEntry, (text) => {
+              accumulatedText += text;
+            });
+
+            if (msg.type === "result") {
+              this.logger.debug(`sdk-launch: result message: ${JSON.stringify(msg)}`);
+              const resultMsg = msg as SdkResultSuccess | SdkResultError;
+              if (resultMsg.subtype === "success") {
+                resultOutput = (resultMsg as SdkResultSuccess).result;
+              } else {
+                isError = true;
+                const errMsg = resultMsg as SdkResultError;
+                errorMessage = errMsg.errors?.join("; ") ?? resultMsg.subtype;
+              }
+            }
           }
-        }
-      }
+        })(),
+        timeoutPromise,
+      ]);
     } catch (err) {
       isError = true;
       errorMessage = err instanceof Error ? err.message : String(err);
