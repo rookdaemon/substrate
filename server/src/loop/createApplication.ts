@@ -157,7 +157,7 @@ export async function createApplication(config: ApplicationConfig): Promise<Appl
     logger.debug("Agora not configured: " + (err instanceof Error ? err.message : String(err)));
   }
 
-  const idleHandler = new IdleHandler(id, superego, ego, appendWriter, clock, logger);
+  const idleHandler = new IdleHandler(id, superego, ego, clock, logger);
 
   const orchestrator = new LoopOrchestrator(
     ego, subconscious, superego, id,

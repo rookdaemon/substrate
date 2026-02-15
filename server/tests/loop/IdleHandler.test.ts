@@ -60,7 +60,7 @@ describe("IdleHandler", () => {
     deps = createTestDeps();
     logger = new InMemoryLogger();
     await setupSubstrateFiles(deps.fs);
-    handler = new IdleHandler(deps.id, deps.superego, deps.ego, deps.appendWriter, deps.clock, logger);
+    handler = new IdleHandler(deps.id, deps.superego, deps.ego, deps.clock, logger);
   });
 
   it("returns no_goals when Id detects not idle", async () => {

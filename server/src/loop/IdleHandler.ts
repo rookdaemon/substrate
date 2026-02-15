@@ -2,8 +2,6 @@ import { Id } from "../agents/roles/Id";
 import { Superego } from "../agents/roles/Superego";
 import { Ego } from "../agents/roles/Ego";
 import { ProcessLogEntry } from "../agents/claude/ISessionLauncher";
-import { AppendOnlyWriter } from "../substrate/io/AppendOnlyWriter";
-import { SubstrateFileType } from "../substrate/types";
 import { IClock } from "../substrate/abstractions/IClock";
 import { ILogger } from "../logging";
 
@@ -17,7 +15,6 @@ export class IdleHandler {
     private readonly id: Id,
     private readonly superego: Superego,
     private readonly ego: Ego,
-    private readonly appendWriter: AppendOnlyWriter,
     private readonly clock: IClock,
     private readonly logger: ILogger
   ) {}
