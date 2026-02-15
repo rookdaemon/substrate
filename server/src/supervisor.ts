@@ -18,7 +18,10 @@ import { getAppPaths } from "./paths";
 import { NodeFileSystem } from "./substrate/abstractions/NodeFileSystem";
 
 const RESTART_EXIT_CODE = 75;
-const BUILD_RETRY_DELAY_MS = 10_000;
+const MAX_BUILD_RETRIES = 5;
+const INITIAL_RETRY_DELAY_MS = 5_000;
+const MAX_RETRY_DELAY_MS = 60_000;
+const BACKOFF_MULTIPLIER = 2;
 
 function run(cmd: string, args: string[], cwd: string): Promise<number> {
   return new Promise((resolve) => {
@@ -38,6 +41,8 @@ async function main(): Promise<void> {
     env: process.env,
   };
   let isFirstTime = true;
+  let consecutiveFailures = 0;
+  let currentRetryDelay = INITIAL_RETRY_DELAY_MS;
 
   for (;;) {
     const config = await resolveConfig(fs, resolveOptions);
@@ -58,9 +63,18 @@ async function main(): Promise<void> {
 
     const buildCode = await run("npx", ["tsc"], serverDir);
     if (buildCode !== 0) {
-      console.error(`[supervisor] Build failed (exit code ${buildCode}), retrying in ${BUILD_RETRY_DELAY_MS / 1000}s...`);
-      await new Promise((r) => setTimeout(r, BUILD_RETRY_DELAY_MS));
+      consecutiveFailures++;
+      if (consecutiveFailures >= MAX_BUILD_RETRIES) {
+        console.error(`[supervisor] Build failed ${consecutiveFailures} times, giving up`);
+        process.exit(1);
+      }
+      // Log with current delay, then wait and update for next iteration
+      console.error(`[supervisor] Build failed (attempt ${consecutiveFailures}/${MAX_BUILD_RETRIES}), retrying in ${currentRetryDelay / 1000}s...`);
+      await new Promise((r) => setTimeout(r, currentRetryDelay));
+      currentRetryDelay = Math.min(currentRetryDelay * BACKOFF_MULTIPLIER, MAX_RETRY_DELAY_MS);
     } else {
+      consecutiveFailures = 0;
+      currentRetryDelay = INITIAL_RETRY_DELAY_MS;
       console.log("[supervisor] Build succeeded — restarting server");
     }
   }

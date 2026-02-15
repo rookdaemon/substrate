@@ -343,4 +343,139 @@ describe("AgentSdkLauncher", () => {
       expect(logger.getEntries().some((e) => e.includes("no active session"))).toBe(true);
     });
   });
+
+  describe("retry behavior", () => {
+    it("retries on failure when maxRetries is set", async () => {
+      let attemptCount = 0;
+      const queryFn: SdkQueryFn = () => {
+        attemptCount++;
+        return (async function* () {
+          if (attemptCount <= 2) {
+            throw new Error(`Attempt ${attemptCount} failed`);
+          }
+          yield { type: "result", subtype: "success", result: "ok", total_cost_usd: 0, duration_ms: 0 };
+        })();
+      };
+      const launcher = new AgentSdkLauncher(queryFn, clock);
+
+      const result = await launcher.launch(
+        { systemPrompt: "Go", message: "Hi" },
+        { maxRetries: 3, retryDelayMs: 10 },
+      );
+
+      expect(result.success).toBe(true);
+      expect(attemptCount).toBe(3);
+    });
+
+    it("returns last error after exhausting all retries", async () => {
+      let attemptCount = 0;
+      const queryFn: SdkQueryFn = () => {
+        attemptCount++;
+        return (async function* () {
+          throw new Error(`Attempt ${attemptCount} failed`);
+        })();
+      };
+      const launcher = new AgentSdkLauncher(queryFn, clock);
+
+      const result = await launcher.launch(
+        { systemPrompt: "Go", message: "Hi" },
+        { maxRetries: 2, retryDelayMs: 10 },
+      );
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("Attempt 3 failed");
+      expect(attemptCount).toBe(3); // Initial + 2 retries
+    });
+
+    it("does not retry when maxRetries is 0 or undefined", async () => {
+      let attemptCount = 0;
+      const queryFn: SdkQueryFn = () => {
+        attemptCount++;
+        return (async function* () {
+          throw new Error("Failed");
+        })();
+      };
+      const launcher = new AgentSdkLauncher(queryFn, clock);
+
+      const result1 = await launcher.launch(
+        { systemPrompt: "Go", message: "Hi" },
+        { maxRetries: 0 },
+      );
+
+      expect(result1.success).toBe(false);
+      expect(attemptCount).toBe(1);
+
+      attemptCount = 0;
+      const result2 = await launcher.launch(
+        { systemPrompt: "Go", message: "Hi" },
+      );
+
+      expect(result2.success).toBe(false);
+      expect(attemptCount).toBe(1);
+    });
+
+    it("logs retry attempts with debug messages", async () => {
+      let attemptCount = 0;
+      const queryFn: SdkQueryFn = () => {
+        attemptCount++;
+        return (async function* () {
+          if (attemptCount <= 1) {
+            throw new Error("Failed");
+          }
+          yield { type: "result", subtype: "success", result: "ok", total_cost_usd: 0, duration_ms: 0 };
+        })();
+      };
+      const logger = new InMemoryLogger();
+      const launcher = new AgentSdkLauncher(queryFn, clock, undefined, logger);
+
+      await launcher.launch(
+        { systemPrompt: "Go", message: "Hi" },
+        { maxRetries: 2, retryDelayMs: 10 },
+      );
+
+      const entries = logger.getEntries();
+      expect(entries.some((e) => e.includes("retry attempt 1/2"))).toBe(true);
+    });
+
+    it("returns success on first attempt when no retries needed", async () => {
+      const messages: SdkMessage[] = [
+        { type: "result", subtype: "success", result: "ok", total_cost_usd: 0, duration_ms: 0 },
+      ];
+      const queryFn = createMockQueryFn(messages);
+      const launcher = new AgentSdkLauncher(queryFn, clock);
+
+      const result = await launcher.launch(
+        { systemPrompt: "Go", message: "Hi" },
+        { maxRetries: 3, retryDelayMs: 100 },
+      );
+
+      expect(result.success).toBe(true);
+      expect(queryFn.getCalls().length).toBe(1); // Only one attempt
+    });
+
+    it("delays between retry attempts", async () => {
+      let attemptCount = 0;
+      const timestamps: number[] = [];
+      const queryFn: SdkQueryFn = () => {
+        attemptCount++;
+        timestamps.push(Date.now());
+        return (async function* () {
+          if (attemptCount <= 1) {
+            throw new Error("Failed");
+          }
+          yield { type: "result", subtype: "success", result: "ok", total_cost_usd: 0, duration_ms: 0 };
+        })();
+      };
+      const launcher = new AgentSdkLauncher(queryFn, clock);
+
+      await launcher.launch(
+        { systemPrompt: "Go", message: "Hi" },
+        { maxRetries: 2, retryDelayMs: 50 },
+      );
+
+      expect(timestamps.length).toBe(2);
+      // Second attempt should be at least 50ms after first
+      expect(timestamps[1] - timestamps[0]).toBeGreaterThanOrEqual(40); // Allow some tolerance
+    });
+  });
 });
