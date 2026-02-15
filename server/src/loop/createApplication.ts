@@ -6,6 +6,7 @@ import { SubstrateFileReader } from "../substrate/io/FileReader";
 import { SubstrateFileWriter } from "../substrate/io/FileWriter";
 import { AppendOnlyWriter } from "../substrate/io/AppendOnlyWriter";
 import { FileLock } from "../substrate/io/FileLock";
+import { SubstrateFileType } from "../substrate/types";
 import { PermissionChecker } from "../agents/permissions";
 import { PromptBuilder } from "../agents/prompts/PromptBuilder";
 import { AgentSdkLauncher, SdkQueryFn } from "../agents/claude/AgentSdkLauncher";
@@ -152,6 +153,37 @@ export async function createApplication(config: ApplicationConfig): Promise<Appl
   try {
     const agoraConfig = await AgoraService.loadConfig();
     agoraService = new AgoraService(agoraConfig);
+    
+    // Connect to relay if configured
+    if (agoraConfig.relay?.autoConnect && agoraConfig.relay.url) {
+      await agoraService.connectRelay(agoraConfig.relay.url);
+      logger.debug(`Connected to Agora relay at ${agoraConfig.relay.url}`);
+      
+      // Set up relay message handler to process incoming messages
+      agoraService.setRelayMessageHandler(async (envelope) => {
+        try {
+          // Log to PROGRESS.md
+          const timestamp = clock.now().toISOString();
+          const logEntry = `[AGORA-RELAY] Received ${envelope.type} from ${envelope.sender.substring(0, 8)}... — payload: ${JSON.stringify(envelope.payload)}`;
+          await appendWriter.append(SubstrateFileType.PROGRESS, logEntry);
+          
+          // Emit WebSocket event for frontend visibility
+          wsServer.emit({
+            type: "agora_message",
+            timestamp,
+            data: {
+              envelopeId: envelope.id,
+              messageType: envelope.type,
+              sender: envelope.sender,
+              payload: envelope.payload,
+              source: "relay",
+            },
+          });
+        } catch (err) {
+          logger.debug("Failed to process relay message: " + (err instanceof Error ? err.message : String(err)));
+        }
+      });
+    }
   } catch (err) {
     // If Agora config doesn't exist, log and continue without Agora capability
     logger.debug("Agora not configured: " + (err instanceof Error ? err.message : String(err)));

@@ -1,5 +1,8 @@
 import { AgoraService, type AgoraConfig, type PeerConfig } from "../../src/agora/AgoraService";
 
+// Mock the AgoraRelayClient
+jest.mock("../../src/agora/AgoraRelayClient");
+
 describe("AgoraService", () => {
   let service: AgoraService;
   let testConfig: AgoraConfig;
@@ -73,6 +76,32 @@ describe("AgoraService", () => {
 
       expect(result.ok).toBe(false);
       expect(result.reason).toBeDefined();
+    });
+  });
+
+  describe("relay methods", () => {
+    it("should have connectRelay method", () => {
+      expect(service.connectRelay).toBeDefined();
+      expect(typeof service.connectRelay).toBe("function");
+    });
+
+    it("should have setRelayMessageHandler method", () => {
+      expect(service.setRelayMessageHandler).toBeDefined();
+      expect(typeof service.setRelayMessageHandler).toBe("function");
+    });
+
+    it("should have disconnectRelay method", () => {
+      expect(service.disconnectRelay).toBeDefined();
+      expect(typeof service.disconnectRelay).toBe("function");
+    });
+
+    it("should have isRelayConnected method", () => {
+      expect(service.isRelayConnected).toBeDefined();
+      expect(typeof service.isRelayConnected).toBe("function");
+    });
+
+    it("should return false for isRelayConnected when not connected", () => {
+      expect(service.isRelayConnected()).toBe(false);
     });
   });
 
