@@ -1,4 +1,5 @@
 import { IConversationCompactor } from "./IConversationCompactor";
+import { IConversationArchiver } from "./IConversationArchiver";
 import { IClock } from "../substrate/abstractions/IClock";
 import { IFileSystem } from "../substrate/abstractions/IFileSystem";
 import { SubstrateFileReader } from "../substrate/io/FileReader";
@@ -9,8 +10,16 @@ import { PermissionChecker } from "../agents/permissions";
 import { AgentRole } from "../agents/types";
 import { FileLock } from "../substrate/io/FileLock";
 
+export interface ConversationArchiveConfig {
+  enabled: boolean;
+  linesToKeep: number; // Number of recent lines to keep (default: 100)
+  sizeThreshold: number; // Archive when content exceeds N lines (default: 200)
+  timeThresholdMs?: number; // Optional: archive after N ms (e.g., weekly)
+}
+
 export class ConversationManager {
   private lastCompactionTime: Date | null = null;
+  private lastArchiveTime: Date | null = null;
   private readonly compactionIntervalMs = 60 * 60 * 1000; // 1 hour
 
   constructor(
@@ -21,18 +30,85 @@ export class ConversationManager {
     private readonly appendWriter: AppendOnlyWriter,
     private readonly checker: PermissionChecker,
     private readonly compactor: IConversationCompactor,
-    private readonly clock: IClock
+    private readonly clock: IClock,
+    private readonly archiver?: IConversationArchiver,
+    private readonly archiveConfig?: ConversationArchiveConfig
   ) {}
 
   async append(role: AgentRole, entry: string): Promise<void> {
     // Check permissions for append
     this.checker.assertCanAppend(role, SubstrateFileType.CONVERSATION);
 
-    // Check if we need to compact before appending
+    // Check if we need to archive before appending (if archiving enabled)
+    if (this.archiver && this.archiveConfig?.enabled) {
+      await this.checkAndArchiveIfNeeded();
+    }
+
+    // Check if we need to compact before appending (legacy summarization)
     await this.checkAndCompactIfNeeded(role);
 
     // Append the entry with role prefix
     await this.appendWriter.append(SubstrateFileType.CONVERSATION, `[${role}] ${entry}`);
+  }
+
+  private async checkAndArchiveIfNeeded(): Promise<void> {
+    if (!this.archiver || !this.archiveConfig?.enabled) {
+      return;
+    }
+
+    const now = this.clock.now();
+
+    // Initialize last archive time on first check
+    if (this.lastArchiveTime === null) {
+      this.lastArchiveTime = now;
+    }
+
+    // Read current conversation to check size
+    const content = await this.reader.read(SubstrateFileType.CONVERSATION);
+    const currentContent = content.rawMarkdown;
+    const contentLines = currentContent.split('\n').filter(line => 
+      line.trim().length > 0 && !line.startsWith('#')
+    );
+
+    // Check size-based trigger
+    const exceedsSizeThreshold = contentLines.length >= this.archiveConfig.sizeThreshold;
+
+    // Check time-based trigger (if configured)
+    let exceedsTimeThreshold = false;
+    if (this.archiveConfig.timeThresholdMs) {
+      const timeSinceLastArchive = now.getTime() - this.lastArchiveTime.getTime();
+      exceedsTimeThreshold = timeSinceLastArchive >= this.archiveConfig.timeThresholdMs;
+    }
+
+    // Trigger archive if either threshold is exceeded
+    if (exceedsSizeThreshold || exceedsTimeThreshold) {
+      await this.performArchive();
+      this.lastArchiveTime = now;
+    }
+  }
+
+  private async performArchive(): Promise<void> {
+    if (!this.archiver || !this.archiveConfig) {
+      return;
+    }
+
+    // Read current conversation
+    const content = await this.reader.read(SubstrateFileType.CONVERSATION);
+    const currentContent = content.rawMarkdown;
+
+    // Archive old content
+    const result = await this.archiver.archive(currentContent, this.archiveConfig.linesToKeep);
+
+    // Only write back if something was archived
+    if (result.linesArchived > 0) {
+      const release = await this.lock.acquire(SubstrateFileType.CONVERSATION);
+      try {
+        const filePath = this.config.getFilePath(SubstrateFileType.CONVERSATION);
+        await this.fs.writeFile(filePath, result.remainingContent);
+      } finally {
+        release();
+      }
+    }
   }
 
   private async checkAndCompactIfNeeded(role: AgentRole): Promise<void> {
@@ -86,9 +162,48 @@ export class ConversationManager {
   }
 
   /**
+   * Manually trigger archive (programmatically invokable)
+   */
+  async forceArchive(): Promise<{ success: boolean; linesArchived: number; archivedPath?: string }> {
+    if (!this.archiver || !this.archiveConfig) {
+      return { success: false, linesArchived: 0 };
+    }
+
+    const content = await this.reader.read(SubstrateFileType.CONVERSATION);
+    const currentContent = content.rawMarkdown;
+
+    const result = await this.archiver.archive(currentContent, this.archiveConfig.linesToKeep);
+
+    if (result.linesArchived > 0) {
+      const release = await this.lock.acquire(SubstrateFileType.CONVERSATION);
+      try {
+        const filePath = this.config.getFilePath(SubstrateFileType.CONVERSATION);
+        await this.fs.writeFile(filePath, result.remainingContent);
+      } finally {
+        release();
+      }
+    }
+
+    this.lastArchiveTime = this.clock.now();
+
+    return {
+      success: true,
+      linesArchived: result.linesArchived,
+      archivedPath: result.archivedPath,
+    };
+  }
+
+  /**
    * For testing: reset compaction timer
    */
   resetCompactionTimer(): void {
     this.lastCompactionTime = null;
+  }
+
+  /**
+   * For testing: reset archive timer
+   */
+  resetArchiveTimer(): void {
+    this.lastArchiveTime = null;
   }
 }

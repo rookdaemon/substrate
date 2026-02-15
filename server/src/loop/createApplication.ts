@@ -11,7 +11,8 @@ import { PromptBuilder } from "../agents/prompts/PromptBuilder";
 import { AgentSdkLauncher, SdkQueryFn } from "../agents/claude/AgentSdkLauncher";
 import { TaskClassifier } from "../agents/TaskClassifier";
 import { ConversationCompactor } from "../conversation/ConversationCompactor";
-import { ConversationManager } from "../conversation/ConversationManager";
+import { ConversationArchiver } from "../conversation/ConversationArchiver";
+import { ConversationManager, ConversationArchiveConfig } from "../conversation/ConversationManager";
 import { Ego } from "../agents/roles/Ego";
 import { Subconscious } from "../agents/roles/Subconscious";
 import { Superego } from "../agents/roles/Superego";
@@ -50,6 +51,12 @@ export interface ApplicationConfig {
   backupRetentionCount?: number;
   enableHealthChecks?: boolean;
   healthCheckIntervalMs?: number;
+  conversationArchive?: {
+    enabled: boolean;
+    linesToKeep: number;
+    sizeThreshold: number;
+    timeThresholdDays?: number;
+  };
 }
 
 export interface Application {
@@ -97,10 +104,28 @@ export async function createApplication(config: ApplicationConfig): Promise<Appl
 
   const cwd = config.workingDirectory;
   
-  // Conversation manager with compaction
+  // Conversation manager with compaction and optional archiving
   const compactor = new ConversationCompactor(launcher, cwd);
+  
+  // Create archiver and archive config if archiving is enabled
+  let archiver: ConversationArchiver | undefined;
+  let archiveConfig: ConversationArchiveConfig | undefined;
+  
+  if (config.conversationArchive?.enabled) {
+    archiver = new ConversationArchiver(fs, clock, config.substratePath);
+    archiveConfig = {
+      enabled: config.conversationArchive.enabled,
+      linesToKeep: config.conversationArchive.linesToKeep,
+      sizeThreshold: config.conversationArchive.sizeThreshold,
+      timeThresholdMs: config.conversationArchive.timeThresholdDays
+        ? config.conversationArchive.timeThresholdDays * 24 * 60 * 60 * 1000
+        : undefined,
+    };
+  }
+  
   const conversationManager = new ConversationManager(
-    reader, fs, substrateConfig, lock, appendWriter, checker, compactor, clock
+    reader, fs, substrateConfig, lock, appendWriter, checker, compactor, clock,
+    archiver, archiveConfig
   );
 
   const ego = new Ego(reader, writer, conversationManager, checker, promptBuilder, launcher, clock, taskClassifier, cwd);
@@ -175,6 +200,9 @@ export async function createApplication(config: ApplicationConfig): Promise<Appl
     orchestrator.setBackupScheduler(backupScheduler);
     httpServer.setBackupScheduler(backupScheduler);
   }
+
+  // Wire conversation manager into HTTP server (always set, even if archiving disabled)
+  httpServer.setConversationManager(conversationManager);
 
   // Health check scheduler setup
   if (config.enableHealthChecks !== false) { // Default enabled

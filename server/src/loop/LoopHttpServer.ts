@@ -10,6 +10,7 @@ import { HealthCheck } from "../evaluation/HealthCheck";
 import { AgoraService } from "../agora/AgoraService";
 import { AppendOnlyWriter } from "../substrate/io/AppendOnlyWriter";
 import { BackupScheduler } from "./BackupScheduler";
+import { ConversationManager } from "../conversation/ConversationManager";
 
 export interface LoopHttpDependencies {
   reader: SubstrateFileReader;
@@ -29,6 +30,7 @@ export class LoopHttpServer {
   private agoraService: AgoraService | null = null;
   private appendWriter: AppendOnlyWriter | null = null;
   private backupScheduler: BackupScheduler | null = null;
+  private conversationManager: ConversationManager | null = null;
 
   constructor(orchestrator: LoopOrchestrator) {
     this.orchestrator = orchestrator;
@@ -68,6 +70,10 @@ export class LoopHttpServer {
 
   setBackupScheduler(scheduler: BackupScheduler): void {
     this.backupScheduler = scheduler;
+  }
+
+  setConversationManager(manager: ConversationManager): void {
+    this.conversationManager = manager;
   }
 
   listen(port: number): Promise<number> {
@@ -167,6 +173,10 @@ export class LoopHttpServer {
 
       case "POST /api/backup":
         this.handleBackupRequest(res);
+        break;
+
+      case "POST /api/conversation/archive":
+        this.handleArchiveRequest(res);
         break;
 
       case "POST /hooks/agent":
@@ -322,6 +332,35 @@ export class LoopHttpServer {
           });
         } else {
           this.json(res, 500, { success: false, error: result.error, timestamp: result.timestamp });
+        }
+      },
+      (err) => {
+        const message = err instanceof Error ? err.message : "Unknown error";
+        this.json(res, 500, { error: message });
+      }
+    );
+  }
+
+  private handleArchiveRequest(res: http.ServerResponse): void {
+    if (!this.conversationManager) {
+      this.json(res, 503, { error: "Conversation archiving is not enabled" });
+      return;
+    }
+    this.conversationManager.forceArchive().then(
+      (result) => {
+        if (result.success) {
+          this.json(res, 200, {
+            success: true,
+            linesArchived: result.linesArchived,
+            archivedPath: result.archivedPath,
+          });
+        } else {
+          // Archive not configured or nothing to archive
+          this.json(res, 200, { 
+            success: false, 
+            linesArchived: 0,
+            message: "Archiving is not enabled or no content to archive" 
+          });
         }
       },
       (err) => {

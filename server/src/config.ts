@@ -16,6 +16,13 @@ export interface AppConfig {
   autoStartOnFirstRun: boolean;
   /** If true (default), the agent loop auto-starts when the server was restarted (e.g. after Restart button or rebuild). */
   autoStartAfterRestart: boolean;
+  /** Configuration for CONVERSATION.md archiving */
+  conversationArchive?: {
+    enabled: boolean;
+    linesToKeep: number; // Number of recent lines to keep (default: 100)
+    sizeThreshold: number; // Archive when content exceeds N lines (default: 200)
+    timeThresholdDays?: number; // Optional: archive after N days (e.g., 7 for weekly)
+  };
 }
 
 export interface ResolveConfigOptions {
@@ -43,6 +50,12 @@ export async function resolveConfig(
     mode: "cycle",
     autoStartOnFirstRun: false,
     autoStartAfterRestart: true,
+    conversationArchive: {
+      enabled: false, // Disabled by default to maintain backward compatibility
+      linesToKeep: 100,
+      sizeThreshold: 200,
+      timeThresholdDays: 7, // Weekly by default
+    },
   };
 
   let fileConfig: Partial<AppConfig> = {};
@@ -81,6 +94,14 @@ export async function resolveConfig(
     mode: (fileConfig as Partial<AppConfig>).mode ?? defaults.mode,
     autoStartOnFirstRun: fileConfig.autoStartOnFirstRun ?? defaults.autoStartOnFirstRun,
     autoStartAfterRestart: fileConfig.autoStartAfterRestart ?? defaults.autoStartAfterRestart,
+    conversationArchive: fileConfig.conversationArchive 
+      ? {
+          enabled: fileConfig.conversationArchive.enabled ?? defaults.conversationArchive!.enabled,
+          linesToKeep: fileConfig.conversationArchive.linesToKeep ?? defaults.conversationArchive!.linesToKeep,
+          sizeThreshold: fileConfig.conversationArchive.sizeThreshold ?? defaults.conversationArchive!.sizeThreshold,
+          timeThresholdDays: fileConfig.conversationArchive.timeThresholdDays ?? defaults.conversationArchive!.timeThresholdDays,
+        }
+      : defaults.conversationArchive,
   };
 
   // Env vars override everything
