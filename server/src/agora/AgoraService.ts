@@ -1,6 +1,7 @@
 import { readFile } from "fs/promises";
 import { homedir } from "os";
 import { join } from "path";
+import { AgoraRelayClient } from "./AgoraRelayClient";
 
 // Types for Agora - avoiding direct import due to ESM/CommonJS incompatibility
 export type MessageType = 'announce' | 'discover' | 'request' | 'response' | 'publish' | 'subscribe' | 'verify' | 'ack' | 'error';
@@ -25,9 +26,17 @@ export interface PeerConfig {
   token: string;
 }
 
+export interface RelayConfig {
+  url: string;
+  autoConnect: boolean;
+  name?: string;
+  reconnectMaxMs?: number;
+}
+
 export interface AgoraConfig {
   identity: AgoraIdentity;
   peers: Map<string, PeerConfig>;
+  relay?: RelayConfig;
 }
 
 export interface SendMessageOptions {
@@ -49,14 +58,20 @@ export interface DecodeInboundResult {
   reason?: string;
 }
 
+export interface RelayMessageHandler {
+  (envelope: Envelope): void;
+}
+
 /**
  * AgoraService manages Agora protocol integration:
  * - Loading identity and peer registry
  * - Sending signed envelopes to peers via HTTP webhooks
  * - Decoding and verifying inbound envelopes
+ * - WebSocket relay client for remote peer communication
  */
 export class AgoraService {
   private config: AgoraConfig;
+  private relayClient: AgoraRelayClient | null = null;
 
   constructor(config: AgoraConfig) {
     this.config = config;
@@ -150,6 +165,50 @@ export class AgoraService {
   }
 
   /**
+   * Connect to the relay server
+   */
+  async connectRelay(url: string): Promise<void> {
+    if (this.relayClient) {
+      return; // Already connected
+    }
+
+    this.relayClient = new AgoraRelayClient({
+      url,
+      publicKey: this.config.identity.publicKey,
+      name: this.config.relay?.name,
+      reconnectMaxMs: this.config.relay?.reconnectMaxMs,
+    });
+
+    await this.relayClient.connect();
+  }
+
+  /**
+   * Set handler for incoming relay messages
+   */
+  setRelayMessageHandler(handler: RelayMessageHandler): void {
+    if (this.relayClient) {
+      this.relayClient.setMessageHandler(handler);
+    }
+  }
+
+  /**
+   * Disconnect from relay server
+   */
+  async disconnectRelay(): Promise<void> {
+    if (this.relayClient) {
+      await this.relayClient.disconnect();
+      this.relayClient = null;
+    }
+  }
+
+  /**
+   * Check if relay is connected
+   */
+  isRelayConnected(): boolean {
+    return this.relayClient?.isConnected() ?? false;
+  }
+
+  /**
    * Load Agora configuration from ~/.config/agora/config.json
    */
   static async loadConfig(): Promise<AgoraConfig> {
@@ -176,12 +235,27 @@ export class AgoraService {
       }
     }
 
+    // Parse relay configuration if present
+    let relay: RelayConfig | undefined;
+    if (config.relay && typeof config.relay === "object") {
+      const relayData = config.relay as { url?: string; autoConnect?: boolean; name?: string; reconnectMaxMs?: number };
+      if (relayData.url) {
+        relay = {
+          url: relayData.url,
+          autoConnect: relayData.autoConnect ?? true,
+          name: relayData.name,
+          reconnectMaxMs: relayData.reconnectMaxMs,
+        };
+      }
+    }
+
     return {
       identity: {
         publicKey: config.identity.publicKey,
         privateKey: config.identity.privateKey,
       },
       peers,
+      relay,
     };
   }
 }

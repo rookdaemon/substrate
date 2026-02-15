@@ -6,6 +6,7 @@ import { SubstrateFileReader } from "../substrate/io/FileReader";
 import { SubstrateFileWriter } from "../substrate/io/FileWriter";
 import { AppendOnlyWriter } from "../substrate/io/AppendOnlyWriter";
 import { FileLock } from "../substrate/io/FileLock";
+import { SubstrateFileType } from "../substrate/types";
 import { PermissionChecker } from "../agents/permissions";
 import { PromptBuilder } from "../agents/prompts/PromptBuilder";
 import { AgentSdkLauncher, SdkQueryFn } from "../agents/claude/AgentSdkLauncher";
@@ -155,6 +156,55 @@ export async function createApplication(config: ApplicationConfig): Promise<Appl
     const agoraConfig = await AgoraService.loadConfig();
     agoraService = new AgoraService(agoraConfig);
     agoraInboxManager = new AgoraInboxManager(fs, substrateConfig, lock, clock);
+
+    // Connect to relay if configured
+    if (agoraConfig.relay?.autoConnect && agoraConfig.relay.url) {
+      const service = agoraService;
+      await service.connectRelay(agoraConfig.relay.url);
+      logger.debug(`Connected to Agora relay at ${agoraConfig.relay.url}`);
+
+      // Set up relay message handler to process incoming messages
+      service.setRelayMessageHandler(async (envelope) => {
+        try {
+          // SECURITY: Verify signature before processing
+          // The relay passes raw envelopes - we must verify them
+          const encodedEnvelope = `[AGORA_ENVELOPE]${JSON.stringify(envelope)}`;
+          const verifyResult = await service.decodeInbound(encodedEnvelope);
+
+          if (!verifyResult.ok) {
+            logger.debug(`Rejected relay message: ${verifyResult.reason}`);
+            return;
+          }
+
+          // Use verified envelope from decodeInbound
+          const verifiedEnvelope = verifyResult.envelope!;
+
+          // Log to PROGRESS.md with truncated payload to avoid excessive log size
+          const timestamp = clock.now().toISOString();
+          const payloadStr = JSON.stringify(verifiedEnvelope.payload);
+          const truncatedPayload = payloadStr.length > 200
+            ? payloadStr.substring(0, 200) + "..."
+            : payloadStr;
+          const logEntry = `[AGORA-RELAY] Received ${verifiedEnvelope.type} from ${verifiedEnvelope.sender.substring(0, 8)}... — payload: ${truncatedPayload}`;
+          await appendWriter.append(SubstrateFileType.PROGRESS, logEntry);
+
+          // Emit WebSocket event for frontend visibility
+          wsServer.emit({
+            type: "agora_message",
+            timestamp,
+            data: {
+              envelopeId: verifiedEnvelope.id,
+              messageType: verifiedEnvelope.type,
+              sender: verifiedEnvelope.sender,
+              payload: verifiedEnvelope.payload,
+              source: "relay",
+            },
+          });
+        } catch (err) {
+          logger.debug("Failed to process relay message: " + (err instanceof Error ? err.message : String(err)));
+        }
+      });
+    }
   } catch (err) {
     // If Agora config doesn't exist, log and continue without Agora capability
     logger.debug("Agora not configured: " + (err instanceof Error ? err.message : String(err)));
