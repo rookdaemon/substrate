@@ -11,7 +11,7 @@ export interface ValidationResult {
 
 export function validateSubstrateContent(
   content: string,
-  fileType: SubstrateFileType
+  _fileType: SubstrateFileType
 ): ValidationResult {
   const errors: string[] = [];
   const warnings: string[] = [];
@@ -23,14 +23,6 @@ export function validateSubstrateContent(
 
   if (content && !content.trimStart().startsWith("# ")) {
     errors.push("Content must start with a # heading");
-  }
-
-  if (fileType === SubstrateFileType.PLAN && errors.length === 0) {
-    if (!content.includes("\n## ")) {
-      errors.push("PLAN must have at least one ## section");
-    } else if (!content.includes("\n## Tasks")) {
-      errors.push("PLAN must have a ## Tasks section");
-    }
   }
 
   // Secret detection: warn and redact, don't block

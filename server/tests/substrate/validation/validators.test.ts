@@ -28,43 +28,19 @@ describe("validateSubstrateContent", () => {
     });
   });
 
-  describe("PLAN-specific rules", () => {
-    it("rejects PLAN without any ## section", () => {
+  describe("PLAN has no special structure requirements", () => {
+    it("accepts PLAN with just a heading and text", () => {
       const result = validateSubstrateContent(
         "# Plan\n\nJust text",
         SubstrateFileType.PLAN
       );
-      expect(result.valid).toBe(false);
-      expect(result.errors).toContain(
-        "PLAN must have at least one ## section"
-      );
-    });
-
-    it("rejects PLAN without ## Tasks section", () => {
-      const result = validateSubstrateContent(
-        "# Plan\n\n## Current Goal\n\nDo something\n\n## Next Steps\n\n- Something",
-        SubstrateFileType.PLAN
-      );
-      expect(result.valid).toBe(false);
-      expect(result.errors).toContain(
-        "PLAN must have a ## Tasks section"
-      );
-    });
-
-    it("accepts PLAN with ## Tasks section", () => {
-      const result = validateSubstrateContent(
-        "# Plan\n\n## Current Goal\n\nDo something\n\n## Tasks\n\n- [ ] First task",
-        SubstrateFileType.PLAN
-      );
       expect(result.valid).toBe(true);
     });
-  });
 
-  describe("non-PLAN files do not require ## sections", () => {
-    it("accepts MEMORY without ## sections", () => {
+    it("accepts PLAN with custom sections", () => {
       const result = validateSubstrateContent(
-        "# Memory\n\nJust notes",
-        SubstrateFileType.MEMORY
+        "# Plan\n\n## Phase 1\n\n- Something",
+        SubstrateFileType.PLAN
       );
       expect(result.valid).toBe(true);
     });
