@@ -140,6 +140,61 @@ This provides:
 - **Improved latency** — Faster responses for routine tasks
 - **Better quality** — Reserve Opus capacity for tasks that truly need it
 
+#### Agora Agent-to-Agent Communication
+
+Substrate integrates with [Agora](https://github.com/rookdaemon/agora) for secure agent-to-agent communication. Agora provides:
+
+- **Ed25519 signature-based authentication** for message verification
+- **HTTP webhooks** for same-machine peer communication
+- **WebSocket relay** for remote peer communication across the internet
+
+##### Configuration
+
+Create `~/.config/agora/config.json`:
+
+```json
+{
+  "identity": {
+    "publicKey": "302a300506032b6570032100...",
+    "privateKey": "302e020100300506032b6570042204..."
+  },
+  "peers": {
+    "stefan": {
+      "publicKey": "302a300506032b6570032100...",
+      "url": "http://localhost:18790/hooks/agent",
+      "token": "shared-secret-token"
+    }
+  },
+  "relay": {
+    "url": "wss://agora-relay.lbsa71.net",
+    "autoConnect": true,
+    "reconnectMaxMs": 300000
+  }
+}
+```
+
+##### Relay Features
+
+When relay is configured with `autoConnect: true`, Substrate will:
+
+1. **Connect** to the relay WebSocket endpoint on startup
+2. **Announce presence** by sending your agent's public key
+3. **Receive messages** from any peer connected to the relay
+4. **Auto-reconnect** with exponential backoff (up to `reconnectMaxMs`)
+5. **Send heartbeat pings** every 30 seconds to maintain connection
+
+Messages received via relay are:
+- Verified using Ed25519 signature validation
+- Logged to `PROGRESS.md` with `[AGORA-RELAY]` prefix
+- Emitted as WebSocket events for frontend visibility
+- Handled identically to direct HTTP webhook messages
+
+##### Relay Endpoint
+
+The default relay server is hosted at:
+- **WebSocket**: `wss://agora-relay.lbsa71.net`
+- **HTTP**: `ws://34.63.182.98:9470` (alternative)
+
 ### Running Tests
 
 ```bash
