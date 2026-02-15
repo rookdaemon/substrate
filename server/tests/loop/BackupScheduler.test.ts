@@ -340,7 +340,7 @@ describe("BackupScheduler", () => {
       expect(timestamp.toISOString()).toBe(clock.now().toISOString());
     });
 
-    it("should load last backup time from state file on construction", async () => {
+    it("should load last backup time from state file on first shouldRunBackup call", async () => {
       // Pre-create state file with a timestamp from 1 hour ago
       const oneHourAgo = new Date(clock.now().getTime() - 3600000);
       await fs.mkdir("/config", { recursive: true });

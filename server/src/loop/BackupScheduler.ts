@@ -268,7 +268,9 @@ export class BackupScheduler {
       const content = await this.fs.readFile(this.config.stateFilePath);
       const date = new Date(content.trim());
       return isNaN(date.getTime()) ? null : date;
-    } catch {
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      this.logger.debug(`BackupScheduler: failed to load state — ${errorMsg}`);
       return null;
     }
   }
