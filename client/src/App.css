@@ -4,10 +4,20 @@
   padding: 0;
 }
 
+:root {
+  --border-color: #333;
+  --bg-primary: #1a1a2e;
+  --bg-secondary: #16213e;
+  --bg-hover: #1a2744;
+  --color-primary: #00d4ff;
+  --color-text: #e0e0e0;
+  --color-border-button: #555;
+}
+
 body {
   font-family: monospace;
-  background: #1a1a2e;
-  color: #e0e0e0;
+  background: var(--bg-primary);
+  color: var(--color-text);
 }
 
 .app {
@@ -21,13 +31,13 @@ body {
   justify-content: space-between;
   align-items: center;
   padding: 0.5rem 0;
-  border-bottom: 1px solid #333;
+  border-bottom: 1px solid var(--border-color);
   margin-bottom: 1rem;
 }
 
 .app-header h1 {
   font-size: 1.4rem;
-  color: #00d4ff;
+  color: var(--color-primary);
 }
 
 .ws-status {
@@ -60,8 +70,8 @@ body {
 }
 
 .panel {
-  background: #16213e;
-  border: 1px solid #333;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
   border-radius: 4px;
   padding: 1rem;
   overflow: auto;
@@ -81,19 +91,19 @@ body {
   justify-content: space-between;
   align-items: center;
   padding: 0.8rem 1rem;
-  border-bottom: 1px solid #333;
-  background: #16213e;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-secondary);
   border-radius: 4px 4px 0 0;
   cursor: pointer;
 }
 
 .panel-header:hover {
-  background: #1a2744;
+  background: var(--bg-hover);
 }
 
 .panel-header h2 {
   font-size: 1rem;
-  color: #00d4ff;
+  color: var(--color-primary);
   margin: 0;
   border: none;
   padding: 0;
@@ -101,9 +111,9 @@ body {
 
 .panel-toggle-btn {
   background: transparent;
-  border: 1px solid #555;
+  border: 1px solid var(--color-border-button);
   border-radius: 4px;
-  color: #00d4ff;
+  color: var(--color-primary);
   cursor: pointer;
   font-size: 1rem;
   padding: 0.2rem 0.5rem;
@@ -114,7 +124,7 @@ body {
 
 .panel-toggle-btn:hover {
   background: #0e1428;
-  border-color: #00d4ff;
+  border-color: var(--color-primary);
 }
 
 .panel-content {
@@ -224,17 +234,17 @@ body {
 
 .loop-controls button {
   padding: 0.4rem 1rem;
-  border: 1px solid #555;
+  border: 1px solid var(--color-border-button);
   border-radius: 4px;
   background: #0e1428;
-  color: #e0e0e0;
+  color: var(--color-text);
   cursor: pointer;
   font-family: monospace;
 }
 
 .loop-controls button:hover:not(:disabled) {
-  background: #1a2744;
-  border-color: #00d4ff;
+  background: var(--bg-hover);
+  border-color: var(--color-primary);
 }
 
 .loop-controls button:disabled {
@@ -325,26 +335,26 @@ body {
 .input-field input {
   flex: 1;
   padding: 0.4rem;
-  border: 1px solid #555;
+  border: 1px solid var(--color-border-button);
   border-radius: 4px;
   background: #0e1428;
-  color: #e0e0e0;
+  color: var(--color-text);
   font-family: monospace;
 }
 
 .input-field button {
   padding: 0.4rem 1rem;
-  border: 1px solid #555;
+  border: 1px solid var(--color-border-button);
   border-radius: 4px;
   background: #0e1428;
-  color: #e0e0e0;
+  color: var(--color-text);
   cursor: pointer;
   font-family: monospace;
 }
 
 .input-field button:hover:not(:disabled) {
-  background: #1a2744;
-  border-color: #00d4ff;
+  background: var(--bg-hover);
+  border-color: var(--color-primary);
 }
 
 .input-field button:disabled {
@@ -364,7 +374,7 @@ body {
   top: 0;
   bottom: 0;
   width: 2px;
-  background: #333;
+  background: var(--border-color);
 }
 
 .timeline-entry {
@@ -422,20 +432,20 @@ body {
 }
 
 .toast {
-  background: #1a1a2e;
-  border: 1px solid #333;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
   border-left: 3px solid;
   border-radius: 4px;
   padding: 0.6rem 1rem;
   font-size: 0.8rem;
   font-family: monospace;
-  color: #e0e0e0;
+  color: var(--color-text);
   cursor: pointer;
   animation: toast-slide-in 0.3s ease-out;
 }
 
 .toast:hover {
-  background: #16213e;
+  background: var(--bg-secondary);
 }
 
 @keyframes toast-slide-in {
@@ -467,18 +477,18 @@ body {
 
 .process-log-clear {
   padding: 0.2rem 0.6rem;
-  border: 1px solid #555;
+  border: 1px solid var(--color-border-button);
   border-radius: 4px;
   background: #0e1428;
-  color: #e0e0e0;
+  color: var(--color-text);
   cursor: pointer;
   font-family: monospace;
   font-size: 0.75rem;
 }
 
 .process-log-clear:hover {
-  background: #1a2744;
-  border-color: #00d4ff;
+  background: var(--bg-hover);
+  border-color: var(--color-primary);
 }
 
 .process-log-entries {
@@ -530,8 +540,8 @@ body {
   padding: 0.3rem;
   margin-bottom: 0.5rem;
   background: #0e1428;
-  color: #e0e0e0;
-  border: 1px solid #555;
+  color: var(--color-text);
+  border: 1px solid var(--color-border-button);
   border-radius: 4px;
   font-family: monospace;
 }
