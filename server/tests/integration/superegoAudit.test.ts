@@ -121,7 +121,7 @@ describe("Integration: Superego Audit", () => {
     expect(evalEvent).toBeDefined();
   });
 
-  it("logs audit to progress", async () => {
+  it("does not pollute PROGRESS.md with raw audit logs", async () => {
     const deps = createDeps();
     await setupSubstrate(deps.fs);
 
@@ -143,6 +143,8 @@ describe("Integration: Superego Audit", () => {
     await orchestrator.runOneCycle();
 
     const progress = await deps.fs.readFile("/substrate/PROGRESS.md");
-    expect(progress).toContain("Audit complete: system in good shape");
+    // PROGRESS.md should NOT contain raw audit logs
+    expect(progress).not.toContain("Audit complete: system in good shape");
+    expect(progress).not.toContain("[SUPEREGO]");
   });
 });

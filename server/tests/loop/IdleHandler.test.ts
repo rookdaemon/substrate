@@ -126,7 +126,7 @@ describe("IdleHandler", () => {
     expect(result.action).toBe("all_rejected");
   });
 
-  it("logs idle handling to PROGRESS", async () => {
+  it("does not pollute PROGRESS.md with raw idle detection logs", async () => {
     deps.launcher.enqueueSuccess(JSON.stringify({
       goalCandidates: [
         { title: "Learn Rust", description: "Study Rust", priority: "high" },
@@ -142,7 +142,9 @@ describe("IdleHandler", () => {
     await handler.handleIdle();
 
     const progress = await deps.fs.readFile("/substrate/PROGRESS.md");
-    expect(progress).toContain("[ID] Idle detected");
+    // PROGRESS.md should NOT contain raw idle detection logs
+    expect(progress).not.toContain("[ID] Idle detected");
+    expect(progress).not.toContain("Generated");
   });
 
   it("creates plan with multiple approved goals", async () => {
