@@ -267,7 +267,7 @@ export class LoopOrchestrator {
     }
 
     // Backup scheduling
-    if (this.backupScheduler && this.backupScheduler.shouldRunBackup()) {
+    if (this.backupScheduler && await this.backupScheduler.shouldRunBackup()) {
       await this.runScheduledBackup();
     }
 
