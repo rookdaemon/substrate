@@ -96,6 +96,33 @@ export class AgentSdkLauncher implements ISessionLauncher {
     request: ClaudeSessionRequest,
     options?: LaunchOptions,
   ): Promise<ClaudeSessionResult> {
+    const maxRetries = options?.maxRetries ?? 0;
+    const retryDelayMs = options?.retryDelayMs ?? 1000;
+    
+    let lastError: ClaudeSessionResult | null = null;
+    
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      if (attempt > 0) {
+        this.logger.debug(`sdk-launch: retry attempt ${attempt}/${maxRetries} after ${retryDelayMs}ms`);
+        await new Promise(r => setTimeout(r, retryDelayMs));
+      }
+      
+      const result = await this.executeLaunch(request, options);
+      
+      if (result.success) {
+        return result;
+      }
+      
+      lastError = result;
+    }
+    
+    return lastError!;
+  }
+
+  private async executeLaunch(
+    request: ClaudeSessionRequest,
+    options?: LaunchOptions,
+  ): Promise<ClaudeSessionResult> {
     const startTime = this.clock.now();
 
     const modelToUse = options?.model ?? this.model;
