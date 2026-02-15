@@ -8,7 +8,6 @@ import { SubstrateConfig } from "../../src/substrate/config";
 import { FileLock } from "../../src/substrate/io/FileLock";
 import { AppendOnlyWriter } from "../../src/substrate/io/AppendOnlyWriter";
 import { SubstrateFileType } from "../../src/substrate/types";
-import { InMemoryLogger } from "../../src/logging";
 import * as http from "http";
 
 describe("Agora Message Integration", () => {
@@ -45,7 +44,6 @@ describe("Agora Message Integration", () => {
     clock = new FixedClock(new Date("2026-02-15T12:00:00Z"));
     config = new SubstrateConfig("/test/substrate");
     lock = new FileLock();
-    const logger = new InMemoryLogger();
 
     // Initialize PROGRESS.md
     const progressPath = config.getFilePath(SubstrateFileType.PROGRESS);
@@ -200,7 +198,7 @@ async function sendWebhookRequest(
   port: number,
   message: string,
   withAuth = true
-): Promise<{ statusCode: number; body: any }> {
+): Promise<{ statusCode: number; body: { success?: boolean; envelopeId?: string; error?: string } }> {
   return new Promise((resolve, reject) => {
     const data = JSON.stringify({ message });
     const options = {

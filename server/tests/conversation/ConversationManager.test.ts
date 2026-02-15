@@ -213,7 +213,6 @@ describe("ConversationManager with archiving", () => {
   let archiver: MockArchiver;
   let manager: ConversationManager;
   let lock: FileLock;
-  let writer: SubstrateFileWriter;
 
   beforeEach(async () => {
     fs = new InMemoryFileSystem();
@@ -221,7 +220,6 @@ describe("ConversationManager with archiving", () => {
     config = new SubstrateConfig("/test/substrate");
     lock = new FileLock();
     reader = new SubstrateFileReader(fs, config);
-    writer = new SubstrateFileWriter(fs, config, lock);
     appendWriter = new AppendOnlyWriter(fs, config, lock, clock);
     checker = new PermissionChecker();
     compactor = new MockCompactor();
