@@ -90,12 +90,23 @@ Config file fields:
   "strategicModel": "opus",
   "tacticalModel": "sonnet",
   "autoStartOnFirstRun": false,
-  "autoStartAfterRestart": true
+  "autoStartAfterRestart": true,
+  "conversationArchive": {
+    "enabled": false,
+    "linesToKeep": 100,
+    "sizeThreshold": 200,
+    "timeThresholdDays": 7
+  }
 }
 ```
 
 - **autoStartOnFirstRun** (default: `false`) — When `true`, the agent loop starts automatically on first/cold start. Default is `false` so you can be present when it starts the first time.
 - **autoStartAfterRestart** (default: `true`) — When `true`, the supervisor passes `--forceStart` when respawning after a restart (Restart button or rebuild). If `--forceStart` is present, the server always auto-starts the loop; the supervisor only adds it when this config is true. Other exit codes exit cleanly without restart.
+- **conversationArchive** — Configuration for CONVERSATION.md archiving to prevent unbounded growth:
+  - **enabled** (default: `false`) — When `true`, old conversation content is archived to `archive/conversation/` with date-stamped filenames
+  - **linesToKeep** (default: `100`) — Number of recent conversation lines to keep in the main file
+  - **sizeThreshold** (default: `200`) — Archive when content exceeds this many lines
+  - **timeThresholdDays** (default: `7`) — Archive after this many days (weekly by default)
 
 The `--model` CLI flag overrides the config file model: `npm run start -- --model opus`
 
@@ -540,6 +551,7 @@ The health panel runs 5 heuristic analyzers:
 | POST | `/api/loop/audit` | Request Superego audit on next cycle |
 | GET | `/api/substrate/:fileType` | Read a substrate file |
 | POST | `/api/conversation/send` | Send a user message |
+| POST | `/api/conversation/archive` | Manually archive old conversation content |
 | GET | `/api/health` | Run all 5 health analyzers |
 | GET | `/api/reports` | List governance reports |
 | GET | `/api/reports/latest` | Get latest governance report |
