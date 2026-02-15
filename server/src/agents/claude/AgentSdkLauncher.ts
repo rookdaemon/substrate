@@ -96,6 +96,41 @@ export class AgentSdkLauncher implements ISessionLauncher {
     request: ClaudeSessionRequest,
     options?: LaunchOptions,
   ): Promise<ClaudeSessionResult> {
+    const maxRetries = options?.maxRetries ?? 0;
+    const retryDelayMs = options?.retryDelayMs ?? 1000;
+
+    let lastResult: ClaudeSessionResult | null = null;
+    
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      if (attempt > 0) {
+        // Exponential backoff: retryDelayMs, retryDelayMs * 2, retryDelayMs * 4, ...
+        const backoffMs = retryDelayMs * Math.pow(2, attempt - 1);
+        this.logger.debug(`sdk-launch: retry ${attempt}/${maxRetries} after ${backoffMs}ms`);
+        await new Promise((r) => setTimeout(r, backoffMs));
+      }
+
+      lastResult = await this.executeLaunch(request, options);
+      
+      if (lastResult.success) {
+        if (attempt > 0) {
+          this.logger.debug(`sdk-launch: succeeded on retry ${attempt}`);
+        }
+        return lastResult;
+      }
+      
+      if (attempt < maxRetries) {
+        this.logger.debug(`sdk-launch: attempt ${attempt + 1} failed: ${lastResult.error}`);
+      }
+    }
+
+    this.logger.debug(`sdk-launch: all ${maxRetries + 1} attempts exhausted`);
+    return lastResult!;
+  }
+
+  private async executeLaunch(
+    request: ClaudeSessionRequest,
+    options?: LaunchOptions,
+  ): Promise<ClaudeSessionResult> {
     const startTime = this.clock.now();
 
     const modelToUse = options?.model ?? this.model;

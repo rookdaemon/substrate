@@ -18,7 +18,9 @@ import { getAppPaths } from "./paths";
 import { NodeFileSystem } from "./substrate/abstractions/NodeFileSystem";
 
 const RESTART_EXIT_CODE = 75;
-const BUILD_RETRY_DELAY_MS = 10_000;
+const INITIAL_BUILD_RETRY_DELAY_MS = 10_000;
+const MAX_BUILD_RETRIES = 10;
+const MAX_BACKOFF_MS = 5 * 60 * 1000; // 5 minutes
 
 function run(cmd: string, args: string[], cwd: string): Promise<number> {
   return new Promise((resolve) => {
@@ -38,6 +40,7 @@ async function main(): Promise<void> {
     env: process.env,
   };
   let isFirstTime = true;
+  let buildRetryCount = 0;
 
   for (;;) {
     const config = await resolveConfig(fs, resolveOptions);
@@ -58,9 +61,25 @@ async function main(): Promise<void> {
 
     const buildCode = await run("npx", ["tsc"], serverDir);
     if (buildCode !== 0) {
-      console.error(`[supervisor] Build failed (exit code ${buildCode}), retrying in ${BUILD_RETRY_DELAY_MS / 1000}s...`);
-      await new Promise((r) => setTimeout(r, BUILD_RETRY_DELAY_MS));
+      buildRetryCount++;
+      
+      if (buildRetryCount >= MAX_BUILD_RETRIES) {
+        console.error(`[supervisor] Build failed ${MAX_BUILD_RETRIES} times. Exhausted retries. Exiting.`);
+        process.exit(1);
+      }
+      
+      // Exponential backoff: 10s, 20s, 40s, 80s, ... capped at 5 minutes
+      const backoffMs = Math.min(
+        INITIAL_BUILD_RETRY_DELAY_MS * Math.pow(2, buildRetryCount - 1),
+        MAX_BACKOFF_MS
+      );
+      
+      console.error(
+        `[supervisor] Build failed (exit code ${buildCode}), retry ${buildRetryCount}/${MAX_BUILD_RETRIES} in ${backoffMs / 1000}s...`
+      );
+      await new Promise((r) => setTimeout(r, backoffMs));
     } else {
+      buildRetryCount = 0; // Reset counter on successful build
       console.log("[supervisor] Build succeeded — restarting server");
     }
   }

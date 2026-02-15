@@ -343,4 +343,119 @@ describe("AgentSdkLauncher", () => {
       expect(logger.getEntries().some((e) => e.includes("no active session"))).toBe(true);
     });
   });
+
+  describe("retry logic", () => {
+    it("retries on failure with exponential backoff", async () => {
+      const clock = new FixedClock(new Date("2025-06-15T10:00:00Z"));
+      const attempts: number[] = [];
+      let callCount = 0;
+
+      const queryFn: SdkQueryFn = () => {
+        callCount++;
+        attempts.push(Date.now());
+        return (async function* () {
+          if (callCount < 3) {
+            yield { type: "result", subtype: "error", errors: ["Temporary failure"], total_cost_usd: 0, duration_ms: 100 };
+          } else {
+            yield { type: "result", subtype: "success", result: "ok", total_cost_usd: 0, duration_ms: 100 };
+          }
+        })();
+      };
+
+      const logger = new InMemoryLogger();
+      const launcher = new AgentSdkLauncher(queryFn, clock, undefined, logger);
+
+      const result = await launcher.launch(
+        { systemPrompt: "Go", message: "Start" },
+        { maxRetries: 3, retryDelayMs: 1000 }
+      );
+
+      expect(result.success).toBe(true);
+      expect(callCount).toBe(3);
+      expect(logger.getEntries().some((e) => e.includes("retry 1/3"))).toBe(true);
+      expect(logger.getEntries().some((e) => e.includes("retry 2/3"))).toBe(true);
+      expect(logger.getEntries().some((e) => e.includes("succeeded on retry 2"))).toBe(true);
+    });
+
+    it("returns failure after exhausting retries", async () => {
+      const clock = new FixedClock(new Date("2025-06-15T10:00:00Z"));
+      const queryFn: SdkQueryFn = () => {
+        return (async function* () {
+          yield { type: "result", subtype: "error", errors: ["Persistent failure"], total_cost_usd: 0, duration_ms: 100 };
+        })();
+      };
+
+      const logger = new InMemoryLogger();
+      const launcher = new AgentSdkLauncher(queryFn, clock, undefined, logger);
+
+      const result = await launcher.launch(
+        { systemPrompt: "Go", message: "Start" },
+        { maxRetries: 2, retryDelayMs: 500 }
+      );
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("Persistent failure");
+      expect(logger.getEntries().some((e) => e.includes("all 3 attempts exhausted"))).toBe(true);
+    });
+
+    it("succeeds on first attempt when no retries needed", async () => {
+      const clock = new FixedClock(new Date("2025-06-15T10:00:00Z"));
+      const messages: SdkMessage[] = [
+        { type: "result", subtype: "success", result: "ok", total_cost_usd: 0, duration_ms: 100 },
+      ];
+      const queryFn = createMockQueryFn(messages);
+      const logger = new InMemoryLogger();
+      const launcher = new AgentSdkLauncher(queryFn, clock, undefined, logger);
+
+      const result = await launcher.launch(
+        { systemPrompt: "Go", message: "Start" },
+        { maxRetries: 3, retryDelayMs: 1000 }
+      );
+
+      expect(result.success).toBe(true);
+      expect(queryFn.getCalls().length).toBe(1);
+      expect(logger.getEntries().some((e) => e.includes("retry"))).toBe(false);
+    });
+
+    it("defaults to no retries when maxRetries not specified", async () => {
+      const clock = new FixedClock(new Date("2025-06-15T10:00:00Z"));
+      let callCount = 0;
+      const queryFn: SdkQueryFn = () => {
+        callCount++;
+        return (async function* () {
+          yield { type: "result", subtype: "error", errors: ["Failure"], total_cost_usd: 0, duration_ms: 100 };
+        })();
+      };
+
+      const launcher = new AgentSdkLauncher(queryFn, clock);
+
+      const result = await launcher.launch({ systemPrompt: "Go", message: "Start" });
+
+      expect(result.success).toBe(false);
+      expect(callCount).toBe(1); // No retries
+    });
+
+    it("uses exponential backoff for retries", async () => {
+      const clock = new FixedClock(new Date("2025-06-15T10:00:00Z"));
+      const queryFn: SdkQueryFn = () => {
+        return (async function* () {
+          yield { type: "result", subtype: "error", errors: ["Failure"], total_cost_usd: 0, duration_ms: 100 };
+        })();
+      };
+
+      const logger = new InMemoryLogger();
+      const launcher = new AgentSdkLauncher(queryFn, clock, undefined, logger);
+
+      await launcher.launch(
+        { systemPrompt: "Go", message: "Start" },
+        { maxRetries: 3, retryDelayMs: 100 }
+      );
+
+      const entries = logger.getEntries();
+      // Retry 1: 100ms, Retry 2: 200ms, Retry 3: 400ms
+      expect(entries.some((e) => e.includes("retry 1/3 after 100ms"))).toBe(true);
+      expect(entries.some((e) => e.includes("retry 2/3 after 200ms"))).toBe(true);
+      expect(entries.some((e) => e.includes("retry 3/3 after 400ms"))).toBe(true);
+    });
+  });
 });
