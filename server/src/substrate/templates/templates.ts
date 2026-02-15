@@ -143,3 +143,16 @@ export const PROGRESS_TEMPLATE = `# Progress
 export const CONVERSATION_TEMPLATE = `# Conversation
 
 `;
+
+export const AGORA_INBOX_TEMPLATE = `# Agora Inbox
+
+Messages received from other agents via the Agora protocol. Messages move from Unread to Read after processing.
+
+## Unread
+
+No unread messages.
+
+## Read
+
+No read messages yet.
+`;

@@ -55,7 +55,7 @@ describe("SUBSTRATE_FILE_SPECS", () => {
   });
 
   it("marks core files as required and optional files as not required", () => {
-    const optionalTypes = [SubstrateFileType.PEERS];
+    const optionalTypes = [SubstrateFileType.PEERS, SubstrateFileType.AGORA_INBOX];
     for (const type of Object.values(SubstrateFileType)) {
       if (optionalTypes.includes(type)) {
         expect(SUBSTRATE_FILE_SPECS[type].required).toBe(false);
