@@ -32,6 +32,7 @@ export class LoopOrchestrator {
   private isProcessing = false;
 
   private auditOnNextCycle = false;
+  private rateLimitUntil: string | null = null;
 
   // Message injection — works in both cycle and tick mode
   private launcher: { inject(message: string): void } | null = null;
@@ -73,6 +74,10 @@ export class LoopOrchestrator {
 
   getMetrics(): LoopMetrics {
     return { ...this.metrics };
+  }
+
+  getRateLimitUntil(): string | null {
+    return this.rateLimitUntil;
   }
 
   start(): void {
@@ -325,13 +330,15 @@ export class LoopOrchestrator {
       const rateLimitReset = parseRateLimitReset(cycleResult.summary, this.clock.now());
       if (rateLimitReset) {
         const waitMs = rateLimitReset.getTime() - this.clock.now().getTime();
-        this.logger.debug(`runLoop: rate limited — backing off ${waitMs}ms until ${rateLimitReset.toISOString()}`);
+        this.rateLimitUntil = rateLimitReset.toISOString();
+        this.logger.debug(`runLoop: rate limited — backing off ${waitMs}ms until ${this.rateLimitUntil}`);
         this.eventSink.emit({
           type: "idle",
           timestamp: this.clock.now().toISOString(),
-          data: { rateLimitUntil: rateLimitReset.toISOString(), waitMs },
+          data: { rateLimitUntil: this.rateLimitUntil, waitMs },
         });
         await this.timer.delay(waitMs);
+        this.rateLimitUntil = null;
       } else {
         this.logger.debug(`runLoop: delaying ${this.config.cycleDelayMs}ms before next cycle`);
         await this.timer.delay(this.config.cycleDelayMs);

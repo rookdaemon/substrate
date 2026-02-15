@@ -110,12 +110,16 @@ export class LoopHttpServer {
     const route = `${method} ${url}`;
 
     switch (route) {
-      case "GET /api/loop/status":
-        this.json(res, 200, {
+      case "GET /api/loop/status": {
+        const statusPayload: Record<string, unknown> = {
           state: this.orchestrator.getState(),
           metrics: this.orchestrator.getMetrics(),
-        });
+        };
+        const rlu = this.orchestrator.getRateLimitUntil();
+        if (rlu) statusPayload.rateLimitUntil = rlu;
+        this.json(res, 200, statusPayload);
         break;
+      }
 
       case "GET /api/loop/metrics":
         this.json(res, 200, this.orchestrator.getMetrics());

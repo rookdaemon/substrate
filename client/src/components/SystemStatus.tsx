@@ -5,6 +5,7 @@ import { CooldownBanner } from "./CooldownBanner";
 
 interface LoopStatus {
   state: string;
+  rateLimitUntil?: string;
   metrics: {
     totalCycles: number;
     successfulCycles: number;
@@ -25,7 +26,10 @@ export function SystemStatus({ lastEvent, compact }: SystemStatusProps) {
   const [rateLimitUntil, setRateLimitUntil] = useState<string | null>(null);
 
   useEffect(() => {
-    apiGet<LoopStatus>("/api/loop/status").then(setStatus).catch(() => {});
+    apiGet<LoopStatus>("/api/loop/status").then((s) => {
+      setStatus(s);
+      if (s.rateLimitUntil) setRateLimitUntil(s.rateLimitUntil);
+    }).catch(() => {});
   }, []);
 
   useEffect(() => {
