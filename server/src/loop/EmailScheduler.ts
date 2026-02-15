@@ -129,7 +129,7 @@ export class EmailScheduler {
    * Get CET offset from UTC (simplified: doesn't handle DST perfectly)
    * CET is UTC+1, CEST is UTC+2
    */
-  private getCETOffset(date: Date): number {
+  private getCETOffset(_date: Date): number {
     // Simplified: assume CET is UTC+1
     // For production, would need proper DST calculation
     return 1;

@@ -15,7 +15,7 @@ describe("EmailScheduler", () => {
   beforeEach(async () => {
     fs = new InMemoryFileSystem();
     runner = new InMemoryProcessRunner();
-    // Set to 4:00 AM CET (3:00 AM UTC, since CET is UTC+1)
+    // Set to 3:00 AM UTC (4:00 AM CET, since CET is UTC+1)
     clock = new FixedClock(new Date("2026-02-15T03:00:00.000Z"));
     logger = new InMemoryLogger();
 
@@ -29,8 +29,8 @@ describe("EmailScheduler", () => {
   });
 
   describe("shouldSendEmail", () => {
-    it("returns true when no email has been sent yet", () => {
-      // At 4:00 AM CET, before 5:00 AM scheduled time
+    it("returns false when before scheduled time and no email has been sent yet", () => {
+      // At 3:00 AM UTC (4:00 AM CET), before 5:00 AM scheduled time
       expect(scheduler.shouldSendEmail()).toBe(false);
     });
 
@@ -226,7 +226,7 @@ describe("EmailScheduler", () => {
     });
 
     it("returns correct next due time when no email sent", () => {
-      // At 4:00 AM CET (3:00 AM UTC), next email is 5:00 AM CET (4:00 AM UTC)
+      // At 3:00 AM UTC (4:00 AM CET), next email is 4:00 AM UTC (5:00 AM CET)
       clock.setNow(new Date("2026-02-15T03:00:00.000Z"));
       
       const status = scheduler.getStatus();
