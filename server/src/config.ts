@@ -16,6 +16,8 @@ export interface AppConfig {
   autoStartOnFirstRun: boolean;
   /** If true (default), the agent loop auto-starts when the server was restarted (e.g. after Restart button or rebuild). */
   autoStartAfterRestart: boolean;
+  /** Number of backups to retain (default: 14). */
+  backupRetentionCount?: number;
 }
 
 export interface ResolveConfigOptions {
@@ -43,6 +45,7 @@ export async function resolveConfig(
     mode: "cycle",
     autoStartOnFirstRun: false,
     autoStartAfterRestart: true,
+    backupRetentionCount: 14,
   };
 
   let fileConfig: Partial<AppConfig> = {};
@@ -81,6 +84,7 @@ export async function resolveConfig(
     mode: (fileConfig as Partial<AppConfig>).mode ?? defaults.mode,
     autoStartOnFirstRun: fileConfig.autoStartOnFirstRun ?? defaults.autoStartOnFirstRun,
     autoStartAfterRestart: fileConfig.autoStartAfterRestart ?? defaults.autoStartAfterRestart,
+    backupRetentionCount: fileConfig.backupRetentionCount ?? defaults.backupRetentionCount,
   };
 
   // Env vars override everything

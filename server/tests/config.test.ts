@@ -170,6 +170,30 @@ describe("resolveConfig", () => {
     expect(config.backupPath).toBe("/mnt/backups/substrate");
   });
 
+  it("uses backupRetentionCount from config file", async () => {
+    await fs.mkdir("/project", { recursive: true });
+    await fs.writeFile("/project/config.json", JSON.stringify({
+      backupRetentionCount: 30,
+    }));
+
+    const config = await resolveConfig(fs, {
+      appPaths: TEST_PATHS,
+      cwd: "/project",
+      env: {},
+    });
+
+    expect(config.backupRetentionCount).toBe(30);
+  });
+
+  it("defaults backupRetentionCount to 14", async () => {
+    const config = await resolveConfig(fs, {
+      appPaths: TEST_PATHS,
+      env: {},
+    });
+
+    expect(config.backupRetentionCount).toBe(14);
+  });
+
   it("env vars override config file values", async () => {
     await fs.mkdir("/project", { recursive: true });
     await fs.writeFile("/project/config.json", JSON.stringify({

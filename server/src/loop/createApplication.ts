@@ -168,7 +168,7 @@ export async function createApplication(config: ApplicationConfig): Promise<Appl
         substratePath: config.substratePath,
         backupDir,
         backupIntervalMs: config.backupIntervalMs ?? 86400000, // Default: 24 hours
-        retentionCount: config.backupRetentionCount ?? 7, // Default: keep 7 backups
+        retentionCount: config.backupRetentionCount ?? 14, // Default: keep 14 backups
         verifyBackups: true,
       }
     );

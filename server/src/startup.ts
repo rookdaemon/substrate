@@ -60,6 +60,7 @@ export async function startServer(config: AppConfig, options?: StartServerOption
     model: config.model,
     httpPort: config.port,
     mode: config.mode,
+    backupRetentionCount: config.backupRetentionCount,
   });
 
   console.log(`Debug log: ${app.logPath}`);
