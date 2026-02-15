@@ -32,6 +32,7 @@ import { createSdkSessionFactory } from "../session/SdkSessionAdapter";
 import { BackupScheduler } from "./BackupScheduler";
 import { NodeProcessRunner } from "../agents/claude/NodeProcessRunner";
 import { HealthCheckScheduler } from "./HealthCheckScheduler";
+import { EmailScheduler } from "./EmailScheduler";
 import { AgoraService } from "../agora/AgoraService";
 import { AgoraInboxManager } from "../agora/AgoraInboxManager";
 import { LoopWatchdog } from "./LoopWatchdog";
@@ -60,6 +61,12 @@ export interface ApplicationConfig {
     linesToKeep: number;
     sizeThreshold: number;
     timeThresholdDays?: number;
+  };
+  email?: {
+    enabled: boolean;
+    intervalHours: number;
+    sendTimeHour: number;
+    sendTimeMinute: number;
   };
 }
 
@@ -261,6 +268,29 @@ export async function createApplication(config: ApplicationConfig): Promise<Appl
 
   // Wire conversation manager into HTTP server (always set, even if archiving disabled)
   httpServer.setConversationManager(conversationManager);
+
+  // Email scheduler setup
+  if (config.email?.enabled) {
+    const appPaths = getAppPaths();
+    const progressFilePath = path.join(config.substratePath, "PROGRESS.md");
+    const stateFilePath = path.join(appPaths.config, "email-scheduler-state.json");
+    const emailScheduler = new EmailScheduler(
+      fs,
+      clock,
+      logger,
+      {
+        substratePath: config.substratePath,
+        progressFilePath,
+        emailTime: {
+          hour: config.email.sendTimeHour ?? 5,
+          minute: config.email.sendTimeMinute ?? 0,
+        },
+        emailIntervalMs: (config.email.intervalHours ?? 24) * 3600000,
+        stateFilePath,
+      }
+    );
+    orchestrator.setEmailScheduler(emailScheduler);
+  }
 
   // Health check scheduler setup
   if (config.enableHealthChecks !== false) { // Default enabled

@@ -23,6 +23,7 @@ import { SdkSessionFactory } from "../session/ISdkSession";
 import { parseRateLimitReset } from "./rateLimitParser";
 import { BackupScheduler } from "./BackupScheduler";
 import { HealthCheckScheduler } from "./HealthCheckScheduler";
+import { EmailScheduler } from "./EmailScheduler";
 import { LoopWatchdog } from "./LoopWatchdog";
 import { AgoraInboxManager } from "../agora/AgoraInboxManager";
 import { SubstrateFileType } from "../substrate/types";
@@ -45,6 +46,9 @@ export class LoopOrchestrator {
 
   // Health check scheduler
   private healthCheckScheduler: HealthCheckScheduler | null = null;
+
+  // Email scheduler
+  private emailScheduler: EmailScheduler | null = null;
 
   // Watchdog — detects stalls and injects gentle reminders
   private watchdog: LoopWatchdog | null = null;
@@ -134,6 +138,10 @@ export class LoopOrchestrator {
 
   setHealthCheckScheduler(scheduler: HealthCheckScheduler): void {
     this.healthCheckScheduler = scheduler;
+  }
+
+  setEmailScheduler(scheduler: EmailScheduler): void {
+    this.emailScheduler = scheduler;
   }
 
   setWatchdog(watchdog: LoopWatchdog): void {
@@ -303,6 +311,11 @@ export class LoopOrchestrator {
     // Health check scheduling
     if (this.healthCheckScheduler && this.healthCheckScheduler.shouldRunCheck()) {
       await this.runScheduledHealthCheck();
+    }
+
+    // Email scheduling
+    if (this.emailScheduler && await this.emailScheduler.shouldRunEmail()) {
+      await this.runScheduledEmail();
     }
 
     return result;
@@ -679,6 +692,49 @@ export class LoopOrchestrator {
       this.logger.debug(`health_check: unexpected error — ${errorMsg}`);
       this.eventSink.emit({
         type: "health_check_complete",
+        timestamp: this.clock.now().toISOString(),
+        data: {
+          cycleNumber: this.cycleNumber,
+          success: false,
+          error: errorMsg,
+        },
+      });
+    }
+  }
+
+  private async runScheduledEmail(): Promise<void> {
+    this.logger.debug(`email: starting scheduled email (cycle ${this.cycleNumber})`);
+    try {
+      const result = await this.emailScheduler!.runEmail();
+      if (result.success && result.content) {
+        this.logger.debug(`email: success — ${result.content.subject}`);
+        this.eventSink.emit({
+          type: "email_sent",
+          timestamp: this.clock.now().toISOString(),
+          data: {
+            cycleNumber: this.cycleNumber,
+            success: true,
+            subject: result.content.subject,
+            bodyPreview: result.content.body.substring(0, 100),
+          },
+        });
+      } else {
+        this.logger.debug(`email: failed — ${result.error}`);
+        this.eventSink.emit({
+          type: "email_sent",
+          timestamp: this.clock.now().toISOString(),
+          data: {
+            cycleNumber: this.cycleNumber,
+            success: false,
+            error: result.error,
+          },
+        });
+      }
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      this.logger.debug(`email: unexpected error — ${errorMsg}`);
+      this.eventSink.emit({
+        type: "email_sent",
         timestamp: this.clock.now().toISOString(),
         data: {
           cycleNumber: this.cycleNumber,

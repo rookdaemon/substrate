@@ -25,6 +25,13 @@ export interface AppConfig {
     sizeThreshold: number; // Archive when content exceeds N lines (default: 200)
     timeThresholdDays?: number; // Optional: archive after N days (e.g., 7 for weekly)
   };
+  /** Configuration for scheduled emails */
+  email?: {
+    enabled: boolean; // Whether to send scheduled emails (default: false)
+    intervalHours: number; // How often to send emails in hours (default: 24 for daily)
+    sendTimeHour: number; // Hour of day to send email in CET/CEST (0-23, default: 5 for 5am)
+    sendTimeMinute: number; // Minute of hour to send email (0-59, default: 0)
+  };
 }
 
 export interface ResolveConfigOptions {
@@ -58,6 +65,12 @@ export async function resolveConfig(
       linesToKeep: 100,
       sizeThreshold: 200,
       timeThresholdDays: 7, // Weekly by default
+    },
+    email: {
+      enabled: false, // Disabled by default
+      intervalHours: 24, // Daily by default
+      sendTimeHour: 5, // 5am CET/CEST
+      sendTimeMinute: 0,
     },
   };
 
@@ -106,6 +119,14 @@ export async function resolveConfig(
           timeThresholdDays: fileConfig.conversationArchive.timeThresholdDays ?? defaults.conversationArchive!.timeThresholdDays,
         }
       : defaults.conversationArchive,
+    email: fileConfig.email
+      ? {
+          enabled: fileConfig.email.enabled ?? defaults.email!.enabled,
+          intervalHours: fileConfig.email.intervalHours ?? defaults.email!.intervalHours,
+          sendTimeHour: fileConfig.email.sendTimeHour ?? defaults.email!.sendTimeHour,
+          sendTimeMinute: fileConfig.email.sendTimeMinute ?? defaults.email!.sendTimeMinute,
+        }
+      : defaults.email,
   };
 
   // Env vars override everything
