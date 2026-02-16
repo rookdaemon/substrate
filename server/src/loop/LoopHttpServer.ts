@@ -8,19 +8,17 @@ import { Ego } from "../agents/roles/Ego";
 import { GovernanceReportStore } from "../evaluation/GovernanceReportStore";
 import { HealthCheck } from "../evaluation/HealthCheck";
 import type { Envelope } from "@rookdaemon/agora" with { "resolution-mode": "import" };
-import { AppendOnlyWriter } from "../substrate/io/AppendOnlyWriter";
 import { BackupScheduler } from "./BackupScheduler";
 import { ConversationManager } from "../conversation/ConversationManager";
-import { AgoraInboxManager } from "../agora/AgoraInboxManager";
 import { TaskClassificationMetrics } from "../evaluation/TaskClassificationMetrics";
 import { SubstrateSizeTracker } from "../evaluation/SubstrateSizeTracker";
 import { DelegationTracker } from "../evaluation/DelegationTracker";
-import { shortKey } from "../agora/utils";
 import { TinyBus } from "../tinybus/core/TinyBus";
 import { createMessage } from "../tinybus/core/Message";
 import { createTinyBusMcpServer } from "../mcp/TinyBusMcpServer";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { AgoraProvider } from "../tinybus/providers/AgoraProvider";
 
 // Type for AgoraService from @rookdaemon/agora (ESM module, imported dynamically)
 interface AgoraServiceType {
@@ -49,11 +47,10 @@ export class LoopHttpServer {
   private eventSink: ILoopEventSink | null = null;
   private clock: IClock | null = null;
   private mode: "cycle" | "tick" = "cycle";
+  private agoraProvider: AgoraProvider | null = null;
   private agoraService: AgoraServiceType | null = null;
-  private appendWriter: AppendOnlyWriter | null = null;
   private backupScheduler: BackupScheduler | null = null;
   private conversationManager: ConversationManager | null = null;
-  private agoraInboxManager: AgoraInboxManager | null = null;
   private taskMetrics: TaskClassificationMetrics | null = null;
   private sizeTracker: SubstrateSizeTracker | null = null;
   private delegationTracker: DelegationTracker | null = null;
@@ -92,10 +89,9 @@ export class LoopHttpServer {
     this.mode = mode;
   }
 
-  setAgoraService(service: AgoraServiceType, appendWriter: AppendOnlyWriter, inboxManager: AgoraInboxManager): void {
+  setAgoraProvider(provider: AgoraProvider, service: AgoraServiceType): void {
+    this.agoraProvider = provider;
     this.agoraService = service;
-    this.appendWriter = appendWriter;
-    this.agoraInboxManager = inboxManager;
   }
 
   setBackupScheduler(scheduler: BackupScheduler): void {
@@ -552,56 +548,11 @@ export class LoopHttpServer {
   }
 
   /**
-   * Shared method to process inbound Agora messages.
-   * Called by webhook handler and future relay client (see rookdaemon/substrate#28).
-   * 
-   * Message processing pipeline:
-   * 1. Log to PROGRESS.md
-   * 2. Persist to AGORA_INBOX.md (structured queue with Unread/Read sections)
-   * 3. Emit WebSocket event for frontend visibility
-   * 4. Inject into agent loop via injectMessage()
-   * 
-   * When the relay client is implemented, it should call this same method
-   * to ensure consistent message handling across delivery mechanisms.
+   * Handle Agora webhook requests.
+   * Decodes the envelope and delegates processing to AgoraProvider.
    */
-  private async processInboundAgoraMessage(envelope: Envelope): Promise<void> {
-    if (!this.appendWriter || !this.clock || !this.agoraInboxManager) {
-      throw new Error("Required dependencies not configured for Agora message processing");
-    }
-
-    const timestamp = this.clock.now().toISOString();
-    const senderShort = shortKey(envelope.sender);
-
-    // 1. Log to PROGRESS.md
-    const logEntry = `[AGORA] Received ${envelope.type} from ${senderShort} — payload: ${JSON.stringify(envelope.payload)}`;
-    await this.appendWriter.append(SubstrateFileType.PROGRESS, logEntry);
-
-    // 2. Persist to AGORA_INBOX.md
-    await this.agoraInboxManager.addMessage(envelope);
-
-    // 3. Emit WebSocket event for frontend visibility
-    if (this.eventSink) {
-      this.eventSink.emit({
-        type: "agora_message",
-        timestamp,
-        data: {
-          envelopeId: envelope.id,
-          messageType: envelope.type,
-          sender: envelope.sender,
-          payload: envelope.payload,
-        },
-      });
-    }
-
-    // 4. Inject into agent loop
-    if (this.orchestrator) {
-      const agentPrompt = `[AGORA MESSAGE from ${senderShort}]\nType: ${envelope.type}\nEnvelope ID: ${envelope.id}\nPayload: ${JSON.stringify(envelope.payload)}\n\nRespond to this message if appropriate. Use AgoraService.send() to reply.`;
-      this.orchestrator.injectMessage(agentPrompt);
-    }
-  }
-
   private handleAgoraWebhook(req: http.IncomingMessage, res: http.ServerResponse): void {
-    if (!this.agoraService || !this.appendWriter || !this.clock || !this.agoraInboxManager) {
+    if (!this.agoraService || !this.agoraProvider) {
       this.json(res, 503, { error: "Agora service not configured" });
       return;
     }
@@ -638,8 +589,8 @@ export class LoopHttpServer {
           return;
         }
 
-        // Process the message using shared method
-        await this.processInboundAgoraMessage(result.envelope!);
+        // Process the message via AgoraProvider
+        await this.agoraProvider!.processEnvelope(result.envelope!, "webhook");
 
         this.json(res, 200, { success: true, envelopeId: result.envelope!.id });
       } catch (err) {

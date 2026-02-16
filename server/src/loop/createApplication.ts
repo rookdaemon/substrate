@@ -6,7 +6,6 @@ import { SubstrateFileReader } from "../substrate/io/FileReader";
 import { SubstrateFileWriter } from "../substrate/io/FileWriter";
 import { AppendOnlyWriter } from "../substrate/io/AppendOnlyWriter";
 import { FileLock } from "../substrate/io/FileLock";
-import { SubstrateFileType } from "../substrate/types";
 import { PermissionChecker } from "../agents/permissions";
 import { PromptBuilder } from "../agents/prompts/PromptBuilder";
 import { AgentSdkLauncher, SdkQueryFn } from "../agents/claude/AgentSdkLauncher";
@@ -42,7 +41,7 @@ import type { Envelope } from "@rookdaemon/agora" with { "resolution-mode": "imp
 import { AgoraInboxManager } from "../agora/AgoraInboxManager";
 import { LoopWatchdog } from "./LoopWatchdog";
 import { getAppPaths } from "../paths";
-import { TinyBus, MemoryProvider, SessionInjectionProvider, ChatMessageProvider } from "../tinybus";
+import { TinyBus, MemoryProvider, SessionInjectionProvider, ChatMessageProvider, AgoraProvider } from "../tinybus";
 
 // Type for AgoraService from @rookdaemon/agora (ESM module, imported dynamically)
 interface AgoraServiceType {
@@ -192,18 +191,28 @@ export async function createApplication(config: ApplicationConfig): Promise<Appl
   // Agora service for agent-to-agent communication
   let agoraService: AgoraServiceType | null = null;
   let agoraInboxManager: AgoraInboxManager | null = null;
+  let agoraProvider: AgoraProvider | null = null;
   try {
     const agora = await import("@rookdaemon/agora");
     const agoraConfig = await agora.AgoraService.loadConfig();
     agoraService = new agora.AgoraService(agoraConfig, logger);
     agoraInboxManager = new AgoraInboxManager(fs, substrateConfig, lock, clock);
 
+    // Create Agora provider for TinyBus integration
+    agoraProvider = new AgoraProvider(
+      agoraService,
+      appendWriter,
+      agoraInboxManager,
+      wsServer,
+      clock
+    );
+
     // Connect to relay if configured
     if (agoraService && agoraConfig.relay?.autoConnect && agoraConfig.relay.url) {
       await agoraService.connectRelay(agoraConfig.relay.url);
       logger.debug(`Connected to Agora relay at ${agoraConfig.relay.url}`);
 
-      // Set up relay message handler to process incoming messages
+      // Set up relay message handler to process incoming messages via AgoraProvider
       agoraService.setRelayMessageHandler(async (envelope: Envelope) => {
         try {
           // SECURITY: Verify signature before processing
@@ -215,31 +224,8 @@ export async function createApplication(config: ApplicationConfig): Promise<Appl
             return;
           }
 
-          // Use the verified envelope (it's already the envelope object)
-          const verifiedEnvelope = envelope;
-
-          // Log to PROGRESS.md with truncated payload to avoid excessive log size
-          const timestamp = clock.now().toISOString();
-          const payloadStr = JSON.stringify(verifiedEnvelope.payload);
-          const truncatedPayload = payloadStr.length > 200
-            ? payloadStr.substring(0, 200) + "..."
-            : payloadStr;
-          const { shortKey } = await import("../agora/utils.js");
-          const logEntry = `[AGORA-RELAY] Received ${verifiedEnvelope.type} from ${shortKey(verifiedEnvelope.sender)} — payload: ${truncatedPayload}`;
-          await appendWriter.append(SubstrateFileType.PROGRESS, logEntry);
-
-          // Emit WebSocket event for frontend visibility
-          wsServer.emit({
-            type: "agora_message",
-            timestamp,
-            data: {
-              envelopeId: verifiedEnvelope.id,
-              messageType: verifiedEnvelope.type,
-              sender: verifiedEnvelope.sender,
-              payload: verifiedEnvelope.payload,
-              source: "relay",
-            },
-          });
+          // Process the verified envelope via AgoraProvider
+          await agoraProvider!.processEnvelope(envelope, "relay");
         } catch (err) {
           logger.debug("Failed to process relay message: " + (err instanceof Error ? err.message : String(err)));
         }
@@ -277,6 +263,11 @@ export async function createApplication(config: ApplicationConfig): Promise<Appl
   );
   tinyBus.registerProvider(chatProvider);
   
+  // 4. Agora provider - handles peer-to-peer messages (if configured)
+  if (agoraProvider) {
+    tinyBus.registerProvider(agoraProvider);
+  }
+  
   // Start TinyBus
   await tinyBus.start();
 
@@ -287,8 +278,8 @@ export async function createApplication(config: ApplicationConfig): Promise<Appl
   // Set up TinyBus MCP server
   await httpServer.setTinyBus(tinyBus);
   
-  if (agoraService && agoraInboxManager) {
-    httpServer.setAgoraService(agoraService, appendWriter, agoraInboxManager);
+  if (agoraService && agoraProvider) {
+    httpServer.setAgoraProvider(agoraProvider, agoraService);
   }
 
   // Create metrics store for quantitative drift monitoring

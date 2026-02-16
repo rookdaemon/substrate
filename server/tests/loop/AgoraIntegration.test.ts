@@ -2,6 +2,7 @@ import { LoopHttpServer } from "../../src/loop/LoopHttpServer";
 import { LoopOrchestrator } from "../../src/loop/LoopOrchestrator";
 import { AgoraService, type AgoraServiceConfig } from "@rookdaemon/agora";
 import { AgoraInboxManager } from "../../src/agora/AgoraInboxManager";
+import { AgoraProvider } from "../../src/tinybus/providers/AgoraProvider";
 import { InMemoryFileSystem } from "../../src/substrate/abstractions/InMemoryFileSystem";
 import { FixedClock } from "../../src/substrate/abstractions/FixedClock";
 import { SubstrateConfig } from "../../src/substrate/config";
@@ -15,6 +16,7 @@ describe("Agora Message Integration", () => {
   let orchestrator: LoopOrchestrator;
   let agoraService: AgoraService;
   let agoraInboxManager: AgoraInboxManager;
+  let agoraProvider: AgoraProvider;
   let fs: InMemoryFileSystem;
   let clock: FixedClock;
   let config: SubstrateConfig;
@@ -81,17 +83,38 @@ No read messages yet.
       },
     } as unknown as LoopOrchestrator;
 
-    httpServer = new LoopHttpServer(orchestrator);
-    httpServer.setOrchestrator(orchestrator);
-    httpServer.setEventSink(
-      {
-        emit: () => {
-          /* no-op for testing */
-        },
+    // Create event sink mock
+    const eventSink = {
+      emit: () => {
+        /* no-op for testing */
       },
+    };
+
+    // Create AgoraProvider with message handler
+    agoraProvider = new AgoraProvider(
+      agoraService,
+      appendWriter,
+      agoraInboxManager,
+      eventSink,
       clock
     );
-    httpServer.setAgoraService(agoraService, appendWriter, agoraInboxManager);
+    agoraProvider.onMessage(async (message) => {
+      // Convert TinyBus message to agent prompt
+      const payload = message.payload as {
+        senderShort: string;
+        envelopeId: string;
+        messageType: string;
+        payload: unknown;
+      };
+      const agentPrompt = `[AGORA MESSAGE from ${payload.senderShort}]\nType: ${payload.messageType}\nEnvelope ID: ${payload.envelopeId}\nPayload: ${JSON.stringify(payload.payload)}\n\nRespond to this message if appropriate. Use AgoraService.send() to reply.`;
+      orchestrator.injectMessage(agentPrompt);
+    });
+    await agoraProvider.start();
+
+    httpServer = new LoopHttpServer(orchestrator);
+    httpServer.setOrchestrator(orchestrator);
+    httpServer.setEventSink(eventSink, clock);
+    httpServer.setAgoraProvider(agoraProvider, agoraService);
   });
 
   it("should process webhook message and inject into agent loop", async () => {
