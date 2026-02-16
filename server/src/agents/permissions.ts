@@ -51,6 +51,7 @@ export const ROLE_PERMISSIONS: Record<AgentRole, FilePermission[]> = {
   [AgentRole.SUPEREGO]: [
     ...Object.values(SubstrateFileType).map(read),
     append(SubstrateFileType.PROGRESS),
+    append(SubstrateFileType.ESCALATE_TO_STEFAN),
   ],
 
   [AgentRole.ID]: [

@@ -13,7 +13,7 @@ export interface LoopConfig {
 export function defaultLoopConfig(overrides?: Partial<LoopConfig>): LoopConfig {
   const defaults: LoopConfig = {
     cycleDelayMs: 30000,
-    superegoAuditInterval: 10,
+    superegoAuditInterval: 20,
     maxConsecutiveIdleCycles: 1,
   };
   if (!overrides) return defaults;
