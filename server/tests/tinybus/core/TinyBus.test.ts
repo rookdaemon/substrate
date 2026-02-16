@@ -331,7 +331,7 @@ describe("TinyBus", () => {
       tinyBus.off("message.outbound", listener);
 
       // Listener should not be called after removal
-      tinyBus["emit"]("message.outbound", {});
+      tinyBus.emit("message.outbound", {});
       expect(listener).not.toHaveBeenCalled();
     });
 
@@ -342,7 +342,7 @@ describe("TinyBus", () => {
       tinyBus.on("message.outbound", listener1);
       tinyBus.on("message.outbound", listener2);
 
-      tinyBus["emit"]("message.outbound", {});
+      tinyBus.emit("message.outbound", {});
 
       expect(listener1).toHaveBeenCalled();
       expect(listener2).toHaveBeenCalled();

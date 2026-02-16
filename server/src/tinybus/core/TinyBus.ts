@@ -178,7 +178,7 @@ export class TinyBus {
   /**
    * Emit event to listeners (non-blocking)
    */
-  private emit(event: TinyBusEvent, data: unknown): void {
+  protected emit(event: TinyBusEvent, data: unknown): void {
     const listeners = this.eventListeners.get(event);
     if (listeners) {
       // Emit to all listeners asynchronously, but don't await
