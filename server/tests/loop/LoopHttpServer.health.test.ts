@@ -14,7 +14,6 @@ import { AgentRole } from "../../src/agents/types";
 import { TaskClassificationMetrics } from "../../src/evaluation/TaskClassificationMetrics";
 import { SubstrateSizeTracker } from "../../src/evaluation/SubstrateSizeTracker";
 import { DelegationTracker } from "../../src/evaluation/DelegationTracker";
-import { SubstrateFileType } from "../../src/substrate/types";
 import * as http from "http";
 
 // Mock compactor
@@ -109,7 +108,7 @@ describe("LoopHttpServer health endpoint", () => {
   afterEach(async () => {
     try {
       await httpServer.close();
-    } catch (err) {
+    } catch {
       // Server may already be closed
     }
   });
