@@ -14,10 +14,12 @@ export class MemoryProvider implements Provider {
   private sentMessages: Message[] = [];
   private receivedMessages: Message[] = [];
   private supportedMessageTypes: string[];
+  private loopback: boolean;
 
-  constructor(id: string, supportedMessageTypes: string[] = []) {
+  constructor(id: string, supportedMessageTypes: string[] = [], loopback: boolean = false) {
     this.id = id;
     this.supportedMessageTypes = supportedMessageTypes;
+    this.loopback = loopback;
   }
 
   async isReady(): Promise<boolean> {
@@ -39,6 +41,17 @@ export class MemoryProvider implements Provider {
       throw new Error(`Provider ${this.id} not started`);
     }
     this.sentMessages.push(message);
+    
+    // If loopback mode is enabled, immediately emit the message back
+    if (this.loopback && this.messageHandler) {
+      // Create a new message with this provider as source to avoid infinite loops
+      const loopbackMessage: Message = {
+        ...message,
+        source: this.id,
+      };
+      this.receivedMessages.push(loopbackMessage);
+      await this.messageHandler(loopbackMessage);
+    }
   }
 
   onMessage(handler: (message: Message) => Promise<void>): void {

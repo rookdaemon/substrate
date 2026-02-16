@@ -42,7 +42,7 @@ import type { Envelope } from "@rookdaemon/agora" with { "resolution-mode": "imp
 import { AgoraInboxManager } from "../agora/AgoraInboxManager";
 import { LoopWatchdog } from "./LoopWatchdog";
 import { getAppPaths } from "../paths";
-import { TinyBus } from "../tinybus/core/TinyBus";
+import { TinyBus, MemoryProvider, SessionInjectionProvider } from "../tinybus";
 
 // Type for AgoraService from @rookdaemon/agora (ESM module, imported dynamically)
 interface AgoraServiceType {
@@ -257,6 +257,21 @@ export async function createApplication(config: ApplicationConfig): Promise<Appl
     appendWriter, clock, timer, wsServer, loopConfig,
     logger, idleHandler
   );
+
+  // Set up TinyBus providers
+  // 1. Loopback provider - emits messages back when received
+  const loopbackProvider = new MemoryProvider("loopback", [], true);
+  tinyBus.registerProvider(loopbackProvider);
+  
+  // 2. Session injection provider - injects messages into Claude Code session
+  const sessionProvider = new SessionInjectionProvider(
+    "session-injection",
+    (message: string) => orchestrator.injectMessage(message)
+  );
+  tinyBus.registerProvider(sessionProvider);
+  
+  // Start TinyBus
+  await tinyBus.start();
 
   httpServer.setOrchestrator(orchestrator);
   httpServer.setDependencies({ reader, ego });

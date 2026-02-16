@@ -222,4 +222,50 @@ describe("MemoryProvider", () => {
       expect(types1).toEqual(types2);
     });
   });
+
+  describe("loopback mode", () => {
+    beforeEach(async () => {
+      await provider.start();
+    });
+
+    it("does not loopback by default", async () => {
+      const handler = jest.fn();
+      provider.onMessage(handler);
+
+      const message = createMessage({ type: "test.message" });
+      await provider.send(message);
+
+      expect(handler).not.toHaveBeenCalled();
+      expect(provider.getSentMessages()).toHaveLength(1);
+    });
+
+    it("loops back message when loopback is enabled", async () => {
+      const loopbackProvider = new MemoryProvider("loopback", [], true);
+      await loopbackProvider.start();
+
+      const handler = jest.fn();
+      loopbackProvider.onMessage(handler);
+
+      const message = createMessage({ type: "test.message" });
+      await loopbackProvider.send(message);
+
+      expect(handler).toHaveBeenCalledTimes(1);
+      const loopedMessage = handler.mock.calls[0][0];
+      expect(loopedMessage.type).toBe("test.message");
+      expect(loopedMessage.source).toBe("loopback");
+      expect(loopbackProvider.getSentMessages()).toHaveLength(1);
+      expect(loopbackProvider.getReceivedMessages()).toHaveLength(1);
+    });
+
+    it("does not loopback if handler is not registered", async () => {
+      const loopbackProvider = new MemoryProvider("loopback", [], true);
+      await loopbackProvider.start();
+
+      const message = createMessage({ type: "test.message" });
+      await loopbackProvider.send(message);
+
+      expect(loopbackProvider.getSentMessages()).toHaveLength(1);
+      expect(loopbackProvider.getReceivedMessages()).toHaveLength(0);
+    });
+  });
 });
