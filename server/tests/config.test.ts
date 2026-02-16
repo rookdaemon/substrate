@@ -213,4 +213,30 @@ describe("resolveConfig", () => {
     expect(config.substratePath).toBe("/env/substrate");
     expect(config.port).toBe(7777);
   });
+
+  it("SUPEREGO_AUDIT_INTERVAL env var overrides config", async () => {
+    await fs.mkdir("/project", { recursive: true });
+    await fs.writeFile("/project/config.json", JSON.stringify({
+      superegoAuditInterval: 15,
+    }));
+
+    const config = await resolveConfig(fs, {
+      appPaths: TEST_PATHS,
+      cwd: "/project",
+      env: {
+        SUPEREGO_AUDIT_INTERVAL: "30",
+      },
+    });
+
+    expect(config.superegoAuditInterval).toBe(30);
+  });
+
+  it("defaults superegoAuditInterval to 20", async () => {
+    const config = await resolveConfig(fs, {
+      appPaths: TEST_PATHS,
+      env: {},
+    });
+
+    expect(config.superegoAuditInterval).toBe(20);
+  });
 });

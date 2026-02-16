@@ -27,6 +27,7 @@ import { EmailScheduler } from "./EmailScheduler";
 import { LoopWatchdog } from "./LoopWatchdog";
 import { AgoraInboxManager } from "../agora/AgoraInboxManager";
 import { SubstrateFileType } from "../substrate/types";
+import { SuperegoFindingTracker } from "../agents/roles/SuperegoFindingTracker";
 
 export class LoopOrchestrator {
   private state: LoopState = LoopState.STOPPED;
@@ -55,6 +56,9 @@ export class LoopOrchestrator {
 
   // Agora inbox manager for checking unread messages
   private agoraInboxManager: AgoraInboxManager | null = null;
+
+  // SUPEREGO finding tracker for recurring finding escalation
+  private findingTracker: SuperegoFindingTracker = new SuperegoFindingTracker();
 
   // Tick mode
   private tickPromptBuilder: TickPromptBuilder | null = null;
@@ -581,7 +585,11 @@ export class LoopOrchestrator {
     this.logger.debug(`audit: starting (cycle ${this.cycleNumber})`);
     this.metrics.superegoAudits++;
     try {
-      const report = await this.superego.audit(this.createLogCallback("SUPEREGO"));
+      const report = await this.superego.audit(
+        this.createLogCallback("SUPEREGO"),
+        this.cycleNumber,
+        this.findingTracker
+      );
       // Audit results are emitted via eventSink (below) and available in systemd logs
       // No need to log to PROGRESS.md as it would pollute the high-level summary file
       this.logger.debug(`audit: complete — ${report.summary}`);

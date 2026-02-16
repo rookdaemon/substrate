@@ -13,6 +13,7 @@ import {
   PROGRESS_TEMPLATE,
   CONVERSATION_TEMPLATE,
   AGORA_INBOX_TEMPLATE,
+  ESCALATE_TO_STEFAN_TEMPLATE,
 } from "./templates";
 
 const TEMPLATE_MAP: Record<SubstrateFileType, string> = {
@@ -30,6 +31,7 @@ const TEMPLATE_MAP: Record<SubstrateFileType, string> = {
   [SubstrateFileType.CONVERSATION]: CONVERSATION_TEMPLATE,
   [SubstrateFileType.PEERS]: "# Agora Peers\n\nRegistered agents for Agora coordination protocol.\n\n## Future Peers\n\nAgents will be added here as the network expands.\n",
   [SubstrateFileType.AGORA_INBOX]: AGORA_INBOX_TEMPLATE,
+  [SubstrateFileType.ESCALATE_TO_STEFAN]: ESCALATE_TO_STEFAN_TEMPLATE,
 };
 
 export function getTemplate(fileType: SubstrateFileType): string {

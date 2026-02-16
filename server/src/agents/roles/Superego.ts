@@ -8,6 +8,7 @@ import { ISessionLauncher, ProcessLogEntry } from "../claude/ISessionLauncher";
 import { extractJson } from "../parsers/extractJson";
 import { AgentRole } from "../types";
 import { TaskClassifier } from "../TaskClassifier";
+import { SuperegoFindingTracker } from "./SuperegoFindingTracker";
 
 export interface Finding {
   severity: "info" | "warning" | "critical";
@@ -42,7 +43,11 @@ export class Superego {
     private readonly workingDirectory?: string
   ) {}
 
-  async audit(onLogEntry?: (entry: ProcessLogEntry) => void): Promise<GovernanceReport> {
+  async audit(
+    onLogEntry?: (entry: ProcessLogEntry) => void,
+    cycleNumber?: number,
+    findingTracker?: SuperegoFindingTracker
+  ): Promise<GovernanceReport> {
     try {
       const systemPrompt = this.promptBuilder.buildSystemPrompt(AgentRole.SUPEREGO);
       const contextRefs = this.promptBuilder.getContextReferences(AgentRole.SUPEREGO);
@@ -61,8 +66,16 @@ export class Superego {
       }
 
       const parsed = extractJson(result.rawOutput);
+      const findings = (parsed.findings as Finding[] | undefined) ?? [];
+      
+      // Process findings for escalation if tracker and cycleNumber provided
+      let filteredFindings = findings;
+      if (findingTracker && cycleNumber !== undefined) {
+        filteredFindings = await this.processFindings(findings, cycleNumber, findingTracker);
+      }
+
       return {
-        findings: (parsed.findings as Finding[] | undefined) ?? [],
+        findings: filteredFindings,
         proposalEvaluations: (parsed.proposalEvaluations as ProposalEvaluation[] | undefined) ?? [],
         summary: (parsed.summary as string | undefined) ?? "",
       };
@@ -110,5 +123,78 @@ export class Superego {
   async logAudit(entry: string): Promise<void> {
     this.checker.assertCanAppend(AgentRole.SUPEREGO, SubstrateFileType.PROGRESS);
     await this.appendWriter.append(SubstrateFileType.PROGRESS, `[SUPEREGO] ${entry}`);
+  }
+
+  /**
+   * Process findings to detect and escalate recurring critical issues.
+   * Returns filtered list of findings (excluding escalated ones).
+   */
+  private async processFindings(
+    findings: Finding[],
+    cycleNumber: number,
+    tracker: SuperegoFindingTracker
+  ): Promise<Finding[]> {
+    const nonEscalatedFindings: Finding[] = [];
+
+    for (const finding of findings) {
+      // Only track CRITICAL findings for escalation
+      if (finding.severity !== "critical") {
+        nonEscalatedFindings.push(finding);
+        continue;
+      }
+
+      // Track the finding and check if it should escalate
+      const shouldEscalate = tracker.track(finding, cycleNumber);
+
+      if (shouldEscalate) {
+        const escalationInfo = tracker.getEscalationInfo(finding);
+        if (escalationInfo) {
+          await this.escalateFinding(escalationInfo);
+          tracker.clearFinding(escalationInfo.findingId);
+          // Don't include escalated finding in returned list (reduces noise)
+        }
+      } else {
+        // Not yet escalated, include in normal findings
+        nonEscalatedFindings.push(finding);
+      }
+    }
+
+    return nonEscalatedFindings;
+  }
+
+  /**
+   * Escalate a recurring finding to ESCALATE_TO_STEFAN.md.
+   */
+  private async escalateFinding(info: {
+    findingId: string;
+    severity: string;
+    message: string;
+    cycles: number[];
+    firstDetectedCycle: number;
+    lastOccurrenceCycle: number;
+  }): Promise<void> {
+    this.checker.assertCanAppend(AgentRole.SUPEREGO, SubstrateFileType.ESCALATE_TO_STEFAN);
+
+    const timestamp = this.clock.now().toISOString();
+    const escalationEntry = `
+## SUPEREGO Recurring Finding (Auto-Escalated)
+
+**Finding:** [${info.severity}] ${info.message}
+**Occurrences:** Audit cycles [${info.cycles.join(", ")}]
+**First detected:** Cycle ${info.firstDetectedCycle}
+**Last occurrence:** Cycle ${info.lastOccurrenceCycle}
+**Escalated at:** ${timestamp}
+**Status:** Auto-escalated after ${info.cycles.length} consecutive audits
+
+---
+`;
+
+    await this.appendWriter.append(SubstrateFileType.ESCALATE_TO_STEFAN, escalationEntry);
+    
+    // Log the escalation to PROGRESS.md
+    await this.appendWriter.append(
+      SubstrateFileType.PROGRESS,
+      `[SUPEREGO] ESCALATED recurring finding (${info.cycles.length} occurrences): ${info.message.substring(0, 100)}...`
+    );
   }
 }
