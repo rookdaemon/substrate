@@ -1,6 +1,6 @@
 {
   "name": "@substrate/server",
-  "version": "0.2.8",
+  "version": "0.2.9",
   "private": true,
   "description": "Substrate backend execution loop",
   "main": "dist/index.js",

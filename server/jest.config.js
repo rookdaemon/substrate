@@ -9,6 +9,14 @@ module.exports = {
     "^@anthropic-ai/claude-agent-sdk$": "<rootDir>/tests/__mocks__/claude-agent-sdk.ts",
     "^@rookdaemon/agora$": "<rootDir>/tests/__mocks__/agora.ts",
   },
+  globals: {
+    "ts-jest": {
+      tsconfig: {
+        module: "commonjs",
+        moduleResolution: "node",
+      },
+    },
+  },
   forceExit: true,
   testTimeout: 4000,
 };
