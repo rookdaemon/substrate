@@ -1,10 +1,12 @@
 import { AgentRole } from "./types";
+import type { IMetricsCollector } from "../evaluation/TaskClassificationMetrics";
 
 export type TaskType = "strategic" | "tactical";
 
 export interface TaskClassifierConfig {
   strategicModel: string;
   tacticalModel: string;
+  metricsCollector?: IMetricsCollector;
 }
 
 export interface OperationContext {
@@ -69,12 +71,28 @@ export class TaskClassifier {
 
   /**
    * Get the model name for a given operation.
+   * Optionally records classification decision to metrics collector.
    */
   getModel(context: OperationContext): string {
     const taskType = this.classify(context);
-    return taskType === "strategic" 
+    const model = taskType === "strategic" 
       ? this.config.strategicModel 
       : this.config.tacticalModel;
+    
+    // Record classification if metrics collector is configured
+    if (this.config.metricsCollector) {
+      // Fire and forget - don't block on metrics recording
+      this.config.metricsCollector.recordClassification(
+        context.role,
+        context.operation,
+        taskType,
+        model
+      ).catch(() => {
+        // Silently ignore metrics recording errors
+      });
+    }
+    
+    return model;
   }
 
   /**

@@ -33,6 +33,10 @@ import { BackupScheduler } from "./BackupScheduler";
 import { NodeProcessRunner } from "../agents/claude/NodeProcessRunner";
 import { HealthCheckScheduler } from "./HealthCheckScheduler";
 import { EmailScheduler } from "./EmailScheduler";
+import { MetricsScheduler } from "./MetricsScheduler";
+import { TaskClassificationMetrics } from "../evaluation/TaskClassificationMetrics";
+import { SubstrateSizeTracker } from "../evaluation/SubstrateSizeTracker";
+import { DelegationTracker } from "../evaluation/DelegationTracker";
 import { AgoraService } from "../agora/AgoraService";
 import { AgoraInboxManager } from "../agora/AgoraInboxManager";
 import { LoopWatchdog } from "./LoopWatchdog";
@@ -67,6 +71,10 @@ export interface ApplicationConfig {
     intervalHours: number;
     sendTimeHour: number;
     sendTimeMinute: number;
+  };
+  metrics?: {
+    enabled: boolean;
+    intervalMs?: number; // Default: 604800000 (7 days)
   };
 }
 
@@ -107,10 +115,16 @@ export async function createApplication(config: ApplicationConfig): Promise<Appl
   });
   const launcher = new AgentSdkLauncher(sdkQuery, clock, config.model, logger);
 
-  // Task classifier for model selection
+  // Metrics collection components
+  const taskMetrics = new TaskClassificationMetrics(fs, clock, config.substratePath);
+  const sizeTracker = new SubstrateSizeTracker(fs, clock, config.substratePath);
+  const delegationTracker = new DelegationTracker(fs, clock, config.substratePath);
+
+  // Task classifier for model selection (with optional metrics collection)
   const taskClassifier = new TaskClassifier({
     strategicModel: config.strategicModel ?? "opus",
     tacticalModel: config.tacticalModel ?? "sonnet",
+    metricsCollector: config.metrics?.enabled !== false ? taskMetrics : undefined, // Default enabled
   });
 
   const cwd = config.workingDirectory;
@@ -235,6 +249,7 @@ export async function createApplication(config: ApplicationConfig): Promise<Appl
   // Create metrics store for quantitative drift monitoring
   const metricsStore = new MetricsStore(fs, clock, config.substratePath);
   httpServer.setHealthCheck(new HealthCheck(reader, metricsStore));
+  httpServer.setMetricsComponents(taskMetrics, sizeTracker, delegationTracker);
 
   orchestrator.setLauncher(launcher);
   orchestrator.setShutdown((code) => process.exit(code));
@@ -304,6 +319,26 @@ export async function createApplication(config: ApplicationConfig): Promise<Appl
       }
     );
     orchestrator.setHealthCheckScheduler(healthCheckScheduler);
+  }
+
+  // Metrics scheduler setup
+  if (config.metrics?.enabled !== false) { // Default enabled
+    const appPaths = getAppPaths();
+    const stateFilePath = path.join(appPaths.config, "metrics-scheduler-state.txt");
+    const metricsScheduler = new MetricsScheduler(
+      fs,
+      clock,
+      logger,
+      {
+        substratePath: config.substratePath,
+        metricsIntervalMs: config.metrics?.intervalMs ?? 604800000, // Default: 7 days
+        stateFilePath,
+      },
+      taskMetrics,
+      sizeTracker,
+      delegationTracker
+    );
+    orchestrator.setMetricsScheduler(metricsScheduler);
   }
 
   // Watchdog — detects stalls and injects gentle reminders

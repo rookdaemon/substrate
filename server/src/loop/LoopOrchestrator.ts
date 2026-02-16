@@ -24,6 +24,7 @@ import { parseRateLimitReset } from "./rateLimitParser";
 import { BackupScheduler } from "./BackupScheduler";
 import { HealthCheckScheduler } from "./HealthCheckScheduler";
 import { EmailScheduler } from "./EmailScheduler";
+import { MetricsScheduler } from "./MetricsScheduler";
 import { LoopWatchdog } from "./LoopWatchdog";
 import { AgoraInboxManager } from "../agora/AgoraInboxManager";
 import { SubstrateFileType } from "../substrate/types";
@@ -50,6 +51,9 @@ export class LoopOrchestrator {
 
   // Email scheduler
   private emailScheduler: EmailScheduler | null = null;
+
+  // Metrics scheduler
+  private metricsScheduler: MetricsScheduler | null = null;
 
   // Watchdog — detects stalls and injects gentle reminders
   private watchdog: LoopWatchdog | null = null;
@@ -146,6 +150,10 @@ export class LoopOrchestrator {
 
   setEmailScheduler(scheduler: EmailScheduler): void {
     this.emailScheduler = scheduler;
+  }
+
+  setMetricsScheduler(scheduler: MetricsScheduler): void {
+    this.metricsScheduler = scheduler;
   }
 
   setWatchdog(watchdog: LoopWatchdog): void {
@@ -320,6 +328,11 @@ export class LoopOrchestrator {
     // Email scheduling
     if (this.emailScheduler && await this.emailScheduler.shouldRunEmail()) {
       await this.runScheduledEmail();
+    }
+
+    // Metrics scheduling
+    if (this.metricsScheduler && await this.metricsScheduler.shouldRunMetrics()) {
+      await this.runScheduledMetrics();
     }
 
     return result;
@@ -743,6 +756,48 @@ export class LoopOrchestrator {
       this.logger.debug(`email: unexpected error — ${errorMsg}`);
       this.eventSink.emit({
         type: "email_sent",
+        timestamp: this.clock.now().toISOString(),
+        data: {
+          cycleNumber: this.cycleNumber,
+          success: false,
+          error: errorMsg,
+        },
+      });
+    }
+  }
+
+  private async runScheduledMetrics(): Promise<void> {
+    this.logger.debug(`metrics: starting scheduled metrics collection (cycle ${this.cycleNumber})`);
+    try {
+      const result = await this.metricsScheduler!.runMetrics();
+      if (result.success) {
+        this.logger.debug(`metrics: success — collected: ${JSON.stringify(result.collected)}`);
+        this.eventSink.emit({
+          type: "metrics_collected",
+          timestamp: this.clock.now().toISOString(),
+          data: {
+            cycleNumber: this.cycleNumber,
+            success: true,
+            collected: result.collected,
+          },
+        });
+      } else {
+        this.logger.debug(`metrics: failed — ${result.error}`);
+        this.eventSink.emit({
+          type: "metrics_collected",
+          timestamp: this.clock.now().toISOString(),
+          data: {
+            cycleNumber: this.cycleNumber,
+            success: false,
+            error: result.error,
+          },
+        });
+      }
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      this.logger.debug(`metrics: unexpected error — ${errorMsg}`);
+      this.eventSink.emit({
+        type: "metrics_collected",
         timestamp: this.clock.now().toISOString(),
         data: {
           cycleNumber: this.cycleNumber,
