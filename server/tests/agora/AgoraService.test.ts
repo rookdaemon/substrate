@@ -1,6 +1,14 @@
 import { AgoraService } from "../../src/agora/AgoraService";
 import { EventEmitter } from "events";
 
+// Mock @rookdaemon/agora so dynamic imports in AgoraService don't load the real package
+// (which can register timers/handles and prevent Jest from exiting)
+jest.mock("@rookdaemon/agora", () => ({
+  sendToPeer: jest.fn().mockResolvedValue({ ok: true, status: 200 }),
+  decodeInboundEnvelope: jest.fn().mockReturnValue({ ok: false, reason: "not_agora_message" }),
+  RelayClient: jest.fn(),
+}));
+
 /** Fake RelayClient backed by EventEmitter so we can simulate errors */
 class FakeRelayClient extends EventEmitter {
   connectResult: "ok" | Error = "ok";
@@ -48,6 +56,12 @@ describe("AgoraService", () => {
     });
 
     service = new AgoraService(testConfig);
+  });
+
+  afterEach(async () => {
+    if (service?.isRelayConnected()) {
+      await service.disconnectRelay();
+    }
   });
 
   describe("getPeers", () => {

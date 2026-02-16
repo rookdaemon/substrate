@@ -70,12 +70,18 @@ describe("usePanelState", () => {
 
   it("handles corrupted localStorage gracefully", () => {
     localStorage.setItem("substrate-panel-states", "corrupted-json");
-    
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
     const { result } = renderHook(() => usePanelState());
-    
+
     // Should fall back to defaults
     expect(result.current.isExpanded("plan")).toBe(true);
     expect(result.current.isExpanded("processLog")).toBe(false);
+    expect(warnSpy).toHaveBeenCalledWith(
+      "Failed to load panel states from localStorage:",
+      expect.any(SyntaxError)
+    );
+    warnSpy.mockRestore();
   });
 
   it("merges partial state from localStorage with defaults", () => {
