@@ -94,7 +94,7 @@ export class SubstrateSizeTracker {
     };
 
     // Ensure .metrics directory exists
-    const metricsDir = this.metricsPath.substring(0, this.metricsPath.lastIndexOf("/"));
+    const metricsDir = path.dirname(this.metricsPath);
     await this.fs.mkdir(metricsDir, { recursive: true });
 
     // Append to JSONL file

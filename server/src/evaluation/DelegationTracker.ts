@@ -1,5 +1,6 @@
 import { IFileSystem } from "../substrate/abstractions/IFileSystem";
 import { IClock } from "../substrate/abstractions/IClock";
+import * as path from "node:path";
 
 /**
  * Single delegation ratio measurement
@@ -73,7 +74,7 @@ export class DelegationTracker {
     };
 
     // Ensure .metrics directory exists
-    const metricsDir = this.metricsPath.substring(0, this.metricsPath.lastIndexOf("/"));
+    const metricsDir = path.dirname(this.metricsPath);
     await this.fs.mkdir(metricsDir, { recursive: true });
 
     // Append to JSONL file

@@ -2,6 +2,7 @@ import { IFileSystem } from "../substrate/abstractions/IFileSystem";
 import { IClock } from "../substrate/abstractions/IClock";
 import { AgentRole } from "../agents/types";
 import { TaskType } from "../agents/TaskClassifier";
+import * as path from "node:path";
 
 /**
  * Single classification event
@@ -85,7 +86,7 @@ export class TaskClassificationMetrics implements IMetricsCollector {
     };
 
     // Ensure .metrics directory exists
-    const metricsDir = this.metricsPath.substring(0, this.metricsPath.lastIndexOf("/"));
+    const metricsDir = path.dirname(this.metricsPath);
     await this.fs.mkdir(metricsDir, { recursive: true });
 
     // Append to JSONL file

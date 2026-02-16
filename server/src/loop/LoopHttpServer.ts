@@ -341,6 +341,24 @@ export class LoopHttpServer {
     );
   }
 
+  /**
+   * Determine task classifier health status based on tactical routing percentage.
+   * Target: 70-80% tactical routing for optimal cost efficiency.
+   */
+  private getTaskClassifierStatus(tacticalPct: number): "OK" | "WARNING" | "CRITICAL" {
+    const TARGET_MIN = 0.7;  // 70% tactical minimum
+    const TARGET_MAX = 0.8;  // 80% tactical maximum
+    const WARNING_MIN = 0.6; // 60% tactical warning threshold
+
+    if (tacticalPct >= TARGET_MIN && tacticalPct <= TARGET_MAX) {
+      return "OK";
+    }
+    if (tacticalPct >= WARNING_MIN) {
+      return "WARNING";
+    }
+    return "CRITICAL";
+  }
+
   private async handleSubstrateHealth(res: http.ServerResponse): Promise<void> {
     if (!this.taskMetrics || !this.sizeTracker || !this.delegationTracker || !this.clock) {
       this.json(res, 500, { error: "Metrics components not configured" });
@@ -402,8 +420,7 @@ export class LoopHttpServer {
         taskClassifier: {
           strategic_pct: classificationStats.strategicPct,
           tactical_pct: classificationStats.tacticalPct,
-          status: (classificationStats.tacticalPct >= 0.7 && classificationStats.tacticalPct <= 0.8) ? "OK" : 
-                  (classificationStats.tacticalPct >= 0.6) ? "WARNING" : "CRITICAL",
+          status: this.getTaskClassifierStatus(classificationStats.tacticalPct),
           total_operations: classificationStats.totalOperations,
         },
         lastCompaction: null, // TODO: Get from ConversationManager or PROGRESS.md
