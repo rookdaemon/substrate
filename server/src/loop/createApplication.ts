@@ -37,9 +37,8 @@ import { MetricsScheduler } from "./MetricsScheduler";
 import { TaskClassificationMetrics } from "../evaluation/TaskClassificationMetrics";
 import { SubstrateSizeTracker } from "../evaluation/SubstrateSizeTracker";
 import { DelegationTracker } from "../evaluation/DelegationTracker";
-import { AgoraService } from "../agora/AgoraService";
+import { AgoraService, shortKey } from "@rookdaemon/agora";
 import { AgoraInboxManager } from "../agora/AgoraInboxManager";
-import { shortKey } from "../agora/utils";
 import { LoopWatchdog } from "./LoopWatchdog";
 import { getAppPaths } from "../paths";
 

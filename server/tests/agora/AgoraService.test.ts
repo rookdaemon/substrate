@@ -1,15 +1,18 @@
-import { AgoraService } from "../../src/agora/AgoraService";
+import { AgoraService } from "@rookdaemon/agora";
 import { EventEmitter } from "events";
 
-// Mock @rookdaemon/agora so dynamic imports in AgoraService don't load the real package
-// (which can register timers/handles and prevent Jest from exiting)
-jest.mock("@rookdaemon/agora", () => ({
-  sendToPeer: jest.fn().mockResolvedValue({ ok: true, status: 200 }),
-  decodeInboundEnvelope: jest.fn().mockReturnValue({ ok: false, reason: "not_agora_message" }),
-  RelayClient: jest.fn(),
-}));
+// Mock transport and relay so tests don't perform real I/O or register timers
+jest.mock("@rookdaemon/agora", () => {
+  const actual = jest.requireActual("@rookdaemon/agora") as typeof import("@rookdaemon/agora");
+  return {
+    ...actual,
+    sendToPeer: jest.fn().mockResolvedValue({ ok: true, status: 200 }),
+    decodeInboundEnvelope: jest.fn().mockReturnValue({ ok: false, reason: "not_agora_message" }),
+    RelayClient: jest.fn(),
+  };
+});
 
-/** Fake RelayClient backed by EventEmitter so we can simulate errors */
+/** Fake RelayClient backed by EventEmitter for testing */
 class FakeRelayClient extends EventEmitter {
   connectResult: "ok" | Error = "ok";
   _connected = false;
@@ -19,7 +22,9 @@ class FakeRelayClient extends EventEmitter {
     }
     this._connected = true;
   });
-  disconnect = jest.fn(() => { this._connected = false; });
+  disconnect = jest.fn(() => {
+    this._connected = false;
+  });
   connected = jest.fn(() => this._connected);
 }
 
@@ -37,7 +42,7 @@ describe("AgoraService", () => {
   let testConfig: {
     identity: { publicKey: string; privateKey: string; name?: string };
     peers: Map<string, { publicKey: string; url: string; token: string }>;
-    relay?: { url: string; autoConnect: boolean; name?: string };
+    relay?: { url: string; autoConnect: boolean; name?: string; reconnectMaxMs?: number };
   };
 
   beforeEach(() => {
@@ -136,11 +141,10 @@ describe("AgoraService", () => {
       });
       service = new AgoraService(testConfig, logger, fake.factory);
 
-      // Must not throw
       await service.connectRelay("wss://relay.test");
 
       expect(service.isRelayConnected()).toBe(false);
-      expect(logger.messages.some(m => m.includes("502"))).toBe(true);
+      expect(logger.messages.some((m) => m.includes("502"))).toBe(true);
     });
 
     it("should log async relay errors emitted after connect", async () => {
@@ -149,10 +153,9 @@ describe("AgoraService", () => {
 
       await service.connectRelay("wss://relay.test");
 
-      // Simulate an error event emitted later (e.g. connection drop)
       state.client!.emit("error", new Error("Connection reset"));
 
-      expect(logger.messages.some(m => m.includes("Connection reset"))).toBe(true);
+      expect(logger.messages.some((m) => m.includes("Connection reset"))).toBe(true);
     });
 
     it("should be a no-op when already connected", async () => {
@@ -162,7 +165,6 @@ describe("AgoraService", () => {
       await service.connectRelay("wss://relay.test");
       await service.connectRelay("wss://relay.test");
 
-      // Factory called only once
       expect(factory).toHaveBeenCalledTimes(1);
     });
 
@@ -176,7 +178,6 @@ describe("AgoraService", () => {
       await service.disconnectRelay();
       expect(service.isRelayConnected()).toBe(false);
 
-      // Can reconnect after disconnect
       await service.connectRelay("wss://relay.test");
       expect(service.isRelayConnected()).toBe(true);
       expect(factory).toHaveBeenCalledTimes(2);

@@ -3,7 +3,7 @@ import type { IClock } from "../substrate/abstractions/IClock";
 import { SubstrateConfig } from "../substrate/config";
 import { SubstrateFileType } from "../substrate/types";
 import { FileLock } from "../substrate/io/FileLock";
-import type { Envelope } from "./AgoraService";
+import type { Envelope } from "@rookdaemon/agora";
 import { shortKey } from "./utils";
 
 export interface AgoraInboxMessage {

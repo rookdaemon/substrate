@@ -7,6 +7,7 @@ module.exports = {
   collectCoverageFrom: ["src/**/*.ts"],
   moduleNameMapper: {
     "^@anthropic-ai/claude-agent-sdk$": "<rootDir>/tests/__mocks__/claude-agent-sdk.ts",
+    "^@rookdaemon/agora$": "<rootDir>/tests/__mocks__/agora.ts",
   },
   forceExit: true,
   testTimeout: 4000,

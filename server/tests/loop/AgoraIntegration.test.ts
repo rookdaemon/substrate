@@ -1,6 +1,6 @@
 import { LoopHttpServer } from "../../src/loop/LoopHttpServer";
 import { LoopOrchestrator } from "../../src/loop/LoopOrchestrator";
-import { AgoraService, type AgoraConfig } from "../../src/agora/AgoraService";
+import { AgoraService, type AgoraServiceConfig } from "@rookdaemon/agora";
 import { AgoraInboxManager } from "../../src/agora/AgoraInboxManager";
 import { InMemoryFileSystem } from "../../src/substrate/abstractions/InMemoryFileSystem";
 import { FixedClock } from "../../src/substrate/abstractions/FixedClock";
@@ -22,7 +22,7 @@ describe("Agora Message Integration", () => {
   let appendWriter: AppendOnlyWriter;
   let injectedMessages: string[];
 
-  const testAgoraConfig: AgoraConfig = {
+  const testAgoraConfig: AgoraServiceConfig = {
     identity: {
       publicKey: "302a300506032b6570032100aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       privateKey: "302e020100300506032b6570042204bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",

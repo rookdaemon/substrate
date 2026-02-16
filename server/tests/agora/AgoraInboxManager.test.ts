@@ -4,7 +4,7 @@ import { FixedClock } from "../../src/substrate/abstractions/FixedClock";
 import { SubstrateConfig } from "../../src/substrate/config";
 import { FileLock } from "../../src/substrate/io/FileLock";
 import { SubstrateFileType } from "../../src/substrate/types";
-import type { Envelope } from "../../src/agora/AgoraService";
+import type { Envelope } from "@rookdaemon/agora";
 
 describe("AgoraInboxManager", () => {
   let manager: AgoraInboxManager;
