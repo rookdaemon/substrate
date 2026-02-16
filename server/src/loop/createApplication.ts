@@ -37,10 +37,23 @@ import { MetricsScheduler } from "./MetricsScheduler";
 import { TaskClassificationMetrics } from "../evaluation/TaskClassificationMetrics";
 import { SubstrateSizeTracker } from "../evaluation/SubstrateSizeTracker";
 import { DelegationTracker } from "../evaluation/DelegationTracker";
-import { AgoraService, shortKey } from "@rookdaemon/agora";
+import type { Envelope } from "@rookdaemon/agora" with { "resolution-mode": "import" };
 import { AgoraInboxManager } from "../agora/AgoraInboxManager";
 import { LoopWatchdog } from "./LoopWatchdog";
 import { getAppPaths } from "../paths";
+
+// Type for AgoraService from @rookdaemon/agora (ESM module, imported dynamically)
+interface AgoraServiceType {
+  sendMessage(options: { peerName: string; type: string; payload: unknown; inReplyTo?: string }): Promise<{ ok: boolean; status: number; error?: string }>;
+  decodeInbound(message: string): Promise<{ ok: boolean; envelope?: Envelope; reason?: string }>;
+  getPeers(): string[];
+  getPeerConfig(name: string): { publicKey: string; url: string; token: string } | undefined;
+  connectRelay(url: string): Promise<void>;
+  disconnectRelay(): Promise<void>;
+  setRelayMessageHandler(handler: (envelope: Envelope) => void): void;
+  isRelayConnected(): boolean;
+  loadConfig(path?: string): Promise<unknown>;
+}
 
 export interface ApplicationConfig {
   substratePath: string;
@@ -171,11 +184,12 @@ export async function createApplication(config: ApplicationConfig): Promise<Appl
   const timer = new NodeTimer();
 
   // Agora service for agent-to-agent communication
-  let agoraService: AgoraService | null = null;
+  let agoraService: AgoraServiceType | null = null;
   let agoraInboxManager: AgoraInboxManager | null = null;
   try {
-    const agoraConfig = await AgoraService.loadConfig();
-    agoraService = new AgoraService(agoraConfig, logger);
+    const agora = await import("@rookdaemon/agora");
+    const agoraConfig = await agora.AgoraService.loadConfig();
+    agoraService = new agora.AgoraService(agoraConfig, logger);
     agoraInboxManager = new AgoraInboxManager(fs, substrateConfig, lock, clock);
 
     // Connect to relay if configured
@@ -184,11 +198,8 @@ export async function createApplication(config: ApplicationConfig): Promise<Appl
       await service.connectRelay(agoraConfig.relay.url);
       logger.debug(`Connected to Agora relay at ${agoraConfig.relay.url}`);
 
-      // Import Agora library once for signature verification
-      const agora = await import("@rookdaemon/agora");
-
       // Set up relay message handler to process incoming messages
-      service.setRelayMessageHandler(async (envelope) => {
+      service.setRelayMessageHandler(async (envelope: Envelope) => {
         try {
           // SECURITY: Verify signature before processing
           // The relay passes raw envelopes - we must verify them
@@ -208,6 +219,7 @@ export async function createApplication(config: ApplicationConfig): Promise<Appl
           const truncatedPayload = payloadStr.length > 200
             ? payloadStr.substring(0, 200) + "..."
             : payloadStr;
+          const { shortKey } = await import("../agora/utils.js");
           const logEntry = `[AGORA-RELAY] Received ${verifiedEnvelope.type} from ${shortKey(verifiedEnvelope.sender)} — payload: ${truncatedPayload}`;
           await appendWriter.append(SubstrateFileType.PROGRESS, logEntry);
 

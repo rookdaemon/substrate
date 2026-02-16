@@ -7,7 +7,7 @@ import { SubstrateFileType } from "../substrate/types";
 import { Ego } from "../agents/roles/Ego";
 import { GovernanceReportStore } from "../evaluation/GovernanceReportStore";
 import { HealthCheck } from "../evaluation/HealthCheck";
-import { AgoraService, type Envelope } from "@rookdaemon/agora";
+import type { Envelope } from "@rookdaemon/agora" with { "resolution-mode": "import" };
 import { AppendOnlyWriter } from "../substrate/io/AppendOnlyWriter";
 import { BackupScheduler } from "./BackupScheduler";
 import { ConversationManager } from "../conversation/ConversationManager";
@@ -16,6 +16,19 @@ import { TaskClassificationMetrics } from "../evaluation/TaskClassificationMetri
 import { SubstrateSizeTracker } from "../evaluation/SubstrateSizeTracker";
 import { DelegationTracker } from "../evaluation/DelegationTracker";
 import { shortKey } from "../agora/utils";
+
+// Type for AgoraService from @rookdaemon/agora (ESM module, imported dynamically)
+interface AgoraServiceType {
+  sendMessage(options: { peerName: string; type: string; payload: unknown; inReplyTo?: string }): Promise<{ ok: boolean; status: number; error?: string }>;
+  decodeInbound(message: string): Promise<{ ok: boolean; envelope?: Envelope; reason?: string }>;
+  getPeers(): string[];
+  getPeerConfig(name: string): { publicKey: string; url: string; token: string } | undefined;
+  connectRelay(url: string): Promise<void>;
+  disconnectRelay(): Promise<void>;
+  setRelayMessageHandler(handler: (envelope: Envelope) => void): void;
+  isRelayConnected(): boolean;
+  loadConfig(path?: string): Promise<unknown>;
+}
 
 export interface LoopHttpDependencies {
   reader: SubstrateFileReader;
@@ -32,7 +45,7 @@ export class LoopHttpServer {
   private eventSink: ILoopEventSink | null = null;
   private clock: IClock | null = null;
   private mode: "cycle" | "tick" = "cycle";
-  private agoraService: AgoraService | null = null;
+  private agoraService: AgoraServiceType | null = null;
   private appendWriter: AppendOnlyWriter | null = null;
   private backupScheduler: BackupScheduler | null = null;
   private conversationManager: ConversationManager | null = null;
@@ -72,7 +85,7 @@ export class LoopHttpServer {
     this.mode = mode;
   }
 
-  setAgoraService(service: AgoraService, appendWriter: AppendOnlyWriter, inboxManager: AgoraInboxManager): void {
+  setAgoraService(service: AgoraServiceType, appendWriter: AppendOnlyWriter, inboxManager: AgoraInboxManager): void {
     this.agoraService = service;
     this.appendWriter = appendWriter;
     this.agoraInboxManager = inboxManager;

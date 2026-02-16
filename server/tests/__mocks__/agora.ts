@@ -3,7 +3,7 @@ export interface Envelope { id: string; type: string; sender: string; timestamp:
 export interface AgoraServiceConfig { identity: { publicKey: string; privateKey: string; name?: string }; peers: Map<string, { publicKey: string; url: string; token: string }>; relay?: { url: string; autoConnect: boolean; name?: string; reconnectMaxMs?: number }; }
 export type RelayMessageHandler = (e: Envelope) => void;
 export interface Logger { debug(message: string): void; }
-export interface RelayClientLike { connect(): Promise<void>; disconnect(): void; connected(): boolean; on(event: string, h: Function): void; }
+export interface RelayClientLike { connect(): Promise<void>; disconnect(): void; connected(): boolean; on(event: "message", h: (e: Envelope, from: string, fromName?: string) => void): void; on(event: "error", h: (err: Error) => void): void; }
 export type RelayClientFactory = (opts: object) => RelayClientLike;
 export class AgoraService {
   private config: AgoraServiceConfig;
