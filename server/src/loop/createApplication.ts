@@ -39,6 +39,7 @@ import { SubstrateSizeTracker } from "../evaluation/SubstrateSizeTracker";
 import { DelegationTracker } from "../evaluation/DelegationTracker";
 import { AgoraService } from "../agora/AgoraService";
 import { AgoraInboxManager } from "../agora/AgoraInboxManager";
+import { shortKey } from "../agora/utils";
 import { LoopWatchdog } from "./LoopWatchdog";
 import { getAppPaths } from "../paths";
 
@@ -189,16 +190,16 @@ export async function createApplication(config: ApplicationConfig): Promise<Appl
         try {
           // SECURITY: Verify signature before processing
           // The relay passes raw envelopes - we must verify them
-          const encodedEnvelope = `[AGORA_ENVELOPE]${JSON.stringify(envelope)}`;
-          const verifyResult = await service.decodeInbound(encodedEnvelope);
+          const agora = await import("@rookdaemon/agora");
+          const verifyResult = agora.verifyEnvelope(envelope);
 
-          if (!verifyResult.ok) {
-            logger.debug(`Rejected relay message: ${verifyResult.reason}`);
+          if (!verifyResult.valid) {
+            logger.debug(`Rejected relay message: ${verifyResult.reason ?? "invalid signature"}`);
             return;
           }
 
-          // Use verified envelope from decodeInbound
-          const verifiedEnvelope = verifyResult.envelope!;
+          // Use the verified envelope (it's already the envelope object)
+          const verifiedEnvelope = envelope;
 
           // Log to PROGRESS.md with truncated payload to avoid excessive log size
           const timestamp = clock.now().toISOString();
@@ -206,7 +207,7 @@ export async function createApplication(config: ApplicationConfig): Promise<Appl
           const truncatedPayload = payloadStr.length > 200
             ? payloadStr.substring(0, 200) + "..."
             : payloadStr;
-          const logEntry = `[AGORA-RELAY] Received ${verifiedEnvelope.type} from ${verifiedEnvelope.sender.substring(0, 8)}... — payload: ${truncatedPayload}`;
+          const logEntry = `[AGORA-RELAY] Received ${verifiedEnvelope.type} from ${shortKey(verifiedEnvelope.sender)} — payload: ${truncatedPayload}`;
           await appendWriter.append(SubstrateFileType.PROGRESS, logEntry);
 
           // Emit WebSocket event for frontend visibility

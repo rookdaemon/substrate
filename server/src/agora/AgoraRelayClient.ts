@@ -1,5 +1,6 @@
 import WebSocket from "ws";
 import type { Envelope } from "./AgoraService";
+import { shortKey } from "./utils";
 
 export interface RelayClientConfig {
   url: string;
@@ -189,7 +190,7 @@ export class AgoraRelayClient {
 
       if (msg.type === "peer_online") {
         // Peer came online - log presence change
-        const peerKey = msg.publicKey ? msg.publicKey.substring(0, 8) + "..." : "unknown";
+        const peerKey = msg.publicKey ? shortKey(msg.publicKey) : "unknown";
         const peerName = msg.name || peerKey;
         console.log(`[Relay] Peer online: ${peerName} (${peerKey})`);
         return;
@@ -197,7 +198,7 @@ export class AgoraRelayClient {
 
       if (msg.type === "peer_offline") {
         // Peer went offline - log presence change
-        const peerKey = msg.publicKey ? msg.publicKey.substring(0, 8) + "..." : "unknown";
+        const peerKey = msg.publicKey ? shortKey(msg.publicKey) : "unknown";
         const peerName = msg.name || peerKey;
         console.log(`[Relay] Peer offline: ${peerName} (${peerKey})`);
         return;

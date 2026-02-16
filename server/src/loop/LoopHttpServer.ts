@@ -15,6 +15,7 @@ import { AgoraInboxManager } from "../agora/AgoraInboxManager";
 import { TaskClassificationMetrics } from "../evaluation/TaskClassificationMetrics";
 import { SubstrateSizeTracker } from "../evaluation/SubstrateSizeTracker";
 import { DelegationTracker } from "../evaluation/DelegationTracker";
+import { shortKey } from "../agora/utils";
 
 export interface LoopHttpDependencies {
   reader: SubstrateFileReader;
@@ -509,7 +510,7 @@ export class LoopHttpServer {
     }
 
     const timestamp = this.clock.now().toISOString();
-    const senderShort = envelope.sender.substring(0, 8) + "...";
+    const senderShort = shortKey(envelope.sender);
 
     // 1. Log to PROGRESS.md
     const logEntry = `[AGORA] Received ${envelope.type} from ${senderShort} — payload: ${JSON.stringify(envelope.payload)}`;

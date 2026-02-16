@@ -123,7 +123,7 @@ No read messages yet.
 
     // Verify message was injected into agent loop
     expect(injectedMessages).toHaveLength(1);
-    expect(injectedMessages[0]).toContain("[AGORA MESSAGE from 302a3005...]");
+    expect(injectedMessages[0]).toContain("[AGORA MESSAGE from cdefabcd...]");
     expect(injectedMessages[0]).toContain("Type: request");
     expect(injectedMessages[0]).toContain("Envelope ID: msg-123");
     expect(injectedMessages[0]).toContain('"question":"Hello, are you there?"');
@@ -132,13 +132,13 @@ No read messages yet.
     const inboxPath = config.getFilePath(SubstrateFileType.AGORA_INBOX);
     const inboxContent = await fs.readFile(inboxPath);
     expect(inboxContent).toContain("id:msg-123");
-    expect(inboxContent).toContain("from:302a3005...");
+    expect(inboxContent).toContain("from:cdefabcd...");
     expect(inboxContent).toContain("type:request");
 
     // Verify message was logged to PROGRESS.md
     const progressPath = config.getFilePath(SubstrateFileType.PROGRESS);
     const progressContent = await fs.readFile(progressPath);
-    expect(progressContent).toContain("[AGORA] Received request from 302a3005...");
+    expect(progressContent).toContain("[AGORA] Received request from cdefabcd...");
 
     await httpServer.close();
   });

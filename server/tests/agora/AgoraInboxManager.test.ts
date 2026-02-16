@@ -57,7 +57,7 @@ No read messages yet.
 
       expect(content).toContain("## Unread");
       expect(content).toContain("id:msg-123");
-      expect(content).toContain("from:302a3005...");
+      expect(content).toContain("from:cdefabcd...");
       expect(content).toContain("type:request");
       expect(content).toContain('"question":"Hello, are you there?"');
     });

@@ -37,6 +37,7 @@ export type MessageType =
 export interface AgoraIdentity {
   publicKey: string;
   privateKey: string;
+  name?: string;
 }
 
 export interface PeerConfig {
@@ -198,11 +199,13 @@ export class AgoraService {
     }
 
     const maxReconnectDelay = this.config.relay?.reconnectMaxMs ?? 300000;
+    // Name priority: identity.name > relay.name (deprecated) > undefined
+    const name = this.config.identity.name ?? this.config.relay?.name;
     const opts = {
       relayUrl: url,
       publicKey: this.config.identity.publicKey,
       privateKey: this.config.identity.privateKey,
-      name: this.config.relay?.name,
+      name,
       pingInterval: 30000,
       maxReconnectDelay,
     };
@@ -278,7 +281,7 @@ export class AgoraService {
     const configPath = join(homedir(), ".config", "agora", "config.json");
     const configData = await readFile(configPath, "utf-8");
     const config = JSON.parse(configData) as {
-      identity?: { publicKey: string; privateKey: string };
+      identity?: { publicKey: string; privateKey: string; name?: string };
       peers?: Record<string, { publicKey: string; url: string; token: string }>;
       relay?: { url?: string; autoConnect?: boolean; name?: string; reconnectMaxMs?: number };
     };
@@ -311,7 +314,11 @@ export class AgoraService {
     }
 
     return {
-      identity: config.identity,
+      identity: {
+        publicKey: config.identity.publicKey,
+        privateKey: config.identity.privateKey,
+        name: config.identity.name,
+      },
       peers,
       relay,
     };

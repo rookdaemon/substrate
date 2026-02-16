@@ -29,6 +29,7 @@ import { LoopWatchdog } from "./LoopWatchdog";
 import { AgoraInboxManager } from "../agora/AgoraInboxManager";
 import { SubstrateFileType } from "../substrate/types";
 import { SuperegoFindingTracker } from "../agents/roles/SuperegoFindingTracker";
+import { shortKey } from "../agora/utils";
 
 export class LoopOrchestrator {
   private state: LoopState = LoopState.STOPPED;
@@ -358,7 +359,7 @@ export class LoopOrchestrator {
 
       // Process each unread message
       for (const msg of unreadMessages) {
-        const senderShort = msg.sender.substring(0, 8) + "...";
+        const senderShort = shortKey(msg.sender);
         const agentPrompt = `[AGORA MESSAGE from ${senderShort}]\nType: ${msg.type}\nEnvelope ID: ${msg.envelopeId}\nTimestamp: ${msg.timestamp}\nPayload: ${JSON.stringify(msg.payload)}\n\nRespond to this message if appropriate. Use AgoraService.send() to reply.`;
         
         // Inject into agent loop (adds to pendingMessages or forwards to active session)
