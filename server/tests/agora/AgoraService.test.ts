@@ -171,6 +171,62 @@ describe("AgoraService", () => {
     it("should return false for isRelayConnected when not connected", () => {
       expect(service.isRelayConnected()).toBe(false);
     });
+
+    it("should use identity.name when provided", async () => {
+      testConfig.identity.name = "alice";
+      const { factory } = createFakeFactory();
+      service = new AgoraService(testConfig, logger, factory);
+
+      await service.connectRelay("wss://relay.test");
+
+      expect(factory).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: "alice",
+        })
+      );
+    });
+
+    it("should fall back to relay.name when identity.name not provided", async () => {
+      testConfig.relay!.name = "bob";
+      const { factory } = createFakeFactory();
+      service = new AgoraService(testConfig, logger, factory);
+
+      await service.connectRelay("wss://relay.test");
+
+      expect(factory).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: "bob",
+        })
+      );
+    });
+
+    it("should prioritize identity.name over relay.name", async () => {
+      testConfig.identity.name = "alice";
+      testConfig.relay!.name = "bob";
+      const { factory } = createFakeFactory();
+      service = new AgoraService(testConfig, logger, factory);
+
+      await service.connectRelay("wss://relay.test");
+
+      expect(factory).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: "alice",
+        })
+      );
+    });
+
+    it("should omit name when neither identity.name nor relay.name provided", async () => {
+      const { factory } = createFakeFactory();
+      service = new AgoraService(testConfig, logger, factory);
+
+      await service.connectRelay("wss://relay.test");
+
+      expect(factory).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: undefined,
+        })
+      );
+    });
   });
 
   describe("loadConfig", () => {
