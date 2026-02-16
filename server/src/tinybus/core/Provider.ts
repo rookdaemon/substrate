@@ -37,4 +37,11 @@ export interface Provider {
    * Register handler for inbound messages
    */
   onMessage(handler: (message: Message) => Promise<void>): void;
+
+  /**
+   * Get the message types this provider supports/processes
+   * Returns an array of message type strings (e.g., ["agent.command.exec", "system.health.ping"])
+   * Empty array means the provider accepts all message types
+   */
+  getMessageTypes(): string[];
 }

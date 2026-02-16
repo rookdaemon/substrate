@@ -42,6 +42,7 @@ import type { Envelope } from "@rookdaemon/agora" with { "resolution-mode": "imp
 import { AgoraInboxManager } from "../agora/AgoraInboxManager";
 import { LoopWatchdog } from "./LoopWatchdog";
 import { getAppPaths } from "../paths";
+import { TinyBus } from "../tinybus/core/TinyBus";
 
 // Type for AgoraService from @rookdaemon/agora (ESM module, imported dynamically)
 interface AgoraServiceType {
@@ -185,6 +186,9 @@ export async function createApplication(config: ApplicationConfig): Promise<Appl
   const wsServer = new LoopWebSocketServer(httpServer.getServer());
   const timer = new NodeTimer();
 
+  // Create TinyBus instance for message routing
+  const tinyBus = new TinyBus();
+
   // Agora service for agent-to-agent communication
   let agoraService: AgoraServiceType | null = null;
   let agoraInboxManager: AgoraInboxManager | null = null;
@@ -257,6 +261,10 @@ export async function createApplication(config: ApplicationConfig): Promise<Appl
   httpServer.setOrchestrator(orchestrator);
   httpServer.setDependencies({ reader, ego });
   httpServer.setEventSink(wsServer, clock);
+  
+  // Set up TinyBus MCP server
+  await httpServer.setTinyBus(tinyBus);
+  
   if (agoraService && agoraInboxManager) {
     httpServer.setAgoraService(agoraService, appendWriter, agoraInboxManager);
   }

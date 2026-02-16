@@ -13,9 +13,11 @@ export class MemoryProvider implements Provider {
   private messageHandler?: (message: Message) => Promise<void>;
   private sentMessages: Message[] = [];
   private receivedMessages: Message[] = [];
+  private supportedMessageTypes: string[];
 
-  constructor(id: string) {
+  constructor(id: string, supportedMessageTypes: string[] = []) {
     this.id = id;
+    this.supportedMessageTypes = supportedMessageTypes;
   }
 
   async isReady(): Promise<boolean> {
@@ -78,5 +80,13 @@ export class MemoryProvider implements Provider {
   clear(): void {
     this.sentMessages = [];
     this.receivedMessages = [];
+  }
+
+  /**
+   * Get the message types this provider supports
+   * Empty array means the provider accepts all message types
+   */
+  getMessageTypes(): string[] {
+    return [...this.supportedMessageTypes];
   }
 }

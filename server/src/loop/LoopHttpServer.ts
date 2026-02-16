@@ -16,6 +16,10 @@ import { TaskClassificationMetrics } from "../evaluation/TaskClassificationMetri
 import { SubstrateSizeTracker } from "../evaluation/SubstrateSizeTracker";
 import { DelegationTracker } from "../evaluation/DelegationTracker";
 import { shortKey } from "../agora/utils";
+import { TinyBus } from "../tinybus/core/TinyBus";
+import { createTinyBusMcpServer } from "../mcp/TinyBusMcpServer";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 // Type for AgoraService from @rookdaemon/agora (ESM module, imported dynamically)
 interface AgoraServiceType {
@@ -52,6 +56,9 @@ export class LoopHttpServer {
   private taskMetrics: TaskClassificationMetrics | null = null;
   private sizeTracker: SubstrateSizeTracker | null = null;
   private delegationTracker: DelegationTracker | null = null;
+  private tinyBus: TinyBus | null = null;
+  private mcpServer: McpServer | null = null;
+  private mcpTransport: StreamableHTTPServerTransport | null = null;
 
   constructor(orchestrator: LoopOrchestrator) {
     this.orchestrator = orchestrator;
@@ -108,6 +115,16 @@ export class LoopHttpServer {
     this.delegationTracker = delegationTracker;
   }
 
+  async setTinyBus(tinyBus: TinyBus): Promise<void> {
+    this.tinyBus = tinyBus;
+    // Create MCP server and transport
+    this.mcpServer = createTinyBusMcpServer(tinyBus);
+    this.mcpTransport = new StreamableHTTPServerTransport({
+      sessionIdGenerator: undefined, // Stateless mode
+    });
+    await this.mcpServer.connect(this.mcpTransport);
+  }
+
   listen(port: number): Promise<number> {
     return new Promise((resolve) => {
       this.server.listen(port, "127.0.0.1", () => {
@@ -131,6 +148,17 @@ export class LoopHttpServer {
   private handleRequest(req: http.IncomingMessage, res: http.ServerResponse): void {
     const url = req.url ?? "";
     const method = req.method ?? "";
+
+    // Handle MCP requests
+    if ((url === "/mcp" || url === "/") && this.mcpTransport && this.mcpServer) {
+      this.mcpTransport.handleRequest(req, res).catch((error) => {
+        console.error("Error handling MCP request:", error);
+        if (!res.headersSent) {
+          this.json(res, 500, { error: String(error) });
+        }
+      });
+      return;
+    }
 
     // Match parameterized routes
     const substrateMatch = url.match(/^\/api\/substrate\/([A-Z]+)$/);

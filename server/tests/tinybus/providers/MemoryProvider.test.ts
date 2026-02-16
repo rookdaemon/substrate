@@ -199,4 +199,27 @@ describe("MemoryProvider", () => {
       expect(receivedMessages1).toEqual(receivedMessages2);
     });
   });
+
+  describe("getMessageTypes", () => {
+    it("returns empty array by default (accepts all message types)", () => {
+      const defaultProvider = new MemoryProvider("default");
+      expect(defaultProvider.getMessageTypes()).toEqual([]);
+    });
+
+    it("returns configured message types", () => {
+      const types = ["agent.command.exec", "system.health.ping"];
+      const typedProvider = new MemoryProvider("typed", types);
+      expect(typedProvider.getMessageTypes()).toEqual(types);
+    });
+
+    it("returns a copy of the message types array", () => {
+      const types = ["test.type"];
+      const provider = new MemoryProvider("test", types);
+      const types1 = provider.getMessageTypes();
+      const types2 = provider.getMessageTypes();
+
+      expect(types1).not.toBe(types2);
+      expect(types1).toEqual(types2);
+    });
+  });
 });
