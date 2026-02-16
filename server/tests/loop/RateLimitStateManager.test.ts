@@ -191,4 +191,42 @@ Bootstrap the agent system
       expect(content).toContain("in ~720 minutes");
     });
   });
+
+  describe("clearRestartContext", () => {
+    it("restores restart-context.md to neutral state", async () => {
+      // First, save hibernation state
+      const resetTime = new Date("2026-02-15T12:00:00Z");
+      await manager.saveStateBeforeSleep(resetTime, "task-123");
+
+      const contextPath = config.getFilePath(SubstrateFileType.RESTART_CONTEXT);
+      let content = await fs.readFile(contextPath);
+      
+      // Verify it contains hibernation details
+      expect(content).toContain("Hibernation Start**: 2026-02-15T10:00:00.000Z");
+      expect(content).toContain("Task ID: task-123");
+
+      // Clear it
+      await manager.clearRestartContext();
+
+      // Verify it's restored to neutral state
+      content = await fs.readFile(contextPath);
+      expect(content).toContain("# Restart Context");
+      expect(content).toContain("No rate limit hibernation in progress");
+      expect(content).not.toContain("Hibernation Start");
+      expect(content).not.toContain("Task ID");
+    });
+
+    it("works even if restart-context.md doesn't exist", async () => {
+      const contextPath = config.getFilePath(SubstrateFileType.RESTART_CONTEXT);
+      const exists = await fs.stat(contextPath).then(() => true).catch(() => false);
+      expect(exists).toBe(false);
+
+      // Clear it (should create the file with neutral state)
+      await manager.clearRestartContext();
+
+      const content = await fs.readFile(contextPath);
+      expect(content).toContain("# Restart Context");
+      expect(content).toContain("No rate limit hibernation in progress");
+    });
+  });
 });

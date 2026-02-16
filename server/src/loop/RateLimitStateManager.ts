@@ -7,6 +7,7 @@ import { AppendOnlyWriter } from "../substrate/io/AppendOnlyWriter";
 import { SubstrateFileWriter } from "../substrate/io/FileWriter";
 import { SubstrateFileReader } from "../substrate/io/FileReader";
 import { PlanParser } from "../agents/parsers/PlanParser";
+import { getTemplate } from "../substrate/templates";
 
 /**
  * Manages state preservation when entering rate-limited hibernation.
@@ -65,6 +66,16 @@ export class RateLimitStateManager {
     // 4. Log to PROGRESS.md
     const progressEntry = `[SYSTEM] Rate limit hibernation starting. Reset expected at ${resetTimestamp} (in ~${sleepDurationMinutes} minutes). State saved to restart-context.md.`;
     await this.progressWriter.append(SubstrateFileType.PROGRESS, progressEntry);
+  }
+
+  /**
+   * Clear restart-context.md and restore it to neutral state.
+   * Should be called after successful resumption from rate limit hibernation
+   * to prevent double-application of hibernation state.
+   */
+  async clearRestartContext(): Promise<void> {
+    const neutralState = getTemplate(SubstrateFileType.RESTART_CONTEXT);
+    await this.fileWriter.write(SubstrateFileType.RESTART_CONTEXT, neutralState);
   }
 
   private buildRestartContext(
