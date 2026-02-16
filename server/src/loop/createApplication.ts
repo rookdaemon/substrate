@@ -6,7 +6,6 @@ import { SubstrateFileReader } from "../substrate/io/FileReader";
 import { SubstrateFileWriter } from "../substrate/io/FileWriter";
 import { AppendOnlyWriter } from "../substrate/io/AppendOnlyWriter";
 import { FileLock } from "../substrate/io/FileLock";
-import { SubstrateFileType } from "../substrate/types";
 import { PermissionChecker } from "../agents/permissions";
 import { PromptBuilder } from "../agents/prompts/PromptBuilder";
 import { AgentSdkLauncher, SdkQueryFn } from "../agents/claude/AgentSdkLauncher";

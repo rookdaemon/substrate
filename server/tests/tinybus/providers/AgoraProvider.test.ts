@@ -10,7 +10,18 @@ import { ILoopEventSink } from "../../../src/loop/ILoopEventSink";
 import type { Envelope } from "@rookdaemon/agora" with { "resolution-mode": "import" };
 
 // Mock Agora Service
-class MockAgoraService {
+interface AgoraServiceType {
+  sendMessage(options: { peerName: string; type: string; payload: unknown; inReplyTo?: string }): Promise<{ ok: boolean; status: number; error?: string }>;
+  decodeInbound(message: string): Promise<{ ok: boolean; envelope?: Envelope; reason?: string }>;
+  getPeers(): string[];
+  getPeerConfig(name: string): { publicKey: string; url: string; token: string } | undefined;
+  connectRelay(url: string): Promise<void>;
+  disconnectRelay(): Promise<void>;
+  setRelayMessageHandler(handler: (envelope: Envelope) => void): void;
+  isRelayConnected(): boolean;
+}
+
+class MockAgoraService implements AgoraServiceType {
   public sentMessages: Array<{ peerName: string; type: string; payload: unknown; inReplyTo?: string }> = [];
   public shouldFailSend = false;
   private relayConnected = false;
@@ -83,7 +94,7 @@ describe("AgoraProvider", () => {
 
     // Create provider with mock service
     provider = new AgoraProvider(
-      agoraService as any,
+      agoraService,
       appendWriter,
       agoraInboxManager,
       eventSink,
@@ -335,7 +346,7 @@ describe("AgoraProvider", () => {
 
     it("handles envelope without event sink", async () => {
       const providerNoSink = new AgoraProvider(
-        agoraService as any,
+        agoraService,
         appendWriter,
         agoraInboxManager,
         null,
@@ -350,7 +361,7 @@ describe("AgoraProvider", () => {
 
     it("handles envelope without message handler", async () => {
       const providerNoHandler = new AgoraProvider(
-        agoraService as any,
+        agoraService,
         appendWriter,
         agoraInboxManager,
         eventSink,
