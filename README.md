@@ -640,8 +640,44 @@ The health panel runs 5 heuristic analyzers:
 | POST | `/api/conversation/send` | Send a user message |
 | POST | `/api/conversation/archive` | Manually archive old conversation content |
 | GET | `/api/health` | Run all 5 health analyzers |
+| GET | `/api/substrate/health` | Get comprehensive substrate health dashboard with file sizes, task classification stats, and delegation ratio |
 | GET | `/api/reports` | List governance reports |
 | GET | `/api/reports/latest` | Get latest governance report |
+
+#### Substrate Health Dashboard
+
+The `/api/substrate/health` endpoint provides comprehensive metrics about substrate health:
+
+```json
+{
+  "timestamp": "2026-02-16T12:00:00Z",
+  "status": "HEALTHY" | "WARNING" | "CRITICAL",
+  "files": {
+    "PLAN.md": {"current": 82, "target": 100, "status": "OK"},
+    "PROGRESS.md": {"current": 623, "target": 200, "status": "CRITICAL", "alert": "3.1x target"}
+  },
+  "taskClassifier": {
+    "strategic_pct": 0.25,
+    "tactical_pct": 0.75,
+    "status": "OK",
+    "total_operations": 1247
+  },
+  "delegation": {
+    "ratio": 0.80,
+    "copilot_issues": 8,
+    "total_issues": 10,
+    "status": "OK"
+  },
+  "alerts": ["PROGRESS.md exceeds target by 3.1x (623/200 lines)"]
+}
+```
+
+**Metrics collected automatically:**
+- **Task Classifications** — Records every strategic/tactical model selection decision to verify ~70-80% tactical routing
+- **Substrate Sizes** — Weekly snapshots of all substrate file sizes with alerts when exceeding 2x targets
+- **Delegation Ratio** — Tracks delegation of coding tasks to Copilot (target: >80%)
+
+Metrics are stored in `~/.local/share/substrate/.metrics/` as JSONL files for historical trend analysis.
 
 ---
 
@@ -649,5 +685,5 @@ The health panel runs 5 heuristic analyzers:
 
 - **Backend**: Node.js, TypeScript (strict, ES2022), REST API, WebSocket (`ws`)
 - **Frontend**: React 19, Vite, TypeScript
-- **Testing**: Jest + ts-jest (server, 488 tests / 54 suites), Vitest + happy-dom (client, 45 tests)
+- **Testing**: Jest + ts-jest (server, 775 tests / 79 suites), Vitest + happy-dom (client, 45 tests)
 - **AI**: Claude Code CLI via `IProcessRunner` abstraction with stream-json parsing
