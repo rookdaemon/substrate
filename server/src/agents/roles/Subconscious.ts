@@ -10,6 +10,7 @@ import { PlanParser } from "../parsers/PlanParser";
 import { extractJson } from "../parsers/extractJson";
 import { AgentRole } from "../types";
 import { TaskClassifier } from "../TaskClassifier";
+import { ConversationManager } from "../../conversation/ConversationManager";
 
 export interface SubconsciousProposal {
   target: string;
@@ -43,6 +44,7 @@ export class Subconscious {
     private readonly reader: SubstrateFileReader,
     private readonly writer: SubstrateFileWriter,
     private readonly appendWriter: AppendOnlyWriter,
+    private readonly conversationManager: ConversationManager,
     private readonly checker: PermissionChecker,
     private readonly promptBuilder: PromptBuilder,
     private readonly sessionLauncher: ISessionLauncher,
@@ -96,8 +98,7 @@ export class Subconscious {
   }
 
   async logConversation(entry: string): Promise<void> {
-    this.checker.assertCanAppend(AgentRole.SUBCONSCIOUS, SubstrateFileType.CONVERSATION);
-    await this.appendWriter.append(SubstrateFileType.CONVERSATION, `[SUBCONSCIOUS] ${entry}`);
+    await this.conversationManager.append(AgentRole.SUBCONSCIOUS, entry);
   }
 
   async logProgress(entry: string): Promise<void> {

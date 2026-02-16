@@ -12,6 +12,10 @@ import { AppendOnlyWriter } from "../substrate/io/AppendOnlyWriter";
 import { BackupScheduler } from "./BackupScheduler";
 import { ConversationManager } from "../conversation/ConversationManager";
 import { AgoraInboxManager } from "../agora/AgoraInboxManager";
+import { TaskClassificationMetrics } from "../evaluation/TaskClassificationMetrics";
+import { SubstrateSizeTracker } from "../evaluation/SubstrateSizeTracker";
+import { DelegationTracker } from "../evaluation/DelegationTracker";
+import { shortKey } from "../agora/utils";
 
 export interface LoopHttpDependencies {
   reader: SubstrateFileReader;
@@ -33,6 +37,9 @@ export class LoopHttpServer {
   private backupScheduler: BackupScheduler | null = null;
   private conversationManager: ConversationManager | null = null;
   private agoraInboxManager: AgoraInboxManager | null = null;
+  private taskMetrics: TaskClassificationMetrics | null = null;
+  private sizeTracker: SubstrateSizeTracker | null = null;
+  private delegationTracker: DelegationTracker | null = null;
 
   constructor(orchestrator: LoopOrchestrator) {
     this.orchestrator = orchestrator;
@@ -77,6 +84,16 @@ export class LoopHttpServer {
 
   setConversationManager(manager: ConversationManager): void {
     this.conversationManager = manager;
+  }
+
+  setMetricsComponents(
+    taskMetrics: TaskClassificationMetrics,
+    sizeTracker: SubstrateSizeTracker,
+    delegationTracker: DelegationTracker
+  ): void {
+    this.taskMetrics = taskMetrics;
+    this.sizeTracker = sizeTracker;
+    this.delegationTracker = delegationTracker;
   }
 
   listen(port: number): Promise<number> {
@@ -176,6 +193,10 @@ export class LoopHttpServer {
 
       case "GET /api/health":
         this.handleHealthCheck(res);
+        break;
+
+      case "GET /api/substrate/health":
+        this.handleSubstrateHealth(res);
         break;
 
       case "POST /api/backup":
@@ -321,6 +342,99 @@ export class LoopHttpServer {
     );
   }
 
+  /**
+   * Determine task classifier health status based on tactical routing percentage.
+   * Target: 70-80% tactical routing for optimal cost efficiency.
+   */
+  private getTaskClassifierStatus(tacticalPct: number): "OK" | "WARNING" | "CRITICAL" {
+    const TARGET_MIN = 0.7;  // 70% tactical minimum
+    const TARGET_MAX = 0.8;  // 80% tactical maximum
+    const WARNING_MIN = 0.6; // 60% tactical warning threshold
+
+    if (tacticalPct >= TARGET_MIN && tacticalPct <= TARGET_MAX) {
+      return "OK";
+    }
+    if (tacticalPct >= WARNING_MIN) {
+      return "WARNING";
+    }
+    return "CRITICAL";
+  }
+
+  private async handleSubstrateHealth(res: http.ServerResponse): Promise<void> {
+    if (!this.taskMetrics || !this.sizeTracker || !this.delegationTracker || !this.clock) {
+      this.json(res, 500, { error: "Metrics components not configured" });
+      return;
+    }
+
+    try {
+      // Get file size status
+      const fileStatus = await this.sizeTracker.getCurrentStatus();
+
+      // Get task classifier stats (last 7 days)
+      const sevenDaysAgo = new Date(this.clock.now().getTime() - 7 * 24 * 60 * 60 * 1000);
+      const classificationStats = await this.taskMetrics.getStats(sevenDaysAgo);
+
+      // Get delegation status
+      const delegationStatus = await this.delegationTracker.getDelegationStatus();
+
+      // Determine overall health status
+      let overallStatus: "HEALTHY" | "WARNING" | "CRITICAL" = "HEALTHY";
+      const alerts: string[] = [];
+
+      // Check file sizes
+      for (const [filename, status] of Object.entries(fileStatus)) {
+        if (status.status === "CRITICAL") {
+          overallStatus = "CRITICAL";
+          alerts.push(`${filename} exceeds target by ${status.alert} (${status.current}/${status.target} lines)`);
+        } else if (status.status === "WARNING" && overallStatus !== "CRITICAL") {
+          overallStatus = "WARNING";
+          alerts.push(`${filename} approaching target limit: ${status.alert}`);
+        }
+      }
+
+      // Check delegation ratio
+      if (delegationStatus) {
+        if (delegationStatus.status === "CRITICAL") {
+          overallStatus = "CRITICAL";
+          if (delegationStatus.alert) {
+            alerts.push(delegationStatus.alert);
+          }
+        } else if (delegationStatus.status === "WARNING" && overallStatus !== "CRITICAL") {
+          overallStatus = "WARNING";
+          if (delegationStatus.alert) {
+            alerts.push(delegationStatus.alert);
+          }
+        }
+      }
+
+      // Build response
+      const response = {
+        timestamp: this.clock.now().toISOString(),
+        status: overallStatus,
+        files: fileStatus,
+        delegation: delegationStatus ? {
+          ratio: delegationStatus.ratio,
+          copilot_issues: delegationStatus.copilot_issues,
+          total_issues: delegationStatus.total_issues,
+          status: delegationStatus.status,
+        } : null,
+        taskClassifier: {
+          strategic_pct: classificationStats.strategicPct,
+          tactical_pct: classificationStats.tacticalPct,
+          status: this.getTaskClassifierStatus(classificationStats.tacticalPct),
+          total_operations: classificationStats.totalOperations,
+        },
+        lastCompaction: null, // TODO: Get from ConversationManager or PROGRESS.md
+        alerts,
+      };
+
+      this.json(res, 200, response);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      this.json(res, 500, { error: message });
+    }
+  }
+
   private handleBackupRequest(res: http.ServerResponse): void {
     if (!this.backupScheduler) {
       this.json(res, 503, { error: "Backup scheduler not configured" });
@@ -396,7 +510,7 @@ export class LoopHttpServer {
     }
 
     const timestamp = this.clock.now().toISOString();
-    const senderShort = envelope.sender.substring(0, 8) + "...";
+    const senderShort = shortKey(envelope.sender);
 
     // 1. Log to PROGRESS.md
     const logEntry = `[AGORA] Received ${envelope.type} from ${senderShort} — payload: ${JSON.stringify(envelope.payload)}`;

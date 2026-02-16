@@ -10,6 +10,15 @@ import { SubstrateConfig } from "../../../src/substrate/config";
 import { InMemoryFileSystem } from "../../../src/substrate/abstractions/InMemoryFileSystem";
 import { FixedClock } from "../../../src/substrate/abstractions/FixedClock";
 import { TaskClassifier } from "../../../src/agents/TaskClassifier";
+import { ConversationManager } from "../../../src/conversation/ConversationManager";
+import { IConversationCompactor } from "../../../src/conversation/IConversationCompactor";
+
+// Mock compactor for ConversationManager
+class MockCompactor implements IConversationCompactor {
+  async compact(_currentContent: string, _oneHourAgo: string): Promise<string> {
+    return "Compacted content";
+  }
+}
 
 describe("Subconscious agent", () => {
   let fs: InMemoryFileSystem;
@@ -29,9 +38,13 @@ describe("Subconscious agent", () => {
     const checker = new PermissionChecker();
     const promptBuilder = new PromptBuilder(reader, checker);
     const taskClassifier = new TaskClassifier({ strategicModel: "opus", tacticalModel: "sonnet" });
+    const compactor = new MockCompactor();
+    const conversationManager = new ConversationManager(
+      reader, fs, config, lock, appendWriter, checker, compactor, clock
+    );
 
     subconscious = new Subconscious(
-      reader, writer, appendWriter, checker, promptBuilder, launcher, clock, taskClassifier, "/workspace"
+      reader, writer, appendWriter, conversationManager, checker, promptBuilder, launcher, clock, taskClassifier, "/workspace"
     );
 
     await fs.mkdir("/substrate", { recursive: true });

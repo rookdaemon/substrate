@@ -1,9 +1,10 @@
-import { IFileSystem } from "../substrate/abstractions/IFileSystem";
-import { IClock } from "../substrate/abstractions/IClock";
+import type { IFileSystem } from "../substrate/abstractions/IFileSystem";
+import type { IClock } from "../substrate/abstractions/IClock";
 import { SubstrateConfig } from "../substrate/config";
 import { SubstrateFileType } from "../substrate/types";
 import { FileLock } from "../substrate/io/FileLock";
 import type { Envelope } from "./AgoraService";
+import { shortKey } from "./utils";
 
 export interface AgoraInboxMessage {
   timestamp: string;
@@ -37,7 +38,7 @@ export class AgoraInboxManager {
       const content = await this.fs.readFile(filePath);
       
       const timestamp = this.clock.now().toISOString();
-      const senderShort = envelope.sender.substring(0, 8) + "...";
+      const senderShort = shortKey(envelope.sender);
       const payloadStr = JSON.stringify(envelope.payload);
       
       // Parse current content

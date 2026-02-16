@@ -77,12 +77,15 @@ describe("ROLE_PERMISSIONS", () => {
     }
   });
 
-  it("gives Superego append access to PROGRESS only", () => {
+  it("gives Superego append access to PROGRESS and ESCALATE_TO_STEFAN", () => {
     const perms = ROLE_PERMISSIONS[AgentRole.SUPEREGO];
     const appendFiles = perms
       .filter((p) => p.accessLevel === FileAccessLevel.APPEND)
       .map((p) => p.fileType);
-    expect(appendFiles).toEqual([SubstrateFileType.PROGRESS]);
+    expect(appendFiles).toEqual([
+      SubstrateFileType.PROGRESS,
+      SubstrateFileType.ESCALATE_TO_STEFAN,
+    ]);
   });
 
   it("gives Superego no write access", () => {
@@ -230,9 +233,9 @@ describe("PermissionChecker", () => {
       expect(readable).toContain(SubstrateFileType.MEMORY);
     });
 
-    it("returns all 14 files for Superego", () => {
+    it("returns all 15 files for Superego", () => {
       const readable = checker.getReadableFiles(AgentRole.SUPEREGO);
-      expect(readable).toHaveLength(14);
+      expect(readable).toHaveLength(15);
     });
   });
 });

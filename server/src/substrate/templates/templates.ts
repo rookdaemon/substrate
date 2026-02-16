@@ -156,3 +156,10 @@ No unread messages.
 
 No read messages yet.
 `;
+
+export const ESCALATE_TO_STEFAN_TEMPLATE = `# Escalate to Stefan
+
+This file contains critical issues that require human intervention. Issues are automatically escalated here when they meet specific criteria (e.g., recurring SUPEREGO findings).
+
+---
+`;

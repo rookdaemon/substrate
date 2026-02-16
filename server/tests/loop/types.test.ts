@@ -19,7 +19,7 @@ describe("defaultLoopConfig", () => {
     const config = defaultLoopConfig();
 
     expect(config.cycleDelayMs).toBe(30000);
-    expect(config.superegoAuditInterval).toBe(10);
+    expect(config.superegoAuditInterval).toBe(20);
     expect(config.maxConsecutiveIdleCycles).toBe(1);
   });
 
@@ -27,7 +27,7 @@ describe("defaultLoopConfig", () => {
     const config = defaultLoopConfig({ cycleDelayMs: 500 });
 
     expect(config.cycleDelayMs).toBe(500);
-    expect(config.superegoAuditInterval).toBe(10);
+    expect(config.superegoAuditInterval).toBe(20);
     expect(config.maxConsecutiveIdleCycles).toBe(1);
   });
 
@@ -39,7 +39,7 @@ describe("defaultLoopConfig", () => {
     });
 
     expect(config.cycleDelayMs).toBe(30000);
-    expect(config.superegoAuditInterval).toBe(10);
+    expect(config.superegoAuditInterval).toBe(20);
     expect(config.maxConsecutiveIdleCycles).toBe(1);
   });
 

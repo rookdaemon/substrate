@@ -13,7 +13,7 @@ export interface LoopConfig {
 export function defaultLoopConfig(overrides?: Partial<LoopConfig>): LoopConfig {
   const defaults: LoopConfig = {
     cycleDelayMs: 30000,
-    superegoAuditInterval: 10,
+    superegoAuditInterval: 20,
     maxConsecutiveIdleCycles: 1,
   };
   if (!overrides) return defaults;
@@ -60,7 +60,7 @@ export interface TickResult {
 }
 
 export interface LoopEvent {
-  type: "state_changed" | "cycle_complete" | "idle" | "error" | "audit_complete" | "idle_handler" | "evaluation_requested" | "process_output" | "conversation_message" | "conversation_response" | "tick_started" | "tick_complete" | "message_injected" | "restart_requested" | "backup_complete" | "health_check_complete" | "email_sent" | "reconsideration_complete" | "agora_message";
+  type: "state_changed" | "cycle_complete" | "idle" | "error" | "audit_complete" | "idle_handler" | "evaluation_requested" | "process_output" | "conversation_message" | "conversation_response" | "tick_started" | "tick_complete" | "message_injected" | "restart_requested" | "backup_complete" | "health_check_complete" | "email_sent" | "metrics_collected" | "reconsideration_complete" | "agora_message";
   timestamp: string;
   data: Record<string, unknown>;
 }

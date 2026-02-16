@@ -36,18 +36,26 @@ describe("SUBSTRATE_FILE_SPECS", () => {
     }
   });
 
-  it("uses APPEND mode for PROGRESS and CONVERSATION", () => {
+  it("uses APPEND mode for PROGRESS, CONVERSATION, and ESCALATE_TO_STEFAN", () => {
     expect(SUBSTRATE_FILE_SPECS[SubstrateFileType.PROGRESS].writeMode).toBe(
       WriteMode.APPEND
     );
     expect(
       SUBSTRATE_FILE_SPECS[SubstrateFileType.CONVERSATION].writeMode
     ).toBe(WriteMode.APPEND);
+    expect(
+      SUBSTRATE_FILE_SPECS[SubstrateFileType.ESCALATE_TO_STEFAN].writeMode
+    ).toBe(WriteMode.APPEND);
   });
 
   it("uses OVERWRITE mode for all other types", () => {
+    const appendTypes = [
+      SubstrateFileType.PROGRESS,
+      SubstrateFileType.CONVERSATION,
+      SubstrateFileType.ESCALATE_TO_STEFAN,
+    ];
     const overwriteTypes = Object.values(SubstrateFileType).filter(
-      (t) => t !== SubstrateFileType.PROGRESS && t !== SubstrateFileType.CONVERSATION
+      (t) => !appendTypes.includes(t)
     );
     for (const type of overwriteTypes) {
       expect(SUBSTRATE_FILE_SPECS[type].writeMode).toBe(WriteMode.OVERWRITE);
@@ -55,7 +63,11 @@ describe("SUBSTRATE_FILE_SPECS", () => {
   });
 
   it("marks core files as required and optional files as not required", () => {
-    const optionalTypes = [SubstrateFileType.PEERS, SubstrateFileType.AGORA_INBOX];
+    const optionalTypes = [
+      SubstrateFileType.PEERS,
+      SubstrateFileType.AGORA_INBOX,
+      SubstrateFileType.ESCALATE_TO_STEFAN,
+    ];
     for (const type of Object.values(SubstrateFileType)) {
       if (optionalTypes.includes(type)) {
         expect(SUBSTRATE_FILE_SPECS[type].required).toBe(false);

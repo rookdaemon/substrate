@@ -33,8 +33,13 @@ import { BackupScheduler } from "./BackupScheduler";
 import { NodeProcessRunner } from "../agents/claude/NodeProcessRunner";
 import { HealthCheckScheduler } from "./HealthCheckScheduler";
 import { EmailScheduler } from "./EmailScheduler";
+import { MetricsScheduler } from "./MetricsScheduler";
+import { TaskClassificationMetrics } from "../evaluation/TaskClassificationMetrics";
+import { SubstrateSizeTracker } from "../evaluation/SubstrateSizeTracker";
+import { DelegationTracker } from "../evaluation/DelegationTracker";
 import { AgoraService } from "../agora/AgoraService";
 import { AgoraInboxManager } from "../agora/AgoraInboxManager";
+import { shortKey } from "../agora/utils";
 import { LoopWatchdog } from "./LoopWatchdog";
 import { getAppPaths } from "../paths";
 
@@ -67,6 +72,10 @@ export interface ApplicationConfig {
     intervalHours: number;
     sendTimeHour: number;
     sendTimeMinute: number;
+  };
+  metrics?: {
+    enabled: boolean;
+    intervalMs?: number; // Default: 604800000 (7 days)
   };
 }
 
@@ -107,10 +116,16 @@ export async function createApplication(config: ApplicationConfig): Promise<Appl
   });
   const launcher = new AgentSdkLauncher(sdkQuery, clock, config.model, logger);
 
-  // Task classifier for model selection
+  // Metrics collection components
+  const taskMetrics = new TaskClassificationMetrics(fs, clock, config.substratePath);
+  const sizeTracker = new SubstrateSizeTracker(fs, clock, config.substratePath);
+  const delegationTracker = new DelegationTracker(fs, clock, config.substratePath);
+
+  // Task classifier for model selection (with optional metrics collection)
   const taskClassifier = new TaskClassifier({
     strategicModel: config.strategicModel ?? "opus",
     tacticalModel: config.tacticalModel ?? "sonnet",
+    metricsCollector: config.metrics?.enabled !== false ? taskMetrics : undefined, // Default enabled
   });
 
   const cwd = config.workingDirectory;
@@ -140,7 +155,7 @@ export async function createApplication(config: ApplicationConfig): Promise<Appl
   );
 
   const ego = new Ego(reader, writer, conversationManager, checker, promptBuilder, launcher, clock, taskClassifier, cwd);
-  const subconscious = new Subconscious(reader, writer, appendWriter, checker, promptBuilder, launcher, clock, taskClassifier, cwd);
+  const subconscious = new Subconscious(reader, writer, appendWriter, conversationManager, checker, promptBuilder, launcher, clock, taskClassifier, cwd);
   const superego = new Superego(reader, appendWriter, checker, promptBuilder, launcher, clock, taskClassifier, cwd);
   const id = new Id(reader, checker, promptBuilder, launcher, clock, taskClassifier, cwd);
 
@@ -161,7 +176,7 @@ export async function createApplication(config: ApplicationConfig): Promise<Appl
   let agoraInboxManager: AgoraInboxManager | null = null;
   try {
     const agoraConfig = await AgoraService.loadConfig();
-    agoraService = new AgoraService(agoraConfig);
+    agoraService = new AgoraService(agoraConfig, logger);
     agoraInboxManager = new AgoraInboxManager(fs, substrateConfig, lock, clock);
 
     // Connect to relay if configured
@@ -170,21 +185,23 @@ export async function createApplication(config: ApplicationConfig): Promise<Appl
       await service.connectRelay(agoraConfig.relay.url);
       logger.debug(`Connected to Agora relay at ${agoraConfig.relay.url}`);
 
+      // Import Agora library once for signature verification
+      const agora = await import("@rookdaemon/agora");
+
       // Set up relay message handler to process incoming messages
       service.setRelayMessageHandler(async (envelope) => {
         try {
           // SECURITY: Verify signature before processing
           // The relay passes raw envelopes - we must verify them
-          const encodedEnvelope = `[AGORA_ENVELOPE]${JSON.stringify(envelope)}`;
-          const verifyResult = await service.decodeInbound(encodedEnvelope);
+          const verifyResult = agora.verifyEnvelope(envelope);
 
-          if (!verifyResult.ok) {
-            logger.debug(`Rejected relay message: ${verifyResult.reason}`);
+          if (!verifyResult.valid) {
+            logger.debug(`Rejected relay message: ${verifyResult.reason ?? "invalid signature"}`);
             return;
           }
 
-          // Use verified envelope from decodeInbound
-          const verifiedEnvelope = verifyResult.envelope!;
+          // Use the verified envelope (it's already the envelope object)
+          const verifiedEnvelope = envelope;
 
           // Log to PROGRESS.md with truncated payload to avoid excessive log size
           const timestamp = clock.now().toISOString();
@@ -192,7 +209,7 @@ export async function createApplication(config: ApplicationConfig): Promise<Appl
           const truncatedPayload = payloadStr.length > 200
             ? payloadStr.substring(0, 200) + "..."
             : payloadStr;
-          const logEntry = `[AGORA-RELAY] Received ${verifiedEnvelope.type} from ${verifiedEnvelope.sender.substring(0, 8)}... — payload: ${truncatedPayload}`;
+          const logEntry = `[AGORA-RELAY] Received ${verifiedEnvelope.type} from ${shortKey(verifiedEnvelope.sender)} — payload: ${truncatedPayload}`;
           await appendWriter.append(SubstrateFileType.PROGRESS, logEntry);
 
           // Emit WebSocket event for frontend visibility
@@ -235,6 +252,7 @@ export async function createApplication(config: ApplicationConfig): Promise<Appl
   // Create metrics store for quantitative drift monitoring
   const metricsStore = new MetricsStore(fs, clock, config.substratePath);
   httpServer.setHealthCheck(new HealthCheck(reader, metricsStore));
+  httpServer.setMetricsComponents(taskMetrics, sizeTracker, delegationTracker);
 
   orchestrator.setLauncher(launcher);
   orchestrator.setShutdown((code) => process.exit(code));
@@ -304,6 +322,26 @@ export async function createApplication(config: ApplicationConfig): Promise<Appl
       }
     );
     orchestrator.setHealthCheckScheduler(healthCheckScheduler);
+  }
+
+  // Metrics scheduler setup
+  if (config.metrics?.enabled !== false) { // Default enabled
+    const appPaths = getAppPaths();
+    const stateFilePath = path.join(appPaths.config, "metrics-scheduler-state.txt");
+    const metricsScheduler = new MetricsScheduler(
+      fs,
+      clock,
+      logger,
+      {
+        substratePath: config.substratePath,
+        metricsIntervalMs: config.metrics?.intervalMs ?? 604800000, // Default: 7 days
+        stateFilePath,
+      },
+      taskMetrics,
+      sizeTracker,
+      delegationTracker
+    );
+    orchestrator.setMetricsScheduler(metricsScheduler);
   }
 
   // Watchdog — detects stalls and injects gentle reminders

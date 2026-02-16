@@ -4,11 +4,23 @@ import type { Envelope } from "@rookdaemon/agora" with { "resolution-mode": "imp
 export type { Envelope };
 
 /** Minimal type for @rookdaemon/agora RelayClient (used at runtime via dynamic import) */
-interface RelayClientLike {
+export interface RelayClientLike {
   connect(): Promise<void>;
   disconnect(): void;
   connected(): boolean;
   on(event: "message", handler: (envelope: Envelope, from: string, fromName?: string) => void): void;
+  on(event: "error", handler: (error: Error) => void): void;
+}
+
+export interface RelayClientFactory {
+  (opts: {
+    relayUrl: string;
+    publicKey: string;
+    privateKey: string;
+    name?: string;
+    pingInterval: number;
+    maxReconnectDelay: number;
+  }): RelayClientLike;
 }
 
 export type MessageType =
@@ -25,6 +37,7 @@ export type MessageType =
 export interface AgoraIdentity {
   publicKey: string;
   privateKey: string;
+  name?: string;
 }
 
 export interface PeerConfig {
@@ -76,13 +89,21 @@ export interface RelayMessageHandler {
  * - Decoding and verifying inbound envelopes
  * - WebSocket relay client from @rookdaemon/agora for remote peer communication
  */
+export interface Logger {
+  debug(message: string): void;
+}
+
 export class AgoraService {
   private config: AgoraConfig;
   private relayClient: RelayClientLike | null = null;
   private relayMessageHandler: RelayMessageHandler | null = null;
+  private logger: Logger | null;
+  private relayClientFactory: RelayClientFactory | null;
 
-  constructor(config: AgoraConfig) {
+  constructor(config: AgoraConfig, logger?: Logger, relayClientFactory?: RelayClientFactory) {
     this.config = config;
+    this.logger = logger ?? null;
+    this.relayClientFactory = relayClientFactory ?? null;
   }
 
   /**
@@ -170,22 +191,35 @@ export class AgoraService {
 
   /**
    * Connect to the relay server using @rookdaemon/agora RelayClient.
+   * Errors are logged and swallowed so a relay outage never crashes the process.
    */
   async connectRelay(url: string): Promise<void> {
     if (this.relayClient) {
       return;
     }
 
-    const { RelayClient } = await import("@rookdaemon/agora");
     const maxReconnectDelay = this.config.relay?.reconnectMaxMs ?? 300000;
-
-    this.relayClient = new RelayClient({
+    // Name priority: identity.name > relay.name (deprecated) > undefined
+    const name = this.config.identity.name ?? this.config.relay?.name;
+    const opts = {
       relayUrl: url,
       publicKey: this.config.identity.publicKey,
       privateKey: this.config.identity.privateKey,
-      name: this.config.relay?.name,
+      name,
       pingInterval: 30000,
       maxReconnectDelay,
+    };
+
+    if (this.relayClientFactory) {
+      this.relayClient = this.relayClientFactory(opts);
+    } else {
+      const { RelayClient } = await import("@rookdaemon/agora");
+      this.relayClient = new RelayClient(opts);
+    }
+
+    // Attach error handler BEFORE connect() so EventEmitter never throws uncaught
+    this.relayClient.on("error", (error: Error) => {
+      this.logger?.debug(`Agora relay error: ${error.message}`);
     });
 
     this.relayClient.on("message", (envelope: Envelope) => {
@@ -194,7 +228,13 @@ export class AgoraService {
       }
     });
 
-    await this.relayClient.connect();
+    try {
+      await this.relayClient.connect();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger?.debug(`Agora relay connect failed (${url}): ${message}`);
+      this.relayClient = null;
+    }
   }
 
   setRelayMessageHandler(handler: RelayMessageHandler): void {
@@ -241,7 +281,7 @@ export class AgoraService {
     const configPath = join(homedir(), ".config", "agora", "config.json");
     const configData = await readFile(configPath, "utf-8");
     const config = JSON.parse(configData) as {
-      identity?: { publicKey: string; privateKey: string };
+      identity?: { publicKey: string; privateKey: string; name?: string };
       peers?: Record<string, { publicKey: string; url: string; token: string }>;
       relay?: { url?: string; autoConnect?: boolean; name?: string; reconnectMaxMs?: number };
     };
@@ -274,7 +314,11 @@ export class AgoraService {
     }
 
     return {
-      identity: config.identity,
+      identity: {
+        publicKey: config.identity.publicKey,
+        privateKey: config.identity.privateKey,
+        name: config.identity.name,
+      },
       peers,
       relay,
     };

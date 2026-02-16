@@ -19,6 +19,14 @@ import { FileLock } from "../../src/substrate/io/FileLock";
 import { PermissionChecker } from "../../src/agents/permissions";
 import { PromptBuilder } from "../../src/agents/prompts/PromptBuilder";
 import { TaskClassifier } from "../../src/agents/TaskClassifier";
+import { ConversationManager } from "../../src/conversation/ConversationManager";
+import { IConversationCompactor } from "../../src/conversation/IConversationCompactor";
+
+class MockCompactor implements IConversationCompactor {
+  async compact(_currentContent: string, _oneHourAgo: string): Promise<string> {
+    return "Compacted content";
+  }
+}
 
 function createDeps() {
   const fs = new InMemoryFileSystem();
@@ -32,9 +40,13 @@ function createDeps() {
   const checker = new PermissionChecker();
   const promptBuilder = new PromptBuilder(reader, checker);
   const taskClassifier = new TaskClassifier({ strategicModel: "opus", tacticalModel: "sonnet" });
+  const compactor = new MockCompactor();
+  const conversationManager = new ConversationManager(
+    reader, fs, config, lock, appendWriter, checker, compactor, clock
+  );
 
-  const ego = new Ego(reader, writer, appendWriter, checker, promptBuilder, launcher, clock, taskClassifier);
-  const subconscious = new Subconscious(reader, writer, appendWriter, checker, promptBuilder, launcher, clock, taskClassifier);
+  const ego = new Ego(reader, writer, conversationManager, checker, promptBuilder, launcher, clock, taskClassifier);
+  const subconscious = new Subconscious(reader, writer, appendWriter, conversationManager, checker, promptBuilder, launcher, clock, taskClassifier);
   const superego = new Superego(reader, appendWriter, checker, promptBuilder, launcher, clock, taskClassifier);
   const id = new Id(reader, checker, promptBuilder, launcher, clock, taskClassifier);
 

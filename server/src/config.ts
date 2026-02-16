@@ -18,6 +18,8 @@ export interface AppConfig {
   autoStartAfterRestart: boolean;
   /** Number of backups to retain (default: 14). */
   backupRetentionCount?: number;
+  /** Number of cycles between SUPEREGO audits (default: 20). Can be overridden by SUPEREGO_AUDIT_INTERVAL env var. */
+  superegoAuditInterval?: number;
   /** Configuration for CONVERSATION.md archiving */
   conversationArchive?: {
     enabled: boolean;
@@ -60,6 +62,7 @@ export async function resolveConfig(
     autoStartOnFirstRun: false,
     autoStartAfterRestart: true,
     backupRetentionCount: 14,
+    superegoAuditInterval: 20,
     conversationArchive: {
       enabled: false, // Disabled by default to maintain backward compatibility
       linesToKeep: 100,
@@ -111,6 +114,7 @@ export async function resolveConfig(
     autoStartOnFirstRun: fileConfig.autoStartOnFirstRun ?? defaults.autoStartOnFirstRun,
     autoStartAfterRestart: fileConfig.autoStartAfterRestart ?? defaults.autoStartAfterRestart,
     backupRetentionCount: fileConfig.backupRetentionCount ?? defaults.backupRetentionCount,
+    superegoAuditInterval: fileConfig.superegoAuditInterval ?? defaults.superegoAuditInterval,
     conversationArchive: fileConfig.conversationArchive
       ? {
           enabled: fileConfig.conversationArchive.enabled ?? defaults.conversationArchive!.enabled,
@@ -135,6 +139,9 @@ export async function resolveConfig(
   }
   if (env["PORT"]) {
     merged.port = parseInt(env["PORT"], 10);
+  }
+  if (env["SUPEREGO_AUDIT_INTERVAL"]) {
+    merged.superegoAuditInterval = parseInt(env["SUPEREGO_AUDIT_INTERVAL"], 10);
   }
 
   return merged;
