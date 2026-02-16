@@ -17,6 +17,7 @@ export { TinyBus } from "./core/TinyBus";
 export { MemoryProvider } from "./providers/MemoryProvider";
 export { SessionInjectionProvider } from "./providers/SessionInjectionProvider";
 export { ChatMessageProvider } from "./providers/ChatMessageProvider";
+export { AgoraProvider } from "./providers/AgoraProvider";
 
 // MCP Server
 export { createTinyBusMcpServer, createInMemoryTinyBusMcpServer, startTinyBusMcpHttpServer } from "../mcp/TinyBusMcpServer";
