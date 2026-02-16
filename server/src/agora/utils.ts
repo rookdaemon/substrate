@@ -3,5 +3,5 @@
  * Matches the implementation from @rookdaemon/agora/utils.ts
  */
 export function shortKey(publicKey: string): string {
-  return publicKey.slice(-8) + "...";
+  return "..." + publicKey.slice(-8);
 }

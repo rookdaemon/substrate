@@ -52,7 +52,6 @@ interface AgoraServiceType {
   disconnectRelay(): Promise<void>;
   setRelayMessageHandler(handler: (envelope: Envelope) => void): void;
   isRelayConnected(): boolean;
-  loadConfig(path?: string): Promise<unknown>;
 }
 
 export interface ApplicationConfig {
@@ -193,13 +192,12 @@ export async function createApplication(config: ApplicationConfig): Promise<Appl
     agoraInboxManager = new AgoraInboxManager(fs, substrateConfig, lock, clock);
 
     // Connect to relay if configured
-    if (agoraConfig.relay?.autoConnect && agoraConfig.relay.url) {
-      const service = agoraService;
-      await service.connectRelay(agoraConfig.relay.url);
+    if (agoraService && agoraConfig.relay?.autoConnect && agoraConfig.relay.url) {
+      await agoraService.connectRelay(agoraConfig.relay.url);
       logger.debug(`Connected to Agora relay at ${agoraConfig.relay.url}`);
 
       // Set up relay message handler to process incoming messages
-      service.setRelayMessageHandler(async (envelope: Envelope) => {
+      agoraService.setRelayMessageHandler(async (envelope: Envelope) => {
         try {
           // SECURITY: Verify signature before processing
           // The relay passes raw envelopes - we must verify them

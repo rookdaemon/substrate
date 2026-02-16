@@ -27,7 +27,6 @@ interface AgoraServiceType {
   disconnectRelay(): Promise<void>;
   setRelayMessageHandler(handler: (envelope: Envelope) => void): void;
   isRelayConnected(): boolean;
-  loadConfig(path?: string): Promise<unknown>;
 }
 
 export interface LoopHttpDependencies {
