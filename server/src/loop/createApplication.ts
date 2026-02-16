@@ -161,7 +161,7 @@ export async function createApplication(config: ApplicationConfig): Promise<Appl
   let agoraInboxManager: AgoraInboxManager | null = null;
   try {
     const agoraConfig = await AgoraService.loadConfig();
-    agoraService = new AgoraService(agoraConfig);
+    agoraService = new AgoraService(agoraConfig, logger);
     agoraInboxManager = new AgoraInboxManager(fs, substrateConfig, lock, clock);
 
     // Connect to relay if configured
