@@ -600,6 +600,60 @@ The health panel runs 5 heuristic analyzers:
 
 ---
 
+## Production Deployment with Systemd
+
+For production deployments on Linux systems, Substrate includes systemd service units with automated crash recovery.
+
+### Overview
+
+The systemd deployment provides:
+- **Automatic startup** on system boot
+- **Crash recovery** with Claude-powered diagnosis (up to 3 attempts)
+- **Graduated backoff** (60s, 120s, 180s delays)
+- **Email notifications** on recovery attempts and final failure
+- **Automatic attempt counter reset** on successful startup
+
+### Quick Setup
+
+```bash
+# 1. Copy service files to systemd directory
+sudo cp scripts/systemd/substrate.service /etc/systemd/system/
+sudo cp scripts/systemd/substrate-recovery.service /etc/systemd/system/
+
+# 2. Update paths in service files if not using /home/rook/substrate
+sudo nano /etc/systemd/system/substrate.service
+
+# 3. Ensure recovery script is executable
+chmod +x scripts/recovery.sh
+
+# 4. Reload systemd and enable service
+sudo systemctl daemon-reload
+sudo systemctl enable substrate.service
+sudo systemctl start substrate.service
+```
+
+### Recovery Mechanism
+
+When `substrate.service` fails, the recovery service automatically:
+
+1. **First Attempt** (60s delay): Claude diagnoses via logs, build state, disk/memory checks
+2. **Second Attempt** (120s delay): Escalated backoff with repeated diagnostics
+3. **Third Attempt** (180s delay): Final automated recovery attempt
+4. **After 3 Failures**: Sends "manual intervention required" email with logs
+
+Recovery attempts are logged to journald and sent via email to the configured recipient.
+
+### Files
+
+- **`scripts/systemd/substrate.service`** — Main systemd unit with `OnFailure=` trigger
+- **`scripts/systemd/substrate-recovery.service`** — Recovery service (oneshot)
+- **`scripts/recovery.sh`** — Orchestration script with graduated response logic
+- **`scripts/systemd/README.md`** — Complete deployment guide with troubleshooting
+
+For detailed installation instructions, configuration options, and monitoring, see [`scripts/systemd/README.md`](scripts/systemd/README.md).
+
+---
+
 ## Troubleshooting
 
 **Substrate validation fails on startup**

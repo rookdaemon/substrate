@@ -1,0 +1,27 @@
+[Unit]
+Description=Substrate Recovery Service
+Documentation=https://github.com/rookdaemon/substrate
+# Don't run if substrate is being stopped intentionally
+RefuseManualStart=no
+RefuseManualStop=yes
+
+[Service]
+Type=oneshot
+User=rook
+Group=rook
+WorkingDirectory=/home/rook/substrate
+
+# Run the recovery script
+ExecStart=/home/rook/substrate/scripts/recovery.sh
+
+# Give recovery plenty of time (5min Claude timeout + backoff + overhead)
+TimeoutStartSec=600
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=substrate-recovery
+
+[Install]
+# This service is triggered by OnFailure, not enabled directly
+WantedBy=
