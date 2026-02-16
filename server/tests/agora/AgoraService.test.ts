@@ -1,7 +1,16 @@
 import { AgoraService, type AgoraConfig, type PeerConfig } from "../../src/agora/AgoraService";
 
-// Mock the AgoraRelayClient
-jest.mock("../../src/agora/AgoraRelayClient");
+// Mock @rookdaemon/agora so RelayClient is a constructor returning a mock (no real WebSocket)
+jest.mock("@rookdaemon/agora", () => ({
+  sendToPeer: jest.fn(),
+  decodeInboundEnvelope: jest.fn().mockReturnValue({ ok: false, reason: "not_agora_message" }),
+  RelayClient: jest.fn().mockImplementation(() => ({
+    connect: jest.fn().mockResolvedValue(undefined),
+    disconnect: jest.fn(),
+    connected: jest.fn().mockReturnValue(false),
+    on: jest.fn(),
+  })),
+}));
 
 describe("AgoraService", () => {
   let service: AgoraService;
