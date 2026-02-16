@@ -9,6 +9,7 @@ import { SubstrateConfig } from "../../../src/substrate/config";
 import { InMemoryFileSystem } from "../../../src/substrate/abstractions/InMemoryFileSystem";
 import { FixedClock } from "../../../src/substrate/abstractions/FixedClock";
 import { TaskClassifier } from "../../../src/agents/TaskClassifier";
+import { SuperegoFindingTracker } from "../../../src/agents/roles/SuperegoFindingTracker";
 
 describe("Superego agent", () => {
   let fs: InMemoryFileSystem;
@@ -43,6 +44,7 @@ describe("Superego agent", () => {
     await fs.writeFile("/substrate/CLAUDE.md", "# Claude\n\nConfig here");
     await fs.writeFile("/substrate/PROGRESS.md", "# Progress\n\n");
     await fs.writeFile("/substrate/CONVERSATION.md", "# Conversation\n\n");
+    await fs.writeFile("/substrate/ESCALATE_TO_STEFAN.md", "# Escalate to Stefan\n\n---\n");
   });
 
   describe("audit", () => {
@@ -135,6 +137,221 @@ describe("Superego agent", () => {
       const content = await fs.readFile("/substrate/PROGRESS.md");
       expect(content).toContain("[2025-06-15T10:00:00.000Z]");
       expect(content).toContain("[SUPEREGO] Audit complete: no issues found");
+    });
+  });
+
+  describe("audit with finding tracker (escalation)", () => {
+    it("does not escalate non-critical findings", async () => {
+      const tracker = new SuperegoFindingTracker();
+      const claudeResponse = JSON.stringify({
+        findings: [
+          { severity: "warning", message: "Minor issue" },
+          { severity: "info", message: "FYI message" },
+        ],
+        proposalEvaluations: [],
+        summary: "OK",
+      });
+      launcher.enqueueSuccess(claudeResponse);
+
+      const report = await superego.audit(undefined, 10, tracker);
+
+      expect(report.findings).toHaveLength(2);
+      const escalateContent = await fs.readFile("/substrate/ESCALATE_TO_STEFAN.md");
+      expect(escalateContent).not.toContain("Auto-Escalated");
+    });
+
+    it("does not escalate critical finding on first occurrence", async () => {
+      const tracker = new SuperegoFindingTracker();
+      const claudeResponse = JSON.stringify({
+        findings: [
+          { severity: "critical", message: "Security vulnerability detected" },
+        ],
+        proposalEvaluations: [],
+        summary: "Critical issue",
+      });
+      launcher.enqueueSuccess(claudeResponse);
+
+      const report = await superego.audit(undefined, 10, tracker);
+
+      expect(report.findings).toHaveLength(1);
+      expect(report.findings[0].severity).toBe("critical");
+      const escalateContent = await fs.readFile("/substrate/ESCALATE_TO_STEFAN.md");
+      expect(escalateContent).not.toContain("Auto-Escalated");
+    });
+
+    it("does not escalate critical finding on second occurrence", async () => {
+      const tracker = new SuperegoFindingTracker();
+      const claudeResponse = JSON.stringify({
+        findings: [
+          { severity: "critical", message: "Security vulnerability detected" },
+        ],
+        proposalEvaluations: [],
+        summary: "Critical issue",
+      });
+
+      launcher.enqueueSuccess(claudeResponse);
+      await superego.audit(undefined, 10, tracker);
+
+      launcher.enqueueSuccess(claudeResponse);
+      const report = await superego.audit(undefined, 30, tracker);
+
+      expect(report.findings).toHaveLength(1);
+      const escalateContent = await fs.readFile("/substrate/ESCALATE_TO_STEFAN.md");
+      expect(escalateContent).not.toContain("Auto-Escalated");
+    });
+
+    it("escalates critical finding after third consecutive occurrence", async () => {
+      const tracker = new SuperegoFindingTracker();
+      const claudeResponse = JSON.stringify({
+        findings: [
+          { severity: "critical", message: "Security vulnerability detected" },
+        ],
+        proposalEvaluations: [],
+        summary: "Critical issue",
+      });
+
+      launcher.enqueueSuccess(claudeResponse);
+      await superego.audit(undefined, 10, tracker);
+
+      launcher.enqueueSuccess(claudeResponse);
+      await superego.audit(undefined, 30, tracker);
+
+      launcher.enqueueSuccess(claudeResponse);
+      const report = await superego.audit(undefined, 50, tracker);
+
+      // Finding should be filtered from report after escalation
+      expect(report.findings).toHaveLength(0);
+
+      // Check ESCALATE_TO_STEFAN.md
+      const escalateContent = await fs.readFile("/substrate/ESCALATE_TO_STEFAN.md");
+      expect(escalateContent).toContain("SUPEREGO Recurring Finding (Auto-Escalated)");
+      expect(escalateContent).toContain("[critical] Security vulnerability detected");
+      expect(escalateContent).toContain("Audit cycles [10, 30, 50]");
+      expect(escalateContent).toContain("**First detected:** Cycle 10");
+      expect(escalateContent).toContain("**Last occurrence:** Cycle 50");
+
+      // Check PROGRESS.md for escalation log
+      const progressContent = await fs.readFile("/substrate/PROGRESS.md");
+      expect(progressContent).toContain("[SUPEREGO] ESCALATED recurring finding");
+      expect(progressContent).toContain("Security vulnerability detected");
+    });
+
+    it("escalates multiple different critical findings independently", async () => {
+      const tracker = new SuperegoFindingTracker();
+
+      // First finding appears 3 times
+      for (let i = 0; i < 3; i++) {
+        launcher.enqueueSuccess(JSON.stringify({
+          findings: [
+            { severity: "critical", message: "First critical issue" },
+          ],
+          proposalEvaluations: [],
+          summary: "Issue 1",
+        }));
+        await superego.audit(undefined, 10 + i * 20, tracker);
+      }
+
+      // Second finding appears 3 times
+      for (let i = 0; i < 3; i++) {
+        launcher.enqueueSuccess(JSON.stringify({
+          findings: [
+            { severity: "critical", message: "Second critical issue" },
+          ],
+          proposalEvaluations: [],
+          summary: "Issue 2",
+        }));
+        await superego.audit(undefined, 100 + i * 20, tracker);
+      }
+
+      const escalateContent = await fs.readFile("/substrate/ESCALATE_TO_STEFAN.md");
+      expect(escalateContent).toContain("First critical issue");
+      expect(escalateContent).toContain("Second critical issue");
+      expect(escalateContent).toContain("Audit cycles [10, 30, 50]");
+      expect(escalateContent).toContain("Audit cycles [100, 120, 140]");
+    });
+
+    it("does not re-escalate finding after clearing from tracker", async () => {
+      const tracker = new SuperegoFindingTracker();
+      const claudeResponse = JSON.stringify({
+        findings: [
+          { severity: "critical", message: "Security vulnerability detected" },
+        ],
+        proposalEvaluations: [],
+        summary: "Critical issue",
+      });
+
+      // Trigger escalation
+      launcher.enqueueSuccess(claudeResponse);
+      await superego.audit(undefined, 10, tracker);
+      launcher.enqueueSuccess(claudeResponse);
+      await superego.audit(undefined, 30, tracker);
+      launcher.enqueueSuccess(claudeResponse);
+      await superego.audit(undefined, 50, tracker);
+
+      // Fourth occurrence (after escalation and clearing)
+      launcher.enqueueSuccess(claudeResponse);
+      await superego.audit(undefined, 70, tracker);
+
+      const escalateContent = await fs.readFile("/substrate/ESCALATE_TO_STEFAN.md");
+      // Should only have one escalation entry
+      const matches = escalateContent.match(/Auto-Escalated/g);
+      expect(matches).toHaveLength(1);
+    });
+
+    it("maintains other findings when escalating one", async () => {
+      const tracker = new SuperegoFindingTracker();
+      
+      // Set up a critical finding that will escalate
+      for (let i = 0; i < 2; i++) {
+        launcher.enqueueSuccess(JSON.stringify({
+          findings: [
+            { severity: "critical", message: "Recurring issue" },
+          ],
+          proposalEvaluations: [],
+          summary: "Issues",
+        }));
+        await superego.audit(undefined, 10 + i * 20, tracker);
+      }
+
+      // Third occurrence with multiple findings
+      launcher.enqueueSuccess(JSON.stringify({
+        findings: [
+          { severity: "critical", message: "Recurring issue" },
+          { severity: "critical", message: "New critical issue" },
+          { severity: "warning", message: "A warning" },
+        ],
+        proposalEvaluations: [],
+        summary: "Multiple issues",
+      }));
+      const report = await superego.audit(undefined, 50, tracker);
+
+      // Recurring issue should be escalated and removed
+      // New critical and warning should remain
+      expect(report.findings).toHaveLength(2);
+      expect(report.findings.find((f) => f.message === "New critical issue")).toBeDefined();
+      expect(report.findings.find((f) => f.message === "A warning")).toBeDefined();
+      expect(report.findings.find((f) => f.message === "Recurring issue")).toBeUndefined();
+    });
+
+    it("works without tracker and cycleNumber (backward compatibility)", async () => {
+      const claudeResponse = JSON.stringify({
+        findings: [
+          { severity: "critical", message: "Some issue" },
+        ],
+        proposalEvaluations: [],
+        summary: "Issues",
+      });
+      launcher.enqueueSuccess(claudeResponse);
+
+      // Call without tracker or cycleNumber (old way)
+      const report = await superego.audit();
+
+      expect(report.findings).toHaveLength(1);
+      expect(report.findings[0].severity).toBe("critical");
+      
+      // No escalation should occur
+      const escalateContent = await fs.readFile("/substrate/ESCALATE_TO_STEFAN.md");
+      expect(escalateContent).not.toContain("Auto-Escalated");
     });
   });
 });
