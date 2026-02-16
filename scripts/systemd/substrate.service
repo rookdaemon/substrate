@@ -10,10 +10,12 @@ User=rook
 Group=rook
 WorkingDirectory=/home/rook/substrate/server
 Environment="NODE_ENV=production"
-Environment="PATH=/home/rook/.nvm/versions/node/v20.11.0/bin:/usr/local/bin:/usr/bin:/bin"
+# PATH: Uses default node from rook's environment (nvm, system node, etc.)
+# If using nvm, ensure nvm is loaded in rook's .bashrc or .profile
+Environment="PATH=/home/rook/.nvm/versions/node/default/bin:/home/rook/.local/bin:/usr/local/bin:/usr/bin:/bin"
 
 # Start the substrate server (uses supervisor.js for auto-rebuild on exit code 75)
-ExecStart=/home/rook/.nvm/versions/node/v20.11.0/bin/npm run start
+ExecStart=/usr/bin/env npm run start
 
 # Reset recovery attempt counter on successful start
 ExecStartPost=/home/rook/substrate/scripts/recovery.sh --reset
@@ -24,7 +26,9 @@ RestartSec=10s
 StartLimitBurst=5
 StartLimitIntervalSec=300
 
-# Resource limits
+# Resource limits (adjust based on your deployment needs)
+# MemoryMax: 2GB suitable for typical substrate workloads
+# CPUQuota: 200% allows use of 2 CPU cores (adjust for your hardware)
 LimitNOFILE=65536
 MemoryMax=2G
 CPUQuota=200%

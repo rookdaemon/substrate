@@ -5,12 +5,17 @@
 set -euo pipefail
 
 # Configuration
-ATTEMPT_FILE="/tmp/substrate-recovery-attempts"
+# Use persistent state directory (survives reboots unlike /tmp)
+STATE_DIR="/var/lib/substrate"
+ATTEMPT_FILE="$STATE_DIR/recovery-attempts"
 MAX_ATTEMPTS=3
 CLAUDE_TIMEOUT=300  # 5 minutes in seconds
 RECIPIENT_EMAIL="lbsa71@hotmail.com"
 SUBSTRATE_HOME="/home/rook/substrate"
 LOG_TAG="substrate-recovery"
+
+# Ensure state directory exists
+mkdir -p "$STATE_DIR" 2>/dev/null || true
 
 # Function to log to journald
 log_info() {
@@ -146,7 +151,7 @@ If you successfully fix the issue, indicate success in your response.
         log_info "Claude diagnostic completed successfully"
         
         # Check if Claude indicated success
-        if grep -qi "success\|fixed\|resolved" "$claude_output"; then
+        if grep -qiE "success|fixed|resolved" "$claude_output"; then
             log_info "Claude reported successful fix. Restarting substrate service..."
             
             # Restart the service
@@ -163,7 +168,7 @@ Hostname: $(hostname)
 Time: $(date -R)
 
 Claude diagnostic output:
-$(cat "$claude_output")
+$(head -c 10000 < "$claude_output")
 "
                 
                 # Reset counter on success
@@ -196,10 +201,10 @@ Time: $(date -R)
 Claude exit code: $claude_exit_code
 
 Claude diagnostic output:
-$(cat "$claude_output" 2>/dev/null || echo "No output captured")
+$(head -c 10000 < "$claude_output" 2>/dev/null || echo "No output captured")
 
 Recent substrate logs:
-$(journalctl -u substrate --no-pager -n 30 2>&1 || echo "Failed to get logs")
+$(journalctl -u substrate --no-pager -n 30 2>&1 | head -c 10000 || echo "Failed to get logs")
 "
     
     rm -f "$claude_output"

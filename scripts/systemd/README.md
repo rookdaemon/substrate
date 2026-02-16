@@ -36,18 +36,25 @@ This directory contains systemd service units and recovery scripts for deploying
    chmod +x scripts/recovery.sh
    ```
 
-4. **Reload systemd daemon**:
+4. **Create state directory for recovery counter**:
+   ```bash
+   sudo mkdir -p /var/lib/substrate
+   sudo chown rook:rook /var/lib/substrate
+   sudo chmod 755 /var/lib/substrate
+   ```
+
+5. **Reload systemd daemon**:
    ```bash
    sudo systemctl daemon-reload
    ```
 
-5. **Enable and start the service**:
+6. **Enable and start the service**:
    ```bash
    sudo systemctl enable substrate.service
    sudo systemctl start substrate.service
    ```
 
-6. **Verify the service is running**:
+7. **Verify the service is running**:
    ```bash
    sudo systemctl status substrate.service
    ```
@@ -88,7 +95,7 @@ The attempt counter is automatically reset when:
 - Substrate service starts successfully (via `ExecStartPost=`)
 - Recovery completes successfully and restarts the service
 
-The counter is stored at `/tmp/substrate-recovery-attempts`.
+The counter is stored persistently at `/var/lib/substrate/recovery-attempts` and survives system reboots.
 
 ### Email Notifications
 
@@ -122,7 +129,7 @@ sudo journalctl -u substrate -u substrate-recovery -f
 ### Check Recovery Status
 ```bash
 # View attempt counter
-cat /tmp/substrate-recovery-attempts
+cat /var/lib/substrate/recovery-attempts
 
 # View service status
 sudo systemctl status substrate.service
@@ -204,16 +211,54 @@ sudo systemctl disable substrate.service
 sudo rm /etc/systemd/system/substrate.service
 sudo rm /etc/systemd/system/substrate-recovery.service
 sudo systemctl daemon-reload
-rm -f /tmp/substrate-recovery-attempts
+rm -f /var/lib/substrate/recovery-attempts
 ```
 
 ## Security Considerations
 
-- The recovery script runs with the same user as the substrate service (`rook`)
-- Claude CLI runs with `--dangerously-skip-permissions` flag to allow system diagnostics
-- Email notifications may contain sensitive log information
-- Consider encrypting emails or using a secure mail relay
-- The attempt counter file (`/tmp/substrate-recovery-attempts`) is world-readable but only writable by the service user
+⚠️ **IMPORTANT SECURITY WARNINGS**
+
+### Claude CLI Permissions
+
+The recovery script runs Claude CLI with the `--dangerously-skip-permissions` flag. This is **potentially risky** because:
+
+- **Full System Access**: Claude can execute arbitrary shell commands as the `rook` user
+- **File Access**: Can read/write any files accessible to the `rook` user
+- **Network Access**: Can make network requests
+- **Process Control**: Can start/stop processes, install packages, modify system files
+
+**Mitigation strategies:**
+- Run substrate service as a dedicated user with minimal privileges (not root)
+- Use systemd sandboxing features (ProtectSystem, ProtectHome, etc.) if needed
+- Monitor recovery logs carefully for unexpected behavior
+- Consider removing this flag and adjusting Claude's diagnostic prompt if security is a primary concern
+
+### Email Security
+
+- Email notifications may contain sensitive information:
+  - Log excerpts with internal paths, configuration details
+  - Error messages that may reveal system architecture
+  - Claude's diagnostic reasoning
+- **Recommendations:**
+  - Use encrypted email (PGP/S/MIME) for sensitive environments
+  - Configure a secure SMTP relay instead of sendmail
+  - Limit log excerpt size (already truncated to 10KB)
+
+### State File Permissions
+
+- The attempt counter file (`/var/lib/substrate/recovery-attempts`) should only be writable by the service user
+- The `/var/lib/substrate/` directory must exist and have proper permissions:
+  ```bash
+  sudo mkdir -p /var/lib/substrate
+  sudo chown rook:rook /var/lib/substrate
+  sudo chmod 755 /var/lib/substrate
+  ```
+
+### Network Exposure
+
+- Ensure substrate's HTTP/WebSocket server is not exposed to untrusted networks
+- Use firewall rules to restrict access
+- Consider using a reverse proxy (nginx, caddy) with TLS if remote access is needed
 
 ## Maintenance
 
