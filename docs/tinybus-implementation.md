@@ -4,6 +4,8 @@
 
 TinyBus is a lightweight, environment-agnostic message routing subsystem implemented in ~345 lines of core code. It provides a clean abstraction for routing structured messages between providers with zero external dependencies.
 
+**See also**: [TinyBus Message Types](./tinybus-message-types.md) - Canonical reference for message type conventions, registered types, and payload schemas.
+
 ## Architecture
 
 ```
@@ -20,6 +22,7 @@ Provider C ──┘
 - **Structure**: id, type, schema, timestamp, source?, destination?, payload?, meta?
 - **Factory**: `createMessage()` generates unique IDs and timestamps
 - **Type Format**: Supports dot notation (e.g., `agent.command.exec`) and URI forms
+- **Message Types**: See [Message Type Conventions](./tinybus-message-types.md) for naming standards and registered types
 
 ### 2. Provider Interface (`Provider.ts`)
 - `id: string` - Unique identifier
@@ -190,11 +193,12 @@ Total: ~1225 lines (444 implementation + 781 tests)
 
 ## Next Steps
 
-1. **MCP HTTP Provider**: Integrate with MCP SDK to expose `send(msg)` tool
-2. **Agora Provider**: Integrate with existing Agora relay for cross-instance messaging
-3. **Process Provider**: Enable messaging between Node.js processes
-4. **Orchestrator Integration**: Wire TinyBus into LoopOrchestrator
-5. **Agent Inbound Queue**: Implement external buffering and prompt injection
+1. **Message Type Documentation**: ✅ Complete - See [Message Type Conventions](./tinybus-message-types.md)
+2. **MCP HTTP Provider**: Integrate with MCP SDK to expose `send(msg)` tool
+3. **Agora Provider**: Integrate with existing Agora relay for cross-instance messaging
+4. **Process Provider**: Enable messaging between Node.js processes
+5. **Orchestrator Integration**: Wire TinyBus into LoopOrchestrator
+6. **Agent Inbound Queue**: Implement external buffering and prompt injection
 
 ## Version
 
