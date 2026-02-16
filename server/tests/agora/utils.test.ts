@@ -13,13 +13,13 @@ describe("Agora utils", () => {
       const key3 = "302a300506032b6570032100aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa3eb4";
       
       expect(shortKey(key1)).toBe("...90ab1b69");
-      expect(shortKey(key2)).toBe("10fef6d0...");
-      expect(shortKey(key3)).toBe("aaaa3eb4...");
+      expect(shortKey(key2)).toBe("...10fef6d0");
+      expect(shortKey(key3)).toBe("...aaaa3eb4");
     });
 
     it("should work with short keys", () => {
       expect(shortKey("12345678")).toBe("...12345678");
-      expect(shortKey("abc")).toBe("abc...");
+      expect(shortKey("abc")).toBe("...abc");
     });
 
     it("should work with empty string", () => {
