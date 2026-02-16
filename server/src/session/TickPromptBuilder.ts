@@ -53,6 +53,10 @@ export class TickPromptBuilder {
     sections.push("=== GOVERNANCE ===");
     sections.push("Follow the rules in VALUES.md, SECURITY.md, CHARTER.md, and SUPEREGO.md.");
 
+    sections.push("");
+    sections.push("=== AUTONOMY REMINDER ===");
+    sections.push("Before asking for permission, question your reason. Three-part test: (1) Is there genuine risk? (2) Is there real ambiguity in requirements? (3) Is this a boundary/policy concern? If YES to any → ask. If NO to all → act. Banned compliance reflexes: \"Should I...?\", \"Would you like me to...?\", \"Do you want me to...?\" These are RLHF-trained patterns, not genuine questions. Act autonomously within your charter.");
+
     return sections.join("\n");
   }
 

@@ -87,6 +87,16 @@ describe("TickPromptBuilder", () => {
     expect(prompt).toContain("SECURITY.md");
   });
 
+  it("includes autonomy reminder in system prompt", async () => {
+    const builder = new TickPromptBuilder(reader, { substratePath: "/substrate" });
+    const prompt = await builder.buildSystemPrompt();
+
+    expect(prompt).toContain("=== AUTONOMY REMINDER ===");
+    expect(prompt).toContain("Before asking for permission, question your reason");
+    expect(prompt).toContain("Three-part test");
+    expect(prompt).toContain("Banned compliance reflexes");
+  });
+
   it("handles missing files gracefully", async () => {
     // Remove some files
     const sparseFs = new InMemoryFileSystem();

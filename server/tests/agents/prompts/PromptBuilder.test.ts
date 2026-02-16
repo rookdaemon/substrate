@@ -83,6 +83,14 @@ describe("PromptBuilder", () => {
       expect(prompt).toContain("Substrate directory: /substrate");
       expect(prompt).toContain("My own source code: /home/user/substrate");
     });
+
+    it("includes autonomy reminder in system prompt", () => {
+      const prompt = builder.buildSystemPrompt(AgentRole.EGO);
+      expect(prompt).toContain("=== AUTONOMY REMINDER ===");
+      expect(prompt).toContain("Before asking for permission, question your reason");
+      expect(prompt).toContain("Three-part test");
+      expect(prompt).toContain("Banned compliance reflexes");
+    });
   });
 
   describe("getContextReferences", () => {
