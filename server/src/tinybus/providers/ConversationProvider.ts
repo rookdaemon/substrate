@@ -55,6 +55,12 @@ export class ConversationProvider implements Provider {
       throw new Error(`Provider ${this.id} not started`);
     }
 
+    // Skip chat messages - they're already written by ego.appendConversation()
+    // Skip loopback messages - they're just echoes for testing
+    if (message.type === "chat" || message.source === "loopback") {
+      return;
+    }
+
     // Check if effectively paused (explicitly paused OR rate-limited)
     const state = this.getState();
     const isEffectivelyPaused = state === LoopState.PAUSED || state === LoopState.STOPPED || this.isRateLimited();
