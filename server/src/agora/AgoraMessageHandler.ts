@@ -86,7 +86,7 @@ export class AgoraMessageHandler {
           formattedPayload = parsed.text;
         } else if (keys.length <= 5 && keys.every(k => typeof parsed[k] === "string" || typeof parsed[k] === "number" || typeof parsed[k] === "boolean")) {
           formattedPayload = Object.entries(parsed)
-            .map(([k, v]) => `${k}: ${typeof v === "string" ? v : JSON.stringify(v)}`)
+            .map(([k, v]) => `**${k}**: ${typeof v === "string" ? v : JSON.stringify(v)}`)
             .join(", ");
         } else {
           formattedPayload = JSON.stringify(parsed, null, 2);
@@ -97,8 +97,8 @@ export class AgoraMessageHandler {
     }
 
     const unprocessedBadge = isUnprocessed ? " **[UNPROCESSED]**" : "";
-    // One line: sender, optional badge, payload (no message type label)
-    const conversationEntry = `**${senderDisplayName}**${unprocessedBadge} ${formattedPayload}`.replace(/\n+/g, " ").trim();
+    // One line: sender, type, optional badge, payload
+    const conversationEntry = `**${senderDisplayName}** ${envelope.type}:${unprocessedBadge} ${formattedPayload}`.replace(/\n+/g, " ").trim();
 
     // Write to CONVERSATION.md (using SUBCONSCIOUS role as it handles message processing)
     try {
