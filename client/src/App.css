@@ -346,6 +346,9 @@ body {
   color: var(--color-text);
   cursor: pointer;
   font-family: monospace;
+  height: 2rem;
+  line-height: 1.2rem;
+  box-sizing: border-box;
 }
 
 .loop-controls button:hover:not(:disabled) {
