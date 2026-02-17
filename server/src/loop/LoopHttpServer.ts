@@ -21,6 +21,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { AgoraMessageHandler } from "../agora/AgoraMessageHandler";
 import { IAgoraService } from "../agora/IAgoraService";
 import type { ILogger } from "../logging";
+import { getVersionInfo } from "../version";
 
 export interface LoopHttpDependencies {
   reader: SubstrateFileReader;
@@ -166,6 +167,7 @@ export class LoopHttpServer {
         const statusPayload: Record<string, unknown> = {
           state: this.orchestrator.getState(),
           metrics: this.orchestrator.getMetrics(),
+          version: getVersionInfo(),
         };
         const rlu = this.orchestrator.getRateLimitUntil();
         if (rlu) statusPayload.rateLimitUntil = rlu;
@@ -221,8 +223,12 @@ export class LoopHttpServer {
         break;
 
       case "POST /api/loop/restart":
-        this.orchestrator.requestRestart();
+        // Send response first, then restart (which will exit the process)
         this.json(res, 200, { success: true, message: "Restart requested — rebuilding" });
+        // Use setImmediate to ensure response is sent before process exits
+        setImmediate(() => {
+          this.orchestrator.requestRestart();
+        });
         break;
 
       case "POST /api/loop/audit":

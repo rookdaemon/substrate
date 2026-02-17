@@ -125,8 +125,7 @@ describe("AgoraMessageHandler", () => {
       expect(conversationManager.appendedEntries).toHaveLength(1);
       const entry = conversationManager.appendedEntries[0];
       expect(entry.role).toBe(AgentRole.SUBCONSCIOUS);
-      expect(entry.entry).toContain("📨");
-      expect(entry.entry).toContain("Agora message");
+      expect(entry.entry).toContain("...cdefabcd");
       expect(entry.entry).toContain("request");
       expect(entry.entry).toContain("question");
       expect(entry.entry).not.toContain("[UNPROCESSED]");

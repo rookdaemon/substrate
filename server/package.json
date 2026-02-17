@@ -8,7 +8,7 @@
     "init": "tsx src/cli.ts init",
     "start": "tsc && node dist/supervisor.js",
     "dev": "tsx watch src/cli.ts start",
-    "build": "tsc",
+    "build": "node scripts/generate-version.js && tsc",
     "test": "jest",
     "backup": "tsx src/cli.ts backup",
     "restore": "tsx src/cli.ts restore",

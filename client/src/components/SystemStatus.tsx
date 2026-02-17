@@ -3,9 +3,17 @@ import { apiGet } from "../hooks/useApi";
 import { LoopEvent } from "../hooks/useWebSocket";
 import { CooldownBanner } from "./CooldownBanner";
 
+interface VersionInfo {
+  version: string;
+  gitHash: string;
+  gitBranch: string;
+  buildTime: string;
+}
+
 interface LoopStatus {
   state: string;
   rateLimitUntil?: string;
+  version?: VersionInfo;
   metrics: {
     totalCycles: number;
     successfulCycles: number;
@@ -53,6 +61,11 @@ export function SystemStatus({ lastEvent, compact }: SystemStatusProps) {
       <div className="system-status system-status-compact">
         <CooldownBanner rateLimitUntil={rateLimitUntil} />
         <span className="status-badge" data-testid="loop-state">{status.state}</span>
+        {status.version && (
+          <span className="version-compact" title={`v${status.version.version} (${status.version.gitBranch})\n${status.version.gitHash}\nBuilt: ${new Date(status.version.buildTime).toLocaleString()}`}>
+            v{status.version.version} ({status.version.gitHash})
+          </span>
+        )}
       </div>
     );
   }
@@ -67,6 +80,14 @@ export function SystemStatus({ lastEvent, compact }: SystemStatusProps) {
         <span>Idle: {status.metrics.idleCycles}</span>
         <span>Audits: {status.metrics.superegoAudits}</span>
       </div>
+      {status.version && (
+        <div className="status-version">
+          <span>v{status.version.version}</span>
+          <span className="version-hash" title={`Branch: ${status.version.gitBranch}\nBuild: ${new Date(status.version.buildTime).toLocaleString()}`}>
+            {status.version.gitHash}
+          </span>
+        </div>
+      )}
     </div>
   );
 }

@@ -329,7 +329,41 @@ export async function createApplication(config: ApplicationConfig): Promise<Appl
   httpServer.setMetricsComponents(taskMetrics, sizeTracker, delegationTracker);
 
   orchestrator.setLauncher(launcher);
-  orchestrator.setShutdown((code) => process.exit(code));
+  // Set shutdown function that closes resources before exiting
+  orchestrator.setShutdown((code) => {
+    // Close resources before exit to ensure clean shutdown
+    // Start async cleanup, then exit after it completes or times out
+    const cleanupPromise = (async () => {
+      try {
+        orchestrator.stop(); // Stop orchestrator (stops watchdog, etc.)
+      } catch {
+        // Ignore errors if already stopped
+      }
+      try {
+        fileWatcher.stop();
+      } catch {
+        // Ignore errors
+      }
+      try {
+        await wsServer.close();
+      } catch {
+        // Ignore errors
+      }
+      try {
+        await httpServer.close();
+      } catch {
+        // Ignore errors
+      }
+    })();
+    
+    // Wait for cleanup with a timeout, then exit
+    Promise.race([
+      cleanupPromise,
+      new Promise(resolve => setTimeout(resolve, 1000)) // 1 second timeout
+    ]).finally(() => {
+      process.exit(code);
+    });
+  });
   
   // Rate limit state manager setup
   const rateLimitStateManager = new RateLimitStateManager(

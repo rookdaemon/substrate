@@ -76,7 +76,9 @@ export class AgoraMessageHandler {
     }
 
     const unprocessedBadge = isUnprocessed ? " **[UNPROCESSED]**" : "";
-    const conversationEntry = `📨 **Agora message** from \`${senderShort}\` (${envelope.type})${unprocessedBadge}\n\n${formattedPayload}`;
+    // Simple format: sender name prominently, then message type, then content
+    // Add invisible marker for provider detection (agora messages have short keys)
+    const conversationEntry = `**${senderShort}** (${envelope.type})${unprocessedBadge}\n\n${formattedPayload}`;
 
     // Write to CONVERSATION.md (using SUBCONSCIOUS role as it handles message processing)
     try {

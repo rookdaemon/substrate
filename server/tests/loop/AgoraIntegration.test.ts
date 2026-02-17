@@ -165,10 +165,8 @@ describe("Agora Message Integration", () => {
     // Verify message was written to CONVERSATION.md
     const conversationPath = config.getFilePath(SubstrateFileType.CONVERSATION);
     const conversationContent = await fs.readFile(conversationPath);
-    expect(conversationContent).toContain("📨");
-    expect(conversationContent).toContain("Agora message");
-    expect(conversationContent).toContain("request");
     expect(conversationContent).toContain("...cdefabcd");
+    expect(conversationContent).toContain("request");
     expect(conversationContent).toContain("**question**:");
     expect(conversationContent).toContain("Hello, are you there?");
 

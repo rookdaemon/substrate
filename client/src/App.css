@@ -332,6 +332,30 @@ body {
   font-size: 0.85rem;
 }
 
+.status-version {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border-color);
+  font-size: 0.8rem;
+  color: #888;
+}
+
+.status-version .version-hash {
+  font-family: monospace;
+  color: #666;
+  cursor: help;
+}
+
+.version-compact {
+  font-size: 0.75rem;
+  color: #888;
+  font-family: monospace;
+  cursor: help;
+}
+
 .loop-controls {
   display: flex;
   gap: 0.5rem;
@@ -453,22 +477,30 @@ body {
 .role-dot.role-id { background: #ab47bc; }
 
 .conversation-entry.agora-message {
-  background: rgba(99, 102, 241, 0.1);
+  background: rgba(99, 102, 241, 0.08);
   border-left: 3px solid #6366f1;
   padding-left: 0.5rem;
   margin-left: -0.5rem;
+  border-radius: 0 4px 4px 0;
 }
 
 .conversation-entry.tinybus-message {
-  background: rgba(168, 85, 247, 0.1);
+  background: rgba(168, 85, 247, 0.08);
   border-left: 3px solid #a855f7;
   padding-left: 0.5rem;
   margin-left: -0.5rem;
+  border-radius: 0 4px 4px 0;
 }
 
 .conversation-entry.agora-message .conversation-message,
 .conversation-entry.tinybus-message .conversation-message {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+.conversation-entry.agora-message .conversation-message strong:first-child,
+.conversation-entry.tinybus-message .conversation-message strong:first-child {
+  color: inherit;
+  font-weight: 600;
 }
 
 .conversation-entry.agora-message .conversation-message code,

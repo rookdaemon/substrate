@@ -6,6 +6,5 @@ export { resolveConfig } from "./config";
 export { getAppPaths } from "./paths";
 export type { AppPaths } from "./paths";
 
-export function getVersion(): string {
-  return "0.1.0";
-}
+export { getVersion, getVersionInfo } from "./version";
+export type { VersionInfo } from "./version";

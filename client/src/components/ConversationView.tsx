@@ -10,8 +10,8 @@ interface SubstrateContent {
 interface ConversationEntry {
   role: string;
   message: string;
-  isAgora?: boolean;
-  isTinyBus?: boolean;
+  provider?: "agora" | "tinybus";
+  senderName?: string;
 }
 
 interface ConversationViewProps {
@@ -31,13 +31,55 @@ function parseEntries(raw: string): ConversationEntry[] {
     if (match) {
       if (current) entries.push(current);
       const message = line.replace(ENTRY_RE, "");
-      const isAgora = message.includes("📨") && message.includes("Agora message");
-      const isTinyBus = message.includes("🔔") && message.includes("TinyBus message");
+      
+      // Detect provider type and extract sender name
+      // Agora messages: **senderShort** (type) - sender keys are short (start with ... or are 12-20 chars)
+      // TinyBus messages: **source** (type) - source names are typically longer/internal
+      let provider: "agora" | "tinybus" | undefined;
+      let senderName: string | undefined;
+      
+      // Check for old format first (for backwards compatibility)
+      if (message.includes("📨") || message.includes("Agora message")) {
+        provider = "agora";
+        // Extract sender from old format if possible
+        const oldAgoraMatch = message.match(/from [`']?([^`'\s]+)/);
+        if (oldAgoraMatch) senderName = oldAgoraMatch[1];
+      } else if (message.includes("🔔") || message.includes("TinyBus message")) {
+        provider = "tinybus";
+        // Extract source from old format if possible
+        const oldTinyBusMatch = message.match(/from [`']?([^`'\s]+)/);
+        if (oldTinyBusMatch) senderName = oldTinyBusMatch[1];
+      } else {
+        // New format: **senderName** (type)
+        // Check if message starts with ** (bold markdown) - likely agora or tinybus
+        const boldMatch = message.match(/^\*\*([^*]+)\*\*\s*\(([^)]+)\)/);
+        if (boldMatch) {
+          senderName = boldMatch[1];
+          // Detection heuristic:
+          // - Agora: short keys (start with "..." or are 8-20 chars, alphanumeric/hex-like)
+          // - TinyBus: longer names, might contain dots/dashes, or common source names
+          const isShortKey = senderName.startsWith("...") || 
+                            (senderName.length >= 8 && senderName.length <= 20 && /^[a-f0-9.]+$/i.test(senderName));
+          const isInternalSource = senderName.includes(".") || 
+                                  senderName.includes("-") ||
+                                  senderName.length > 20 ||
+                                  /^(file|http|process|system|loop|orchestrator)/i.test(senderName);
+          
+          if (isShortKey && !isInternalSource) {
+            provider = "agora";
+          } else if (isInternalSource || match[1] === "SUBCONSCIOUS") {
+            // If it's from SUBCONSCIOUS role and doesn't look like agora, it's likely tinybus
+            // match[1] is the role from the timestamp line
+            provider = "tinybus";
+          }
+        }
+      }
+      
       current = { 
         role: match[1], 
         message,
-        isAgora,
-        isTinyBus,
+        provider,
+        senderName,
       };
     } else if (current) {
       current.message += "\n" + line;
@@ -83,7 +125,7 @@ export function ConversationView({ lastEvent, refreshKey }: ConversationViewProp
           entries.map((entry, i) => (
             <div 
               key={i} 
-              className={`conversation-entry ${entry.isAgora ? "agora-message" : ""} ${entry.isTinyBus ? "tinybus-message" : ""}`}
+              className={`conversation-entry ${entry.provider === "agora" ? "agora-message" : ""} ${entry.provider === "tinybus" ? "tinybus-message" : ""}`}
             >
               <span className={`role-dot role-${entry.role.toLowerCase()}`} title={entry.role} />
               <div className="conversation-message">

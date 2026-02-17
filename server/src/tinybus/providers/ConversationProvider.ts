@@ -88,7 +88,10 @@ export class ConversationProvider implements Provider {
           }
         }
         
-        const conversationEntry = `🔔 **TinyBus message** (${message.type}) from \`${source}\` **[UNPROCESSED]**\n\n${formattedPayload}`;
+        const unprocessedBadge = " **[UNPROCESSED]**";
+        // Simple format: source name prominently, then message type, then content
+        // Provider type (tinybus) will be detected by UI for coloring
+        const conversationEntry = `**${source}** (${message.type})${unprocessedBadge}\n\n${formattedPayload}`;
 
         // Write to CONVERSATION.md (using SUBCONSCIOUS role as it handles message processing)
         await this.conversationManager.append(AgentRole.SUBCONSCIOUS, conversationEntry);
