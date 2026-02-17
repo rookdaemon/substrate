@@ -207,7 +207,7 @@ export async function createApplication(config: ApplicationConfig): Promise<Appl
   try {
     const agora = await import("@rookdaemon/agora");
     agoraConfig = await agora.AgoraService.loadConfig();
-    agoraService = new agora.AgoraService(agoraConfig, logger) as IAgoraService;
+    agoraService = new agora.AgoraService(agoraConfig, logger) as unknown as IAgoraService;
 
     // Note: We'll create AgoraMessageHandler after orchestrator is created
     // so we can pass it as IMessageInjector
@@ -247,9 +247,9 @@ export async function createApplication(config: ApplicationConfig): Promise<Appl
     // Set up relay message handler if relay is configured
     if (agoraConfig.relay?.autoConnect && agoraConfig.relay.url) {
       const agora = await import("@rookdaemon/agora");
-      agoraService.setRelayMessageHandler(async (envelope: Envelope) => {
+      agoraService.setRelayMessageHandlerWithName(async (envelope: Envelope, from: string, fromName?: string) => {
         try {
-          logger.debug(`[AGORA] Relay message received: envelopeId=${envelope.id} type=${envelope.type}`);
+          logger.debug(`[AGORA] Relay message received: envelopeId=${envelope.id} type=${envelope.type} from=${fromName || from}`);
           
           // SECURITY: Verify signature before processing
           // The relay passes raw envelopes - we must verify them
@@ -262,8 +262,8 @@ export async function createApplication(config: ApplicationConfig): Promise<Appl
 
           logger.debug(`[AGORA] Relay message verified: envelopeId=${envelope.id}`);
 
-          // Process the verified envelope via AgoraMessageHandler
-          await agoraMessageHandler!.processEnvelope(envelope, "relay");
+          // Process the verified envelope via AgoraMessageHandler with relay name hint
+          await agoraMessageHandler!.processEnvelope(envelope, "relay", fromName);
           
           logger.debug(`[AGORA] Relay message processed: envelopeId=${envelope.id}`);
         } catch (err) {

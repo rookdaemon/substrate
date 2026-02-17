@@ -31,19 +31,39 @@ export class AgoraMessageHandler {
   ) {}
 
   /**
-   * Process an inbound Agora envelope (called by webhook handler or relay)
-   * 
-   * Pipeline:
-   * 1. Write to CONVERSATION.md with [UNPROCESSED] marker if stopped/paused
-   * 2. Emit WebSocket event
-   * 3. Inject message directly into orchestrator (no TinyBus)
+   * Resolve sender display name: try relay name hint first, then peer registry, fallback to short key
+   * Returns format: "name...9f38f6d0" if name found, or "...9f38f6d0" if not found
    */
-  async processEnvelope(envelope: Envelope, source: "webhook" | "relay" = "webhook"): Promise<void> {
+  private resolveSenderName(senderPublicKey: string, relayNameHint?: string): string {
+    // Prefer relay name hint if provided (most up-to-date)
+    if (relayNameHint) {
+      return `${relayNameHint}...${shortKey(senderPublicKey).slice(3)}`; // Remove "..." prefix from shortKey
+    }
+
+    if (!this.agoraService) {
+      return shortKey(senderPublicKey);
+    }
+
+    // Try to find peer name by matching public key in local registry
+    const peers = this.agoraService.getPeers();
+    for (const peerName of peers) {
+      const peerConfig = this.agoraService.getPeerConfig(peerName);
+      if (peerConfig && peerConfig.publicKey === senderPublicKey) {
+        // Found matching peer - return name...shortKey format
+        return `${peerName}...${shortKey(senderPublicKey).slice(3)}`; // Remove "..." prefix from shortKey
+      }
+    }
+
+    // No matching peer found - return short key only
+    return shortKey(senderPublicKey);
+  }
+
+  async processEnvelope(envelope: Envelope, source: "webhook" | "relay" = "webhook", relayNameHint?: string): Promise<void> {
     const timestamp = this.clock.now().toISOString();
-    const senderShort = shortKey(envelope.sender);
+    const senderDisplayName = this.resolveSenderName(envelope.sender, relayNameHint);
     const payloadStr = JSON.stringify(envelope.payload);
 
-    this.logger.debug(`[AGORA] Received ${source} message: envelopeId=${envelope.id} type=${envelope.type} from=${senderShort}`);
+    this.logger.debug(`[AGORA] Received ${source} message: envelopeId=${envelope.id} type=${envelope.type} from=${senderDisplayName}`);
 
     // Determine if we should add [UNPROCESSED] marker
     // Check if effectively paused (explicitly paused OR rate-limited)
@@ -78,7 +98,7 @@ export class AgoraMessageHandler {
     const unprocessedBadge = isUnprocessed ? " **[UNPROCESSED]**" : "";
     // Simple format: sender name prominently, then message type, then content
     // Add invisible marker for provider detection (agora messages have short keys)
-    const conversationEntry = `**${senderShort}** (${envelope.type})${unprocessedBadge}\n\n${formattedPayload}`;
+    const conversationEntry = `**${senderDisplayName}** (${envelope.type})${unprocessedBadge}\n\n${formattedPayload}`;
 
     // Write to CONVERSATION.md (using SUBCONSCIOUS role as it handles message processing)
     try {
@@ -115,7 +135,7 @@ export class AgoraMessageHandler {
     // Inject message directly into orchestrator (bypass TinyBus)
     // Format message as agent prompt similar to old checkAgoraInbox format
     try {
-      const agentPrompt = `[AGORA MESSAGE from ${senderShort}]\nType: ${envelope.type}\nEnvelope ID: ${envelope.id}\nTimestamp: ${timestamp}\nPayload: ${payloadStr}\n\nRespond to this message if appropriate. Use AgoraService.send() to reply.`;
+      const agentPrompt = `[AGORA MESSAGE from ${senderDisplayName}]\nType: ${envelope.type}\nEnvelope ID: ${envelope.id}\nTimestamp: ${timestamp}\nPayload: ${payloadStr}\n\nRespond to this message if appropriate. Use AgoraService.send() to reply.`;
       this.messageInjector.injectMessage(agentPrompt);
       this.logger.debug(`[AGORA] Injected message into orchestrator: envelopeId=${envelope.id}`);
     } catch (err) {

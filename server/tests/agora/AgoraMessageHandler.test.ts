@@ -70,6 +70,7 @@ class MockAgoraService implements IAgoraService {
   async disconnectRelay() {}
 
   setRelayMessageHandler(_handler: (envelope: Envelope) => void) {}
+  setRelayMessageHandlerWithName(_handler: (envelope: Envelope, from: string, fromName?: string) => void) {}
 
   isRelayConnected() {
     return false;
