@@ -16,35 +16,39 @@ export function LoopControls({ state, rateLimitUntil, onStateChange }: LoopContr
     }
   };
 
+  // Determine primary button action and label based on state
+  const getPrimaryAction = () => {
+    if (state === "STOPPED" || rateLimitUntil) {
+      return { action: "start", label: rateLimitUntil ? "Try Again" : "Start" };
+    } else if (state === "RUNNING") {
+      return { action: "pause", label: "Pause" };
+    } else if (state === "PAUSED") {
+      return { action: "resume", label: "Resume" };
+    }
+    return { action: "start", label: "Start" };
+  };
+
+  const primary = getPrimaryAction();
+
   return (
     <div className="loop-controls">
       <button
-        onClick={() => handleAction("start")}
-        disabled={state !== "STOPPED" && !rateLimitUntil}
+        onClick={() => handleAction(primary.action)}
+        className="btn-primary"
       >
-        {rateLimitUntil ? "Try Again" : "Start"}
-      </button>
-      <button
-        onClick={() => handleAction("pause")}
-        disabled={state !== "RUNNING"}
-      >
-        Pause
-      </button>
-      <button
-        onClick={() => handleAction("resume")}
-        disabled={state !== "PAUSED"}
-      >
-        Resume
+        {primary.label}
       </button>
       <button
         onClick={() => handleAction("stop")}
         disabled={state === "STOPPED"}
+        className="btn-secondary"
       >
         Stop
       </button>
       <button
         className="btn-restart"
         onClick={() => handleAction("restart")}
+        title="Restart server process"
       >
         Restart
       </button>

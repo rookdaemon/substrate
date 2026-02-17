@@ -63,6 +63,29 @@ body {
   color: #f44336;
 }
 
+.ws-status.reconnecting {
+  background: #3d2a0a;
+  color: #ff9800;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+.ws-status.disconnected:not(.reconnecting) {
+  cursor: pointer;
+}
+
+.ws-status.disconnected:not(.reconnecting):hover {
+  background: #4d1a1a;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
 .app-layout {
   display: flex;
   flex-direction: column;
@@ -383,6 +406,14 @@ body {
 .loop-controls button:disabled {
   opacity: 0.3;
   cursor: not-allowed;
+}
+
+.loop-controls .btn-primary {
+  font-weight: 600;
+}
+
+.loop-controls .btn-secondary {
+  margin-left: 0.5rem;
 }
 
 .loop-controls .btn-restart {

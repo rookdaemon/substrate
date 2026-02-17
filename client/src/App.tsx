@@ -22,7 +22,7 @@ function getWsUrl() {
 }
 
 export function App() {
-  const { lastEvent, connected } = useWebSocket(getWsUrl());
+  const { lastEvent, connected, reconnecting, reconnect } = useWebSocket(getWsUrl());
   const { notifications, dismiss } = useNotifications(lastEvent);
   const { togglePanel, isExpanded } = usePanelState();
   const [loopState, setLoopState] = useState("STOPPED");
@@ -60,8 +60,13 @@ export function App() {
     <div className="app">
       <header className="app-header">
         <h1>Substrate</h1>
-        <span className={`ws-status ${connected ? "connected" : "disconnected"}`}>
-          {connected ? "Connected" : "Disconnected"}
+        <span 
+          className={`ws-status ${connected ? "connected" : "disconnected"} ${reconnecting ? "reconnecting" : ""}`}
+          onClick={!connected && !reconnecting ? reconnect : undefined}
+          style={!connected && !reconnecting ? { cursor: "pointer", textDecoration: "underline" } : undefined}
+          title={!connected && !reconnecting ? "Click to reconnect" : undefined}
+        >
+          {connected ? "Connected" : reconnecting ? "Reconnecting..." : "Disconnected"}
         </span>
       </header>
 

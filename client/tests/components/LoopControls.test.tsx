@@ -3,31 +3,37 @@ import { describe, it, expect, vi } from "vitest";
 import { LoopControls } from "../../src/components/LoopControls";
 
 describe("LoopControls", () => {
-  it("enables Start when STOPPED", () => {
+  it("shows Start button when STOPPED", () => {
     render(<LoopControls state="STOPPED" onStateChange={vi.fn()} />);
 
     expect(screen.getByText("Start")).not.toBeDisabled();
-    expect(screen.getByText("Pause")).toBeDisabled();
-    expect(screen.getByText("Resume")).toBeDisabled();
     expect(screen.getByText("Stop")).toBeDisabled();
+    expect(screen.queryByText("Pause")).not.toBeInTheDocument();
+    expect(screen.queryByText("Resume")).not.toBeInTheDocument();
   });
 
-  it("enables Pause and Stop when RUNNING", () => {
+  it("shows Pause button when RUNNING", () => {
     render(<LoopControls state="RUNNING" onStateChange={vi.fn()} />);
 
-    expect(screen.getByText("Start")).toBeDisabled();
     expect(screen.getByText("Pause")).not.toBeDisabled();
-    expect(screen.getByText("Resume")).toBeDisabled();
     expect(screen.getByText("Stop")).not.toBeDisabled();
+    expect(screen.queryByText("Start")).not.toBeInTheDocument();
+    expect(screen.queryByText("Resume")).not.toBeInTheDocument();
   });
 
-  it("enables Resume and Stop when PAUSED", () => {
+  it("shows Resume button when PAUSED", () => {
     render(<LoopControls state="PAUSED" onStateChange={vi.fn()} />);
 
-    expect(screen.getByText("Start")).toBeDisabled();
-    expect(screen.getByText("Pause")).toBeDisabled();
     expect(screen.getByText("Resume")).not.toBeDisabled();
     expect(screen.getByText("Stop")).not.toBeDisabled();
+    expect(screen.queryByText("Start")).not.toBeInTheDocument();
+    expect(screen.queryByText("Pause")).not.toBeInTheDocument();
+  });
+
+  it("shows Try Again when rate limited", () => {
+    render(<LoopControls state="RUNNING" rateLimitUntil="2024-01-01T00:00:00Z" onStateChange={vi.fn()} />);
+
+    expect(screen.getByText("Try Again")).not.toBeDisabled();
   });
 
   it("Restart button is always enabled regardless of state", () => {
