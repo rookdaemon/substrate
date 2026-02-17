@@ -344,6 +344,67 @@ describe("AgentSdkLauncher", () => {
     });
   });
 
+  describe("idle timeout", () => {
+    it("returns failure when stream yields no message for > idleTimeoutMs", async () => {
+      const clock = new FixedClock(new Date("2025-06-15T10:00:00Z"));
+      const queryFn: SdkQueryFn = async function* () {
+        // Yield system init, then nothing for a long time
+        yield { type: "system", subtype: "init", model: "sonnet", claude_code_version: "1.0.0" };
+        // Simulate delay by not yielding anything
+        await new Promise((resolve) => setTimeout(resolve, 150)); // Longer than 100ms idle timeout
+      };
+      const launcher = new AgentSdkLauncher(queryFn, clock);
+
+      const result = await launcher.launch(
+        { systemPrompt: "Test", message: "Hello" },
+        { idleTimeoutMs: 100 }
+      );
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("Session idle for 100ms");
+    });
+
+    it("resets idle timer when messages arrive", async () => {
+      const clock = new FixedClock(new Date("2025-06-15T10:00:00Z"));
+      let messageCount = 0;
+      const queryFn: SdkQueryFn = async function* () {
+        yield { type: "system", subtype: "init", model: "sonnet", claude_code_version: "1.0.0" };
+        // Yield messages at intervals less than idle timeout
+        for (let i = 0; i < 5; i++) {
+          await new Promise((resolve) => setTimeout(resolve, 50)); // 50ms between messages
+          messageCount++;
+          yield { type: "assistant", message: { content: [{ type: "text", text: `Message ${i}` }] } };
+        }
+        yield { type: "result", subtype: "success", result: "Done", total_cost_usd: 0.01, duration_ms: 250 };
+      };
+      const launcher = new AgentSdkLauncher(queryFn, clock);
+
+      const result = await launcher.launch(
+        { systemPrompt: "Test", message: "Hello" },
+        { idleTimeoutMs: 200 } // 200ms idle timeout, but messages come every 50ms
+      );
+
+      expect(result.success).toBe(true);
+      expect(messageCount).toBe(5); // All messages processed
+    });
+
+    it("does not apply idle timeout when idleTimeoutMs is not set", async () => {
+      const messages: SdkMessage[] = [
+        { type: "system", subtype: "init", model: "sonnet", claude_code_version: "1.0.0" },
+        { type: "result", subtype: "success", result: "Done", total_cost_usd: 0.01, duration_ms: 100 },
+      ];
+      const queryFn = createMockQueryFn(messages);
+      const launcher = new AgentSdkLauncher(queryFn, clock);
+
+      const result = await launcher.launch(
+        { systemPrompt: "Test", message: "Hello" }
+        // No idleTimeoutMs — should work normally
+      );
+
+      expect(result.success).toBe(true);
+    });
+  });
+
   describe("timeout behavior", () => {
     it("returns failure when session exceeds timeoutMs", async () => {
       const queryFn: SdkQueryFn = () => {

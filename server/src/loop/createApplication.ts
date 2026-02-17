@@ -10,6 +10,8 @@ import { SubstrateFileType } from "../substrate/types";
 import { PermissionChecker } from "../agents/permissions";
 import { PromptBuilder } from "../agents/prompts/PromptBuilder";
 import { AgentSdkLauncher, SdkQueryFn } from "../agents/claude/AgentSdkLauncher";
+import { ProcessTracker, ProcessTrackerConfig } from "../agents/claude/ProcessTracker";
+import { NodeProcessKiller } from "../agents/claude/NodeProcessKiller";
 import { TaskClassifier } from "../agents/TaskClassifier";
 import { ConversationCompactor } from "../conversation/ConversationCompactor";
 import { ConversationArchiver } from "../conversation/ConversationArchiver";
@@ -91,6 +93,8 @@ export interface ApplicationConfig {
     enabled: boolean;
     intervalMs?: number; // Default: 604800000 (7 days)
   };
+  conversationIdleTimeoutMs?: number; // Default: 60000 (60s)
+  abandonedProcessGraceMs?: number; // Default: 600000 (10 min)
 }
 
 export interface Application {
@@ -128,7 +132,15 @@ export async function createApplication(config: ApplicationConfig): Promise<Appl
     substratePath: config.substratePath,
     sourceCodePath: config.sourceCodePath,
   });
-  const launcher = new AgentSdkLauncher(sdkQuery, clock, config.model, logger);
+  
+  // Process tracker for zombie cleanup (created before launcher so we can pass it)
+  const processKiller = new NodeProcessKiller();
+  const processTrackerConfig: ProcessTrackerConfig = {
+    gracePeriodMs: config.abandonedProcessGraceMs ?? 600_000, // Default 10 min
+    reaperIntervalMs: 60_000, // Check every minute
+  };
+  const processTracker = new ProcessTracker(clock, processKiller, processTrackerConfig, logger);
+  const launcher = new AgentSdkLauncher(sdkQuery, clock, config.model, logger, processTracker);
 
   // Metrics collection components
   const taskMetrics = new TaskClassificationMetrics(fs, clock, config.substratePath);
@@ -255,7 +267,8 @@ export async function createApplication(config: ApplicationConfig): Promise<Appl
   const orchestrator = new LoopOrchestrator(
     ego, subconscious, superego, id,
     appendWriter, clock, timer, wsServer, loopConfig,
-    logger, idleHandler
+    logger, idleHandler,
+    config.conversationIdleTimeoutMs
   );
 
   // Set up TinyBus providers

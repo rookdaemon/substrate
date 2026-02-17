@@ -9,6 +9,7 @@ import {
 } from "./ISessionLauncher";
 import { MessageChannel } from "../../session/MessageChannel";
 import { SdkUserMessage } from "../../session/ISdkSession";
+import { ProcessTracker } from "./ProcessTracker";
 
 // Minimal SDK-compatible types so we don't leak transitive SDK dependencies
 export interface SdkContentBlock {
@@ -67,15 +68,19 @@ export class AgentSdkLauncher implements ISessionLauncher {
   private readonly model: string;
   private readonly logger: ILogger;
   private activeChannel: MessageChannel<SdkUserMessage> | null = null;
+  private processTracker: ProcessTracker | null = null;
+  private currentPid: number | null = null;
 
   constructor(
     private readonly queryFn: SdkQueryFn,
     private readonly clock: IClock,
     model?: string,
     logger?: ILogger,
+    processTracker?: ProcessTracker,
   ) {
     this.model = model ?? "sonnet";
     this.logger = logger ?? noopLogger;
+    this.processTracker = processTracker ?? null;
   }
 
   inject(message: string): void {
@@ -147,7 +152,9 @@ export class AgentSdkLauncher implements ISessionLauncher {
     let errorMessage: string | undefined;
 
     const timeoutMs = options?.timeoutMs ?? DEFAULT_SESSION_TIMEOUT_MS;
+    const idleTimeoutMs = options?.idleTimeoutMs;
     let timeoutHandle: NodeJS.Timeout | null = null;
+    let idleTimeoutHandle: NodeJS.Timeout | null = null;
 
     try {
       const stream = this.queryFn({ prompt: request.message, options: queryOptions });
@@ -165,10 +172,36 @@ export class AgentSdkLauncher implements ISessionLauncher {
         timeoutHandle = setTimeout(() => reject(new Error(`Session timed out after ${timeoutMs}ms`)), timeoutMs);
       });
 
-      // Race iteration against timeout
-      await Promise.race([
+      // Idle timeout promise (only if idleTimeoutMs is set)
+      let idleTimeoutReject: ((err: Error) => void) | null = null;
+      let idleTimeoutPromise: Promise<never> | null = null;
+      if (idleTimeoutMs) {
+        idleTimeoutPromise = new Promise<never>((_, reject) => {
+          idleTimeoutReject = reject;
+          idleTimeoutHandle = setTimeout(
+            () => reject(new Error(`Session idle for ${idleTimeoutMs}ms with no output`)),
+            idleTimeoutMs
+          );
+        });
+      }
+
+      const resetIdleTimer = () => {
+        if (idleTimeoutMs && idleTimeoutHandle !== null && idleTimeoutReject) {
+          clearTimeout(idleTimeoutHandle);
+          idleTimeoutHandle = setTimeout(
+            () => idleTimeoutReject!(new Error(`Session idle for ${idleTimeoutMs}ms with no output`)),
+            idleTimeoutMs
+          );
+        }
+      };
+
+      // Race iteration against timeout(s)
+      const racePromises: Promise<unknown>[] = [
         (async () => {
           for await (const msg of stream) {
+            // Reset idle timer on each message
+            resetIdleTimer();
+
             this.processMessage(msg, options?.onLogEntry, (text) => {
               accumulatedText += text;
             });
@@ -187,20 +220,49 @@ export class AgentSdkLauncher implements ISessionLauncher {
           }
         })(),
         timeoutPromise,
-      ]);
+      ];
+
+      if (idleTimeoutPromise) {
+        racePromises.push(idleTimeoutPromise);
+      }
+
+      await Promise.race(racePromises);
     } catch (err) {
       isError = true;
       errorMessage = err instanceof Error ? err.message : String(err);
       this.logger.debug(`sdk-launch: error — ${errorMessage}`);
+      
+      // If idle timeout or error, mark PID as abandoned for cleanup
+      if (this.currentPid !== null && this.processTracker) {
+        if (errorMessage?.includes("Session idle for")) {
+          this.logger.debug(`sdk-launch: idle timeout — marking PID ${this.currentPid} as abandoned`);
+          this.processTracker.abandonPid(this.currentPid);
+        } else {
+          // Other error — also abandon (process might still be running)
+          this.logger.debug(`sdk-launch: error — marking PID ${this.currentPid} as abandoned`);
+          this.processTracker.abandonPid(this.currentPid);
+        }
+        this.currentPid = null;
+      }
     } finally {
       if (timeoutHandle !== null) {
         clearTimeout(timeoutHandle);
         timeoutHandle = null;
       }
+      if (idleTimeoutHandle !== null) {
+        clearTimeout(idleTimeoutHandle);
+        idleTimeoutHandle = null;
+      }
       if (this.activeChannel && !this.activeChannel.isClosed()) {
         this.activeChannel.close();
       }
       this.activeChannel = null;
+      
+      // If session completed normally, mark PID as exited
+      if (this.currentPid !== null && this.processTracker && !isError) {
+        this.processTracker.onProcessExit(this.currentPid);
+        this.currentPid = null;
+      }
     }
 
     const endTime = this.clock.now();
@@ -238,6 +300,16 @@ export class AgentSdkLauncher implements ISessionLauncher {
           };
           this.logger.debug(`  [${entry.type}] ${entry.content}`);
           onLogEntry?.(entry);
+          
+          // Try to extract PID from system message if available
+          // Note: SDK may not expose PID, so this might be null
+          // If PID is available in the message, register it
+          const pid = this.extractPidFromMessage(msg);
+          if (pid !== null && this.processTracker) {
+            this.currentPid = pid;
+            this.processTracker.registerPid(pid);
+            this.logger.debug(`sdk-launch: registered PID ${pid} from system init`);
+          }
         }
         break;
       }
@@ -266,6 +338,20 @@ export class AgentSdkLauncher implements ISessionLauncher {
       default:
         break;
     }
+  }
+
+  /**
+   * Try to extract PID from SDK message
+   * Returns null if PID is not available (SDK may not expose it)
+   */
+  private extractPidFromMessage(msg: SdkMessage): number | null {
+    // Check if message has PID field (SDK might expose it)
+    const msgAny = msg as { pid?: number; session_id?: string; [key: string]: unknown };
+    if (typeof msgAny.pid === "number") {
+      return msgAny.pid;
+    }
+    // SDK might not expose PID — return null
+    return null;
   }
 
   private mapContentBlock(block: SdkContentBlock): ProcessLogEntry {

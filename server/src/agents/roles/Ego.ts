@@ -5,7 +5,7 @@ import { SubstrateFileWriter } from "../../substrate/io/FileWriter";
 import { ConversationManager } from "../../conversation/ConversationManager";
 import { PermissionChecker } from "../permissions";
 import { PromptBuilder } from "../prompts/PromptBuilder";
-import { ISessionLauncher, ProcessLogEntry } from "../claude/ISessionLauncher";
+import { ISessionLauncher, ProcessLogEntry, LaunchOptions } from "../claude/ISessionLauncher";
 import { PlanParser } from "../parsers/PlanParser";
 import { extractJson } from "../parsers/extractJson";
 import { AgentRole } from "../types";
@@ -74,7 +74,8 @@ export class Ego {
 
   async respondToMessage(
     message: string,
-    onLogEntry?: (entry: ProcessLogEntry) => void
+    onLogEntry?: (entry: ProcessLogEntry) => void,
+    options?: LaunchOptions
   ): Promise<string | null> {
     const contextRefs = this.promptBuilder.getContextReferences(AgentRole.EGO);
 
@@ -85,10 +86,16 @@ export class Ego {
       `Keep responses concise and conversational.`;
 
     const model = this.taskClassifier.getModel({ role: AgentRole.EGO, operation: "respondToMessage" });
+    const launchOptions: LaunchOptions = {
+      model,
+      onLogEntry,
+      cwd: this.workingDirectory,
+      ...options, // Allow overriding options (e.g. idleTimeoutMs)
+    };
     const result = await this.sessionLauncher.launch({
       systemPrompt,
       message: `${contextRefs}\n\nUser message: "${message}"`,
-    }, { model, onLogEntry, cwd: this.workingDirectory });
+    }, launchOptions);
 
     if (result.success && result.rawOutput) {
       const response = result.rawOutput.trim();

@@ -76,6 +76,16 @@ export class LoopOrchestrator {
   private tickNumber = 0;
   private pendingMessages: string[] = [];
 
+  // Tick state for deferred tick logic
+  private tickRequested = false;
+  private tickInProgress = false;
+
+  // Conversation session gate
+  private conversationSessionActive = false;
+  private conversationSessionPromise: Promise<void> | null = null;
+  private conversationMessageQueue: string[] = [];
+  private readonly conversationIdleTimeoutMs: number;
+
   constructor(
     private readonly ego: Ego,
     private readonly subconscious: Subconscious,
@@ -87,8 +97,11 @@ export class LoopOrchestrator {
     private readonly eventSink: ILoopEventSink,
     private readonly config: LoopConfig,
     private readonly logger: ILogger,
-    private readonly idleHandler?: IdleHandler
-  ) {}
+    private readonly idleHandler?: IdleHandler,
+    conversationIdleTimeoutMs?: number
+  ) {
+    this.conversationIdleTimeoutMs = conversationIdleTimeoutMs ?? 60_000; // Default 60s
+  }
 
   getState(): LoopState {
     return this.state;
@@ -208,6 +221,18 @@ export class LoopOrchestrator {
         action: "idle",
         success: true,
         summary: "Skipped — cycle already in progress",
+      };
+    }
+
+    // Gate cycle while conversation session is active
+    if (this.conversationSessionActive) {
+      this.logger.debug("runOneCycle() deferred — conversation session active");
+      this.tickRequested = true; // Use same flag for cycle mode
+      return {
+        cycleNumber: this.cycleNumber,
+        action: "idle",
+        success: true,
+        summary: "Deferred due to active conversation session",
       };
     }
 
@@ -399,6 +424,22 @@ export class LoopOrchestrator {
     while (this.state === LoopState.RUNNING) {
       const cycleResult = await this.runOneCycle();
 
+      // If cycle was deferred, wait for conversation session to close
+      if (cycleResult.summary === "Deferred due to active conversation session") {
+        this.logger.debug("runLoop: cycle deferred, waiting for conversation session to close");
+        if (this.conversationSessionPromise) {
+          await this.conversationSessionPromise;
+          // If tickRequested, run cycle immediately
+          if (this.tickRequested && !this.conversationSessionActive) {
+            this.tickRequested = false;
+            continue; // Run cycle immediately without delay
+          }
+        }
+        // If still deferred, wait a bit before checking again
+        await this.timer.delay(1000);
+        continue;
+      }
+
       if (this.metrics.consecutiveIdleCycles >= this.config.maxConsecutiveIdleCycles) {
         if (this.idleHandler) {
           this.logger.debug(`runLoop: idle threshold reached (${this.metrics.consecutiveIdleCycles}), invoking IdleHandler`);
@@ -462,11 +503,25 @@ export class LoopOrchestrator {
   }
 
   async runOneTick(): Promise<TickResult> {
+    // Gate tick while conversation session is active (check before dependencies)
+    if (this.conversationSessionActive) {
+      this.logger.debug(`tick ${this.tickNumber + 1}: deferred — conversation session active`);
+      this.tickRequested = true;
+      // Return a "deferred" result
+      return {
+        tickNumber: this.tickNumber,
+        success: true,
+        durationMs: 0,
+        error: "Deferred due to active conversation session",
+      };
+    }
+
     if (!this.tickPromptBuilder || !this.sdkSessionFactory) {
       throw new Error("Tick dependencies not configured");
     }
 
     this.tickNumber++;
+    this.tickInProgress = true;
     this.logger.debug(`tick ${this.tickNumber}: starting`);
     this.watchdog?.recordActivity();
 
@@ -520,13 +575,31 @@ export class LoopOrchestrator {
       data: { tickNumber: this.tickNumber, success: result.success, durationMs: result.durationMs },
     });
 
+    this.tickInProgress = false;
     return tickResult;
   }
 
   async runTickLoop(): Promise<void> {
     this.logger.debug("runTickLoop() entered");
     while (this.state === LoopState.RUNNING) {
-      await this.runOneTick();
+      const result = await this.runOneTick();
+
+      // If tick was deferred, don't delay — wait for conversation session to close
+      if (result.error === "Deferred due to active conversation session") {
+        this.logger.debug("runTickLoop: tick deferred, waiting for conversation session to close");
+        // Wait for conversation session promise if it exists
+        if (this.conversationSessionPromise) {
+          await this.conversationSessionPromise;
+          // If tickRequested, run it immediately
+          if (this.tickRequested && !this.conversationSessionActive) {
+            this.tickRequested = false;
+            continue; // Run tick immediately without delay
+          }
+        }
+        // If still deferred, wait a bit before checking again
+        await this.timer.delay(1000);
+        continue;
+      }
 
       if (this.state !== LoopState.RUNNING) {
         this.logger.debug(`runTickLoop: exiting — state is ${this.state}`);
@@ -539,36 +612,139 @@ export class LoopOrchestrator {
     this.logger.debug("runTickLoop() exited");
   }
 
+  /**
+   * Check if a tick or cycle is currently active
+   */
+  private isTickOrCycleActive(): boolean {
+    return this.tickInProgress || this.isProcessing;
+  }
+
+  /**
+   * Check if conversation session is active
+   */
+  private isConversationSessionActive(): boolean {
+    return this.conversationSessionActive;
+  }
+
+  /**
+   * Called when conversation session closes (idle timeout or completion)
+   */
+  private onConversationSessionClosed(): void {
+    this.logger.debug("onConversationSessionClosed: conversation session closed");
+    this.conversationSessionActive = false;
+    this.conversationSessionPromise = null;
+
+    // Process any queued messages if they exist
+    if (this.conversationMessageQueue.length > 0) {
+      this.logger.debug(`onConversationSessionClosed: ${this.conversationMessageQueue.length} queued messages, will process on next handleUserMessage`);
+    }
+
+    // If tick was requested, run it immediately
+    if (this.tickRequested && this.state === LoopState.RUNNING) {
+      this.logger.debug("onConversationSessionClosed: tickRequested is true, will run tick on next iteration");
+      this.tickRequested = false;
+      // Note: The tick will run on the next iteration of runTickLoop
+    }
+  }
+
   async handleUserMessage(message: string): Promise<void> {
     this.logger.debug(`handleUserMessage: "${message}"`);
     this.watchdog?.recordActivity();
 
-    try {
-      const response = await this.ego.respondToMessage(message, this.createLogCallback("EGO", "conversation"));
-
-      if (response) {
-        this.eventSink.emit({
-          type: "conversation_response",
-          timestamp: this.clock.now().toISOString(),
-          data: { response },
-        });
-      } else {
-        this.logger.debug("handleUserMessage: ego returned no response");
-        this.eventSink.emit({
-          type: "conversation_response",
-          timestamp: this.clock.now().toISOString(),
-          data: { error: "No response from session" },
-        });
-      }
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : String(err);
-      this.logger.debug(`handleUserMessage: error — ${errorMsg}`);
+    // Chat routing: if tick/cycle is active, inject into it
+    if (this.isTickOrCycleActive()) {
+      this.logger.debug("handleUserMessage: tick/cycle active, injecting message");
+      this.injectMessage(message);
+      // Emit immediate acknowledgment
       this.eventSink.emit({
         type: "conversation_response",
         timestamp: this.clock.now().toISOString(),
-        data: { error: errorMsg },
+        data: { response: "Message injected into active session" },
       });
+      return;
     }
+
+    // If conversation session is active, inject there or queue
+    if (this.conversationSessionActive) {
+      if (this.launcher) {
+        this.logger.debug("handleUserMessage: conversation session active, injecting message");
+        this.launcher.inject(message);
+        // Emit immediate acknowledgment
+        this.eventSink.emit({
+          type: "conversation_response",
+          timestamp: this.clock.now().toISOString(),
+          data: { response: "Message injected into conversation session" },
+        });
+        return;
+      } else {
+        // Launcher not available but session active — queue the message
+        this.logger.debug("handleUserMessage: conversation session active but launcher unavailable, queuing message");
+        this.conversationMessageQueue.push(message);
+        this.eventSink.emit({
+          type: "conversation_response",
+          timestamp: this.clock.now().toISOString(),
+          data: { response: "Message queued for conversation session" },
+        });
+        return;
+      }
+    }
+
+    // Neither tick/cycle nor conversation session active — start new conversation session (lazy init)
+    // Ensure only one conversation session at a time
+    if (this.conversationSessionPromise) {
+      this.logger.debug("handleUserMessage: conversation session already starting, queuing message");
+      this.conversationMessageQueue.push(message);
+      await this.conversationSessionPromise;
+      return;
+    }
+
+    this.logger.debug("handleUserMessage: starting new conversation session");
+    this.conversationSessionActive = true;
+    
+    const sessionPromise = (async () => {
+      try {
+        // Process the current message and any queued messages
+        const messagesToProcess = [message, ...this.conversationMessageQueue];
+        this.conversationMessageQueue = [];
+
+        for (const msg of messagesToProcess) {
+          const response = await this.ego.respondToMessage(
+            msg,
+            this.createLogCallback("EGO", "conversation"),
+            { idleTimeoutMs: this.conversationIdleTimeoutMs }
+          );
+
+          if (response) {
+            this.eventSink.emit({
+              type: "conversation_response",
+              timestamp: this.clock.now().toISOString(),
+              data: { response },
+            });
+          } else {
+            this.logger.debug("handleUserMessage: ego returned no response");
+            this.eventSink.emit({
+              type: "conversation_response",
+              timestamp: this.clock.now().toISOString(),
+              data: { error: "No response from session" },
+            });
+          }
+        }
+      } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        this.logger.debug(`handleUserMessage: error — ${errorMsg}`);
+        this.eventSink.emit({
+          type: "conversation_response",
+          timestamp: this.clock.now().toISOString(),
+          data: { error: errorMsg },
+        });
+      } finally {
+        // Session closed (completed or errored)
+        this.onConversationSessionClosed();
+      }
+    })();
+
+    this.conversationSessionPromise = sessionPromise;
+    await sessionPromise;
   }
 
   injectMessage(message: string): void {
