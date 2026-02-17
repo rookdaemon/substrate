@@ -619,6 +619,18 @@ export class LoopHttpServer {
 
         this.logger?.debug(`[AGORA] Envelope decoded successfully: envelopeId=${result.envelope!.id} type=${result.envelope!.type}`);
 
+        // SECURITY: Verify signature before processing
+        // Dynamic import required because @rookdaemon/agora is ESM-only
+        const agora = await import("@rookdaemon/agora");
+        const verifyResult = agora.verifyEnvelope(result.envelope!);
+        if (!verifyResult.valid) {
+          this.logger?.debug(`[AGORA] Webhook rejected: Invalid envelope signature: ${verifyResult.reason ?? "unknown"}`);
+          this.json(res, 400, { error: `Invalid envelope signature: ${verifyResult.reason ?? "unknown"}` });
+          return;
+        }
+
+        this.logger?.debug(`[AGORA] Envelope signature verified: envelopeId=${result.envelope!.id}`);
+
         // Process the message via AgoraMessageHandler
         await this.agoraMessageHandler!.processEnvelope(result.envelope!, "webhook");
 

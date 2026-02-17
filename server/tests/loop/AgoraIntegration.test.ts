@@ -1,6 +1,7 @@
 import { LoopHttpServer } from "../../src/loop/LoopHttpServer";
 import { LoopOrchestrator } from "../../src/loop/LoopOrchestrator";
-import { AgoraService, type AgoraServiceConfig } from "@rookdaemon/agora";
+import type { AgoraServiceConfig, Envelope } from "@rookdaemon/agora" with { "resolution-mode": "import" };
+import { AgoraService } from "@rookdaemon/agora";
 import { AgoraMessageHandler } from "../../src/agora/AgoraMessageHandler";
 import { ConversationManager } from "../../src/conversation/ConversationManager";
 import { InMemoryFileSystem } from "../../src/substrate/abstractions/InMemoryFileSystem";
@@ -20,7 +21,7 @@ import * as http from "http";
 describe("Agora Message Integration", () => {
   let httpServer: LoopHttpServer;
   let orchestrator: LoopOrchestrator;
-  let agoraService: AgoraService;
+  let agoraService: AgoraService; // AgoraService from dynamic import
   let agoraMessageHandler: AgoraMessageHandler;
   let fs: InMemoryFileSystem;
   let clock: FixedClock;
@@ -62,7 +63,10 @@ describe("Agora Message Integration", () => {
     await fs.writeFile(conversationPath, "# Conversation\n\n");
 
     appendWriter = new AppendOnlyWriter(fs, config, lock, clock);
-    agoraService = new AgoraService(testAgoraConfig);
+    
+    // Dynamically import and initialize AgoraService
+    const agora = await import("@rookdaemon/agora");
+    agoraService = new agora.AgoraService(testAgoraConfig);
 
     // Set up conversation manager
     const reader = new SubstrateFileReader(fs, config);
@@ -132,40 +136,46 @@ describe("Agora Message Integration", () => {
     // Simulate a webhook request
     const port = await httpServer.listen(0); // Random port
 
-    // Create a valid Agora envelope (simplified - in reality would be signed)
+    // Create a properly signed Agora envelope using testpeer's keys
+    const agora = await import("@rookdaemon/agora");
+    const testPeerPublicKey = "302a300506032b6570032100cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
+    const testPeerPrivateKey = "302e020100300506032b65700422044444444444444444444444444444444444444444444444444444444444444444444444";
+    
+    const validEnvelope = agora.createEnvelope(
+      "request",
+      testPeerPublicKey,
+      testPeerPrivateKey,
+      { question: "Hello, are you there?" },
+      1708000000000
+    );
+
     const envelopeMessage = "[AGORA_ENVELOPE]test-base64-message";
 
-    // Mock decodeInbound to return a valid envelope
+    // Mock decodeInbound to return the properly signed envelope
     const decodeInboundSpy = jest.spyOn(agoraService, "decodeInbound");
     decodeInboundSpy.mockResolvedValue({
       ok: true,
-      envelope: {
-        id: "msg-123",
-        type: "request",
-        sender: "302a300506032b6570032100abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd",
-        timestamp: 1708000000000,
-        payload: { question: "Hello, are you there?" },
-        signature: "test-signature",
-      },
+      envelope: validEnvelope,
     });
 
     // Send HTTP POST to webhook endpoint
     const result = await sendWebhookRequest(port, envelopeMessage);
 
     expect(result.statusCode).toBe(200);
-    expect(result.body).toMatchObject({ success: true, envelopeId: "msg-123" });
+    expect(result.body).toMatchObject({ success: true, envelopeId: validEnvelope.id });
 
     // Verify message was injected into agent loop
     expect(injectedMessages).toHaveLength(1);
-    expect(injectedMessages[0]).toContain("[AGORA MESSAGE from ...cdefabcd]");
+    expect(injectedMessages[0]).toContain("[AGORA MESSAGE from");
+    expect(injectedMessages[0]).toContain("...cccccccc]");
     expect(injectedMessages[0]).toContain("Type: request");
-    expect(injectedMessages[0]).toContain("Envelope ID: msg-123");
+    expect(injectedMessages[0]).toContain(`Envelope ID: ${validEnvelope.id}`);
     expect(injectedMessages[0]).toContain('"question":"Hello, are you there?"');
 
     // Verify message was written to CONVERSATION.md
     const conversationPath = config.getFilePath(SubstrateFileType.CONVERSATION);
     const conversationContent = await fs.readFile(conversationPath);
-    expect(conversationContent).toContain("...cdefabcd");
+    expect(conversationContent).toContain("...cccccccc");
     expect(conversationContent).toContain("request");
     expect(conversationContent).toContain("**question**:");
     expect(conversationContent).toContain("Hello, are you there?");
@@ -187,20 +197,24 @@ describe("Agora Message Integration", () => {
   it("should handle multiple messages in order", async () => {
     const port = await httpServer.listen(0);
 
-    // Mock decodeInbound to return different envelopes
+    const agora = await import("@rookdaemon/agora");
+    const testPeerPublicKey = "302a300506032b6570032100cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
+    const testPeerPrivateKey = "302e020100300506032b65700422044444444444444444444444444444444444444444444444444444444444444444444444";
+
+    // Mock decodeInbound to return different properly signed envelopes
     let callCount = 0;
     jest.spyOn(agoraService, "decodeInbound").mockImplementation(async () => {
       callCount++;
+      const envelope = agora.createEnvelope(
+        "announce",
+        testPeerPublicKey,
+        testPeerPrivateKey,
+        { data: `message ${callCount}` },
+        1708000000000 + callCount
+      );
       return {
         ok: true,
-        envelope: {
-          id: `msg-${callCount}`,
-          type: "announce",
-          sender: `sender-${callCount}`,
-          timestamp: 1708000000000 + callCount,
-          payload: { data: `message ${callCount}` },
-          signature: "test-signature",
-        },
+        envelope,
       };
     });
 
@@ -210,8 +224,8 @@ describe("Agora Message Integration", () => {
     await sendWebhookRequest(port, "[AGORA_ENVELOPE]msg2");
 
     expect(injectedMessages).toHaveLength(2);
-    expect(injectedMessages[0]).toContain("msg-1");
-    expect(injectedMessages[1]).toContain("msg-2");
+    expect(injectedMessages[0]).toContain("announce");
+    expect(injectedMessages[1]).toContain("announce");
 
     // Verify both in CONVERSATION.md
     const conversationPath = config.getFilePath(SubstrateFileType.CONVERSATION);
@@ -219,6 +233,100 @@ describe("Agora Message Integration", () => {
     expect(conversationContent).toContain("message 1");
     expect(conversationContent).toContain("message 2");
     expect(conversationContent).toContain("**data**:");
+
+    await httpServer.close();
+  });
+
+  it("should reject webhook with invalid signature", async () => {
+    const port = await httpServer.listen(0);
+
+    // Create an envelope with an invalid signature (tampered)
+    const invalidEnvelope: Envelope = {
+      id: "fake-id",
+      type: "request",
+      sender: "302a300506032b6570032100cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      timestamp: 1708000000000,
+      payload: { question: "Malicious payload" },
+      signature: "invalid-signature-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    };
+
+    // Mock decodeInbound to return envelope with invalid signature
+    jest.spyOn(agoraService, "decodeInbound").mockResolvedValue({
+      ok: true,
+      envelope: invalidEnvelope,
+    });
+
+    const result = await sendWebhookRequest(port, "[AGORA_ENVELOPE]tampered");
+
+    // Should reject with 400 Bad Request
+    expect(result.statusCode).toBe(400);
+    expect(result.body.error).toContain("Invalid envelope signature");
+
+    // Message should NOT be injected
+    expect(injectedMessages).toHaveLength(0);
+
+    await httpServer.close();
+  });
+
+  it("should reject webhook with missing signature", async () => {
+    const port = await httpServer.listen(0);
+
+    // Create an envelope with no signature
+    const envelopeNoSignature = {
+      id: "no-sig-id",
+      type: "request",
+      sender: "302a300506032b6570032100cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      timestamp: 1708000000000,
+      payload: { question: "Unsigned message" },
+      signature: "",
+    } as Envelope;
+
+    jest.spyOn(agoraService, "decodeInbound").mockResolvedValue({
+      ok: true,
+      envelope: envelopeNoSignature,
+    });
+
+    const result = await sendWebhookRequest(port, "[AGORA_ENVELOPE]unsigned");
+
+    expect(result.statusCode).toBe(400);
+    expect(result.body.error).toContain("Invalid envelope signature");
+
+    // Message should NOT be injected
+    expect(injectedMessages).toHaveLength(0);
+
+    await httpServer.close();
+  });
+
+  it("should accept webhook with valid signature from known sender", async () => {
+    const port = await httpServer.listen(0);
+
+    // Create a properly signed envelope from a known peer
+    const agora = await import("@rookdaemon/agora");
+    const testPeerPublicKey = "302a300506032b6570032100cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
+    const testPeerPrivateKey = "302e020100300506032b65700422044444444444444444444444444444444444444444444444444444444444444444444444";
+
+    const validEnvelope = agora.createEnvelope(
+      "announce",
+      testPeerPublicKey,
+      testPeerPrivateKey,
+      { announcement: "I am a legitimate peer" },
+      1708000000000
+    );
+
+    jest.spyOn(agoraService, "decodeInbound").mockResolvedValue({
+      ok: true,
+      envelope: validEnvelope,
+    });
+
+    const result = await sendWebhookRequest(port, "[AGORA_ENVELOPE]legitimate");
+
+    expect(result.statusCode).toBe(200);
+    expect(result.body).toMatchObject({ success: true, envelopeId: validEnvelope.id });
+
+    // Message should be processed
+    expect(injectedMessages).toHaveLength(1);
+    expect(injectedMessages[0]).toContain("announce");
+    expect(injectedMessages[0]).toContain("legitimate peer");
 
     await httpServer.close();
   });

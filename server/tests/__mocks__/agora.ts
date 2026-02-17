@@ -5,6 +5,54 @@ export type RelayMessageHandler = (e: Envelope) => void;
 export interface Logger { debug(message: string): void; }
 export interface RelayClientLike { connect(): Promise<void>; disconnect(): void; connected(): boolean; on(event: "message", h: (e: Envelope, from: string, fromName?: string) => void): void; on(event: "error", h: (err: Error) => void): void; }
 export type RelayClientFactory = (opts: object) => RelayClientLike;
+
+/**
+ * Create a properly signed envelope for testing.
+ * This is a mock implementation that generates valid signatures.
+ */
+export function createEnvelope<T>(
+  type: string,
+  sender: string,
+  _privateKey: string, // Unused in mock but kept for API compatibility
+  payload: T,
+  timestamp: number = Date.now(),
+  inReplyTo?: string
+): Envelope {
+  // Create a mock ID (real implementation would hash the canonical representation)
+  const id = `id-${Math.random().toString(36).substring(7)}`;
+  
+  // Generate a mock signature (in real implementation this would use Ed25519)
+  const signature = `sig-${sender.slice(-16)}-${timestamp}`;
+  
+  return {
+    id,
+    type,
+    sender,
+    timestamp,
+    payload,
+    signature,
+    ...(inReplyTo && { inReplyTo }),
+  };
+}
+
+/**
+ * Verify an envelope's signature.
+ * This is a mock implementation for testing.
+ */
+export function verifyEnvelope(envelope: Envelope): { valid: boolean; reason?: string } {
+  if (!envelope.signature || envelope.signature.length === 0) {
+    return { valid: false, reason: "missing signature" };
+  }
+  
+  // Check if signature matches the expected pattern from createEnvelope
+  if (envelope.signature.startsWith("sig-") || envelope.signature.startsWith("test-signature")) {
+    return { valid: true };
+  }
+  
+  // Invalid signature format
+  return { valid: false, reason: "invalid signature format" };
+}
+
 export class AgoraService {
   private config: AgoraServiceConfig;
   private relayClient: RelayClientLike | null = null;
