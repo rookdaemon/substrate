@@ -51,11 +51,22 @@ export class Id {
   async generateDrives(onLogEntry?: (entry: ProcessLogEntry) => void): Promise<GoalCandidate[]> {
     try {
       const systemPrompt = this.promptBuilder.buildSystemPrompt(AgentRole.ID);
-      const contextRefs = this.promptBuilder.getContextReferences(AgentRole.ID);
+      const eagerRefs = this.promptBuilder.getEagerReferences(AgentRole.ID);
+      const lazyRefs = this.promptBuilder.getLazyReferences(AgentRole.ID);
+      
+      let message = "";
+      if (eagerRefs) {
+        message += `=== CONTEXT (auto-loaded) ===\n${eagerRefs}\n\n`;
+      }
+      if (lazyRefs) {
+        message += `=== AVAILABLE FILES (read on demand) ===\nUse the Read tool to access any of these when needed:\n${lazyRefs}\n\n`;
+      }
+      message += `Analyze the current state. Are we idle? What goals should we pursue?`;
+      
       const model = this.taskClassifier.getModel({ role: AgentRole.ID, operation: "generateDrives" });
       const result = await this.sessionLauncher.launch({
         systemPrompt,
-        message: `${contextRefs}\n\nAnalyze the current state. Are we idle? What goals should we pursue?`,
+        message,
       }, { model, onLogEntry, cwd: this.workingDirectory });
 
       if (!result.success) return [];

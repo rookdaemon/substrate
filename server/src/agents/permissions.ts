@@ -1,8 +1,8 @@
-import { SubstrateFileType } from "../substrate/types";
+import { SubstrateFileType, SubstrateFileLoadStrategy } from "../substrate/types";
 import { AgentRole, FileAccessLevel, FilePermission } from "./types";
 
-function read(fileType: SubstrateFileType): FilePermission {
-  return { fileType, accessLevel: FileAccessLevel.READ };
+function read(fileType: SubstrateFileType, loadStrategy?: SubstrateFileLoadStrategy): FilePermission {
+  return { fileType, accessLevel: FileAccessLevel.READ, loadStrategy };
 }
 
 function write(fileType: SubstrateFileType): FilePermission {
@@ -15,29 +15,29 @@ function append(fileType: SubstrateFileType): FilePermission {
 
 export const ROLE_PERMISSIONS: Record<AgentRole, FilePermission[]> = {
   [AgentRole.EGO]: [
-    read(SubstrateFileType.PLAN),
-    read(SubstrateFileType.MEMORY),
-    read(SubstrateFileType.HABITS),
-    read(SubstrateFileType.SKILLS),
-    read(SubstrateFileType.VALUES),
-    read(SubstrateFileType.ID),
-    read(SubstrateFileType.CHARTER),
-    read(SubstrateFileType.PROGRESS),
-    read(SubstrateFileType.CONVERSATION),
-    read(SubstrateFileType.PEERS),
+    read(SubstrateFileType.PLAN, SubstrateFileLoadStrategy.EAGER),
+    read(SubstrateFileType.MEMORY, SubstrateFileLoadStrategy.LAZY),
+    read(SubstrateFileType.HABITS, SubstrateFileLoadStrategy.LAZY),
+    read(SubstrateFileType.SKILLS, SubstrateFileLoadStrategy.LAZY),
+    read(SubstrateFileType.VALUES, SubstrateFileLoadStrategy.EAGER),
+    read(SubstrateFileType.ID, SubstrateFileLoadStrategy.LAZY),
+    read(SubstrateFileType.CHARTER, SubstrateFileLoadStrategy.LAZY),
+    read(SubstrateFileType.PROGRESS, SubstrateFileLoadStrategy.LAZY),
+    read(SubstrateFileType.CONVERSATION, SubstrateFileLoadStrategy.EAGER),
+    read(SubstrateFileType.PEERS, SubstrateFileLoadStrategy.LAZY),
     // AGORA_INBOX deprecated - messages now go to CONVERSATION.md (removed read permission)
     write(SubstrateFileType.PLAN),
     append(SubstrateFileType.CONVERSATION),
   ],
 
   [AgentRole.SUBCONSCIOUS]: [
-    read(SubstrateFileType.PLAN),
-    read(SubstrateFileType.MEMORY),
-    read(SubstrateFileType.HABITS),
-    read(SubstrateFileType.SKILLS),
-    read(SubstrateFileType.VALUES),
-    read(SubstrateFileType.PROGRESS),
-    read(SubstrateFileType.PEERS),
+    read(SubstrateFileType.PLAN, SubstrateFileLoadStrategy.EAGER),
+    read(SubstrateFileType.MEMORY, SubstrateFileLoadStrategy.LAZY),
+    read(SubstrateFileType.HABITS, SubstrateFileLoadStrategy.LAZY),
+    read(SubstrateFileType.SKILLS, SubstrateFileLoadStrategy.LAZY),
+    read(SubstrateFileType.VALUES, SubstrateFileLoadStrategy.EAGER),
+    read(SubstrateFileType.PROGRESS, SubstrateFileLoadStrategy.LAZY),
+    read(SubstrateFileType.PEERS, SubstrateFileLoadStrategy.LAZY),
     // AGORA_INBOX deprecated - messages now go to CONVERSATION.md (removed read/write permissions)
     write(SubstrateFileType.PLAN),
     write(SubstrateFileType.SKILLS),
@@ -48,18 +48,19 @@ export const ROLE_PERMISSIONS: Record<AgentRole, FilePermission[]> = {
   ],
 
   [AgentRole.SUPEREGO]: [
-    ...Object.values(SubstrateFileType).map(read),
+    // Superego needs full context for auditing - all files EAGER
+    ...Object.values(SubstrateFileType).map((ft) => read(ft, SubstrateFileLoadStrategy.EAGER)),
     append(SubstrateFileType.PROGRESS),
     append(SubstrateFileType.ESCALATE_TO_STEFAN),
   ],
 
   [AgentRole.ID]: [
-    read(SubstrateFileType.ID),
-    read(SubstrateFileType.VALUES),
-    read(SubstrateFileType.PLAN),
-    read(SubstrateFileType.PROGRESS),
-    read(SubstrateFileType.SKILLS),
-    read(SubstrateFileType.MEMORY),
+    read(SubstrateFileType.ID, SubstrateFileLoadStrategy.EAGER),
+    read(SubstrateFileType.VALUES, SubstrateFileLoadStrategy.EAGER),
+    read(SubstrateFileType.PLAN, SubstrateFileLoadStrategy.EAGER),
+    read(SubstrateFileType.PROGRESS, SubstrateFileLoadStrategy.LAZY),
+    read(SubstrateFileType.SKILLS, SubstrateFileLoadStrategy.LAZY),
+    read(SubstrateFileType.MEMORY, SubstrateFileLoadStrategy.LAZY),
   ],
 };
 
@@ -97,6 +98,20 @@ export class PermissionChecker {
   getReadableFiles(role: AgentRole): SubstrateFileType[] {
     return ROLE_PERMISSIONS[role]
       .filter((p) => p.accessLevel === FileAccessLevel.READ)
+      .map((p) => p.fileType);
+  }
+
+  getEagerFiles(role: AgentRole): SubstrateFileType[] {
+    return ROLE_PERMISSIONS[role]
+      .filter((p) => p.accessLevel === FileAccessLevel.READ)
+      .filter((p) => p.loadStrategy === SubstrateFileLoadStrategy.EAGER)
+      .map((p) => p.fileType);
+  }
+
+  getLazyFiles(role: AgentRole): SubstrateFileType[] {
+    return ROLE_PERMISSIONS[role]
+      .filter((p) => p.accessLevel === FileAccessLevel.READ)
+      .filter((p) => p.loadStrategy === SubstrateFileLoadStrategy.LAZY)
       .map((p) => p.fileType);
   }
 

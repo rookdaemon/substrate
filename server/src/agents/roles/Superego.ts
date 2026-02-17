@@ -50,11 +50,22 @@ export class Superego {
   ): Promise<GovernanceReport> {
     try {
       const systemPrompt = this.promptBuilder.buildSystemPrompt(AgentRole.SUPEREGO);
-      const contextRefs = this.promptBuilder.getContextReferences(AgentRole.SUPEREGO);
+      const eagerRefs = this.promptBuilder.getEagerReferences(AgentRole.SUPEREGO);
+      const lazyRefs = this.promptBuilder.getLazyReferences(AgentRole.SUPEREGO);
+      
+      let message = "";
+      if (eagerRefs) {
+        message += `=== CONTEXT (auto-loaded) ===\n${eagerRefs}\n\n`;
+      }
+      if (lazyRefs) {
+        message += `=== AVAILABLE FILES (read on demand) ===\nUse the Read tool to access any of these when needed:\n${lazyRefs}\n\n`;
+      }
+      message += `Perform a full audit of all substrate files. Report findings.`;
+      
       const model = this.taskClassifier.getModel({ role: AgentRole.SUPEREGO, operation: "audit" });
       const result = await this.sessionLauncher.launch({
         systemPrompt,
-        message: `${contextRefs}\n\nPerform a full audit of all substrate files. Report findings.`,
+        message,
       }, { model, onLogEntry, cwd: this.workingDirectory });
 
       if (!result.success) {
@@ -92,11 +103,22 @@ export class Superego {
   async evaluateProposals(proposals: Proposal[], onLogEntry?: (entry: ProcessLogEntry) => void): Promise<ProposalEvaluation[]> {
     try {
       const systemPrompt = this.promptBuilder.buildSystemPrompt(AgentRole.SUPEREGO);
-      const contextRefs = this.promptBuilder.getContextReferences(AgentRole.SUPEREGO);
+      const eagerRefs = this.promptBuilder.getEagerReferences(AgentRole.SUPEREGO);
+      const lazyRefs = this.promptBuilder.getLazyReferences(AgentRole.SUPEREGO);
+      
+      let message = "";
+      if (eagerRefs) {
+        message += `=== CONTEXT (auto-loaded) ===\n${eagerRefs}\n\n`;
+      }
+      if (lazyRefs) {
+        message += `=== AVAILABLE FILES (read on demand) ===\nUse the Read tool to access any of these when needed:\n${lazyRefs}\n\n`;
+      }
+      message += `Evaluate these proposals:\n${JSON.stringify(proposals, null, 2)}`;
+      
       const model = this.taskClassifier.getModel({ role: AgentRole.SUPEREGO, operation: "evaluateProposals" });
       const result = await this.sessionLauncher.launch({
         systemPrompt,
-        message: `${contextRefs}\n\nEvaluate these proposals:\n${JSON.stringify(proposals, null, 2)}`,
+        message,
       }, { model, onLogEntry, cwd: this.workingDirectory });
 
       if (!result.success) {

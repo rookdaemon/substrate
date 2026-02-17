@@ -117,4 +117,53 @@ describe("PromptBuilder", () => {
       expect(atRefs).toHaveLength(totalFileTypes);
     });
   });
+
+  describe("getEagerReferences", () => {
+    it("returns @ references only for eager files", () => {
+      const refs = builder.getEagerReferences(AgentRole.SUBCONSCIOUS);
+      expect(refs).toContain("@/substrate/PLAN.md");
+      expect(refs).toContain("@/substrate/VALUES.md");
+      expect(refs).not.toContain("@/substrate/MEMORY.md");
+      expect(refs).not.toContain("@/substrate/PROGRESS.md");
+    });
+
+    it("ID has 3 eager files", () => {
+      const refs = builder.getEagerReferences(AgentRole.ID);
+      const atRefs = refs.split("\n").filter((l) => l.startsWith("@"));
+      expect(atRefs).toHaveLength(3); // ID, VALUES, PLAN
+      expect(refs).toContain("@/substrate/ID.md");
+      expect(refs).toContain("@/substrate/VALUES.md");
+      expect(refs).toContain("@/substrate/PLAN.md");
+    });
+
+    it("Superego eager loads all files", () => {
+      const refs = builder.getEagerReferences(AgentRole.SUPEREGO);
+      const atRefs = refs.split("\n").filter((l) => l.startsWith("@"));
+      const totalFileTypes = Object.values(SubstrateFileType).length;
+      expect(atRefs).toHaveLength(totalFileTypes);
+    });
+  });
+
+  describe("getLazyReferences", () => {
+    it("returns descriptions for lazy files", () => {
+      const refs = builder.getLazyReferences(AgentRole.SUBCONSCIOUS);
+      expect(refs).toContain("/substrate/MEMORY.md");
+      expect(refs).toContain("/substrate/HABITS.md");
+      expect(refs).toContain("/substrate/SKILLS.md");
+      expect(refs).toContain("/substrate/PROGRESS.md");
+      expect(refs).toContain("Long-term memory, identity context");
+      expect(refs).toContain("Historical execution log");
+    });
+
+    it("does not include eager files", () => {
+      const refs = builder.getLazyReferences(AgentRole.SUBCONSCIOUS);
+      expect(refs).not.toContain("PLAN.md —");
+      expect(refs).not.toContain("VALUES.md —");
+    });
+
+    it("returns empty string when no lazy files", () => {
+      const refs = builder.getLazyReferences(AgentRole.SUPEREGO);
+      expect(refs).toBe("");
+    });
+  });
 });

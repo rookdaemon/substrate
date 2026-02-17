@@ -238,4 +238,51 @@ describe("PermissionChecker", () => {
       expect(readable).toHaveLength(16);
     });
   });
+
+  describe("getEagerFiles", () => {
+    it("returns only eager files for Subconscious", () => {
+      const eager = checker.getEagerFiles(AgentRole.SUBCONSCIOUS);
+      expect(eager).toHaveLength(2);
+      expect(eager).toContain(SubstrateFileType.PLAN);
+      expect(eager).toContain(SubstrateFileType.VALUES);
+    });
+
+    it("returns 3 eager files for ID", () => {
+      const eager = checker.getEagerFiles(AgentRole.ID);
+      expect(eager).toHaveLength(3);
+      expect(eager).toContain(SubstrateFileType.ID);
+      expect(eager).toContain(SubstrateFileType.VALUES);
+      expect(eager).toContain(SubstrateFileType.PLAN);
+    });
+
+    it("returns all files as eager for Superego", () => {
+      const eager = checker.getEagerFiles(AgentRole.SUPEREGO);
+      expect(eager).toHaveLength(16);
+    });
+  });
+
+  describe("getLazyFiles", () => {
+    it("returns only lazy files for Subconscious", () => {
+      const lazy = checker.getLazyFiles(AgentRole.SUBCONSCIOUS);
+      expect(lazy).toHaveLength(5);
+      expect(lazy).toContain(SubstrateFileType.MEMORY);
+      expect(lazy).toContain(SubstrateFileType.HABITS);
+      expect(lazy).toContain(SubstrateFileType.SKILLS);
+      expect(lazy).toContain(SubstrateFileType.PROGRESS);
+      expect(lazy).toContain(SubstrateFileType.PEERS);
+    });
+
+    it("returns 3 lazy files for ID", () => {
+      const lazy = checker.getLazyFiles(AgentRole.ID);
+      expect(lazy).toHaveLength(3);
+      expect(lazy).toContain(SubstrateFileType.PROGRESS);
+      expect(lazy).toContain(SubstrateFileType.SKILLS);
+      expect(lazy).toContain(SubstrateFileType.MEMORY);
+    });
+
+    it("returns empty array for Superego (all eager)", () => {
+      const lazy = checker.getLazyFiles(AgentRole.SUPEREGO);
+      expect(lazy).toHaveLength(0);
+    });
+  });
 });

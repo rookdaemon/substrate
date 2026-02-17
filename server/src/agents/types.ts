@@ -1,4 +1,4 @@
-import { SubstrateFileType } from "../substrate/types";
+import { SubstrateFileType, SubstrateFileLoadStrategy } from "../substrate/types";
 
 export enum AgentRole {
   EGO = "EGO",
@@ -16,6 +16,7 @@ export enum FileAccessLevel {
 export interface FilePermission {
   fileType: SubstrateFileType;
   accessLevel: FileAccessLevel;
+  loadStrategy?: SubstrateFileLoadStrategy;
 }
 
 export interface AgentAction {

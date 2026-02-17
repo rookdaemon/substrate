@@ -38,11 +38,22 @@ export class Ego {
   async decide(onLogEntry?: (entry: ProcessLogEntry) => void): Promise<EgoDecision> {
     try {
       const systemPrompt = this.promptBuilder.buildSystemPrompt(AgentRole.EGO);
-      const contextRefs = this.promptBuilder.getContextReferences(AgentRole.EGO);
+      const eagerRefs = this.promptBuilder.getEagerReferences(AgentRole.EGO);
+      const lazyRefs = this.promptBuilder.getLazyReferences(AgentRole.EGO);
+      
+      let message = "";
+      if (eagerRefs) {
+        message += `=== CONTEXT (auto-loaded) ===\n${eagerRefs}\n\n`;
+      }
+      if (lazyRefs) {
+        message += `=== AVAILABLE FILES (read on demand) ===\nUse the Read tool to access any of these when needed:\n${lazyRefs}\n\n`;
+      }
+      message += `Analyze the current context. What should we do next?`;
+      
       const model = this.taskClassifier.getModel({ role: AgentRole.EGO, operation: "decide" });
       const result = await this.sessionLauncher.launch({
         systemPrompt,
-        message: `${contextRefs}\n\nAnalyze the current context. What should we do next?`,
+        message,
       }, { model, onLogEntry, cwd: this.workingDirectory });
 
       if (!result.success) {
@@ -77,7 +88,16 @@ export class Ego {
     onLogEntry?: (entry: ProcessLogEntry) => void,
     options?: LaunchOptions
   ): Promise<string | null> {
-    const contextRefs = this.promptBuilder.getContextReferences(AgentRole.EGO);
+    const eagerRefs = this.promptBuilder.getEagerReferences(AgentRole.EGO);
+    const lazyRefs = this.promptBuilder.getLazyReferences(AgentRole.EGO);
+
+    let contextSection = "";
+    if (eagerRefs) {
+      contextSection += `${eagerRefs}\n\n`;
+    }
+    if (lazyRefs) {
+      contextSection += `=== AVAILABLE FILES (read on demand) ===\nUse the Read tool to access any of these when needed:\n${lazyRefs}\n\n`;
+    }
 
     const systemPrompt =
       `You are the Ego — the executive decision-maker of a self-improving AI agent system.\n` +
@@ -98,7 +118,7 @@ export class Ego {
     };
     const result = await this.sessionLauncher.launch({
       systemPrompt,
-      message: `${contextRefs}\n\nUser message: "${message}"`,
+      message: `${contextSection}User message: "${message}"`,
     }, launchOptions);
 
     if (result.success && result.rawOutput) {

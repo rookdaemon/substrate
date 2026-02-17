@@ -22,6 +22,11 @@ export enum WriteMode {
   APPEND = "APPEND",
 }
 
+export enum SubstrateFileLoadStrategy {
+  EAGER = "EAGER",
+  LAZY = "LAZY",
+}
+
 export interface SubstrateFileSpec {
   fileName: string;
   writeMode: WriteMode;

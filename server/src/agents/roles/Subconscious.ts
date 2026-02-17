@@ -56,11 +56,22 @@ export class Subconscious {
   async execute(task: TaskAssignment, onLogEntry?: (entry: ProcessLogEntry) => void): Promise<TaskResult> {
     try {
       const systemPrompt = this.promptBuilder.buildSystemPrompt(AgentRole.SUBCONSCIOUS);
-      const contextRefs = this.promptBuilder.getContextReferences(AgentRole.SUBCONSCIOUS);
+      const eagerRefs = this.promptBuilder.getEagerReferences(AgentRole.SUBCONSCIOUS);
+      const lazyRefs = this.promptBuilder.getLazyReferences(AgentRole.SUBCONSCIOUS);
+      
+      let message = "";
+      if (eagerRefs) {
+        message += `=== CONTEXT (auto-loaded) ===\n${eagerRefs}\n\n`;
+      }
+      if (lazyRefs) {
+        message += `=== AVAILABLE FILES (read on demand) ===\nUse the Read tool to access any of these when needed:\n${lazyRefs}\n\n`;
+      }
+      message += `Execute this task:\nID: ${task.taskId}\nDescription: ${task.description}`;
+      
       const model = this.taskClassifier.getModel({ role: AgentRole.SUBCONSCIOUS, operation: "execute" });
       const result = await this.sessionLauncher.launch({
         systemPrompt,
-        message: `${contextRefs}\n\nExecute this task:\nID: ${task.taskId}\nDescription: ${task.description}`,
+        message,
       }, { model, onLogEntry, cwd: this.workingDirectory });
 
       if (!result.success) {
@@ -130,11 +141,18 @@ export class Subconscious {
   ): Promise<OutcomeEvaluation> {
     try {
       const systemPrompt = this.promptBuilder.buildSystemPrompt(AgentRole.SUBCONSCIOUS);
-      const contextRefs = this.promptBuilder.getContextReferences(AgentRole.SUBCONSCIOUS);
+      const eagerRefs = this.promptBuilder.getEagerReferences(AgentRole.SUBCONSCIOUS);
+      const lazyRefs = this.promptBuilder.getLazyReferences(AgentRole.SUBCONSCIOUS);
 
-      const evaluationPrompt = `${contextRefs}
+      let evaluationPrompt = "";
+      if (eagerRefs) {
+        evaluationPrompt += `=== CONTEXT (auto-loaded) ===\n${eagerRefs}\n\n`;
+      }
+      if (lazyRefs) {
+        evaluationPrompt += `=== AVAILABLE FILES (read on demand) ===\nUse the Read tool to access any of these when needed:\n${lazyRefs}\n\n`;
+      }
 
-You just completed this task:
+      evaluationPrompt += `You just completed this task:
 ID: ${task.taskId}
 Description: ${task.description}
 

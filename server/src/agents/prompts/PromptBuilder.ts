@@ -79,4 +79,41 @@ export class PromptBuilder {
       .map((ft) => `@${substratePath}/${SUBSTRATE_FILE_SPECS[ft].fileName}`)
       .join("\n");
   }
+
+  getEagerReferences(role: AgentRole): string {
+    const eagerFiles = this.checker.getEagerFiles(role);
+    const substratePath = this.paths?.substratePath ?? "/substrate";
+
+    return eagerFiles
+      .map((ft) => `@${substratePath}/${SUBSTRATE_FILE_SPECS[ft].fileName}`)
+      .join("\n");
+  }
+
+  getLazyReferences(role: AgentRole): string {
+    const lazyFiles = this.checker.getLazyFiles(role);
+    const substratePath = this.paths?.substratePath ?? "/substrate";
+
+    const fileDescriptions: Record<string, string> = {
+      [SubstrateFileType.MEMORY]: "Long-term memory, identity context",
+      [SubstrateFileType.HABITS]: "Behavioral triggers and practices",
+      [SubstrateFileType.SKILLS]: "Capability index and tool documentation",
+      [SubstrateFileType.PROGRESS]: "Historical execution log (rarely needed)",
+      [SubstrateFileType.PEERS]: "Agora peer registry (needed for Agora operations only)",
+      [SubstrateFileType.ID]: "Core drives and motivations",
+      [SubstrateFileType.CHARTER]: "Operational doctrine and guidelines",
+      [SubstrateFileType.CONVERSATION]: "Recent user and system messages",
+    };
+
+    if (lazyFiles.length === 0) {
+      return "";
+    }
+
+    const lines = lazyFiles.map((ft) => {
+      const fileName = SUBSTRATE_FILE_SPECS[ft].fileName;
+      const description = fileDescriptions[ft] || "Substrate file";
+      return `- ${substratePath}/${fileName} — ${description}`;
+    });
+
+    return lines.join("\n");
+  }
 }
