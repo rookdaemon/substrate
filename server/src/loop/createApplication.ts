@@ -135,7 +135,10 @@ export async function createApplication(config: ApplicationConfig): Promise<Appl
     reaperIntervalMs: 60_000, // Check every minute
   };
   const processTracker = new ProcessTracker(clock, processKiller, processTrackerConfig, logger);
-  const launcher = new AgentSdkLauncher(sdkQuery, clock, config.model, logger, processTracker);
+  const mcpServers = {
+    tinybus: { type: "http" as const, url: "http://localhost:3000/mcp" },
+  };
+  const launcher = new AgentSdkLauncher(sdkQuery, clock, config.model, logger, processTracker, mcpServers);
 
   // Metrics collection components
   const taskMetrics = new TaskClassificationMetrics(fs, clock, config.substratePath);

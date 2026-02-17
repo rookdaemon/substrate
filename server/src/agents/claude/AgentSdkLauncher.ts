@@ -70,6 +70,7 @@ export class AgentSdkLauncher implements ISessionLauncher {
   private activeChannel: MessageChannel<SdkUserMessage> | null = null;
   private processTracker: ProcessTracker | null = null;
   private currentPid: number | null = null;
+  private readonly mcpServers: Record<string, { type: string; url: string }>;
 
   constructor(
     private readonly queryFn: SdkQueryFn,
@@ -77,10 +78,12 @@ export class AgentSdkLauncher implements ISessionLauncher {
     model?: string,
     logger?: ILogger,
     processTracker?: ProcessTracker,
+    mcpServers?: Record<string, { type: string; url: string }>,
   ) {
     this.model = model ?? "sonnet";
     this.logger = logger ?? noopLogger;
     this.processTracker = processTracker ?? null;
+    this.mcpServers = mcpServers ?? {};
   }
 
   inject(message: string): void {
@@ -140,6 +143,7 @@ export class AgentSdkLauncher implements ISessionLauncher {
       permissionMode: "bypassPermissions",
       allowDangerouslySkipPermissions: true,
       persistSession: false,
+      ...(Object.keys(this.mcpServers).length > 0 ? { mcpServers: this.mcpServers } : {}),
     };
 
     if (options?.cwd) {
