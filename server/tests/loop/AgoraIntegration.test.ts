@@ -1,27 +1,32 @@
 import { LoopHttpServer } from "../../src/loop/LoopHttpServer";
 import { LoopOrchestrator } from "../../src/loop/LoopOrchestrator";
 import { AgoraService, type AgoraServiceConfig } from "@rookdaemon/agora";
-import { AgoraInboxManager } from "../../src/agora/AgoraInboxManager";
-import { AgoraProvider } from "../../src/tinybus/providers/AgoraProvider";
+import { AgoraMessageHandler } from "../../src/agora/AgoraMessageHandler";
+import { ConversationManager } from "../../src/conversation/ConversationManager";
 import { InMemoryFileSystem } from "../../src/substrate/abstractions/InMemoryFileSystem";
 import { FixedClock } from "../../src/substrate/abstractions/FixedClock";
 import { SubstrateConfig } from "../../src/substrate/config";
 import { FileLock } from "../../src/substrate/io/FileLock";
 import { AppendOnlyWriter } from "../../src/substrate/io/AppendOnlyWriter";
+import { SubstrateFileReader } from "../../src/substrate/io/FileReader";
 import { SubstrateFileType } from "../../src/substrate/types";
+import { PermissionChecker } from "../../src/agents/permissions";
+import { ConversationCompactor } from "../../src/conversation/ConversationCompactor";
+import { ISessionLauncher } from "../../src/agents/claude/ISessionLauncher";
+import { LoopState } from "../../src/loop/types";
 import * as http from "http";
 
 describe("Agora Message Integration", () => {
   let httpServer: LoopHttpServer;
   let orchestrator: LoopOrchestrator;
   let agoraService: AgoraService;
-  let agoraInboxManager: AgoraInboxManager;
-  let agoraProvider: AgoraProvider;
+  let agoraMessageHandler: AgoraMessageHandler;
   let fs: InMemoryFileSystem;
   let clock: FixedClock;
   let config: SubstrateConfig;
   let lock: FileLock;
   let appendWriter: AppendOnlyWriter;
+  let conversationManager: ConversationManager;
   let injectedMessages: string[];
 
   const testAgoraConfig: AgoraServiceConfig = {
@@ -51,27 +56,32 @@ describe("Agora Message Integration", () => {
     const progressPath = config.getFilePath(SubstrateFileType.PROGRESS);
     await fs.writeFile(progressPath, "# Progress\n\n");
 
-    // Initialize AGORA_INBOX.md
-    const inboxPath = config.getFilePath(SubstrateFileType.AGORA_INBOX);
-    await fs.writeFile(
-      inboxPath,
-      `# Agora Inbox
-
-Messages received from other agents via the Agora protocol. Messages move from Unread to Read after processing.
-
-## Unread
-
-No unread messages.
-
-## Read
-
-No read messages yet.
-`
-    );
+    // Initialize CONVERSATION.md
+    const conversationPath = config.getFilePath(SubstrateFileType.CONVERSATION);
+    await fs.writeFile(conversationPath, "# Conversation\n\n");
 
     appendWriter = new AppendOnlyWriter(fs, config, lock, clock);
     agoraService = new AgoraService(testAgoraConfig);
-    agoraInboxManager = new AgoraInboxManager(fs, config, lock, clock);
+
+    // Set up conversation manager
+    const reader = new SubstrateFileReader(fs, config);
+    const checker = new PermissionChecker();
+    const compactor = new ConversationCompactor(
+      {
+        launch: async () => ({ success: true, rawOutput: "" }),
+      } as ISessionLauncher,
+      undefined
+    );
+    conversationManager = new ConversationManager(
+      reader,
+      fs,
+      config,
+      lock,
+      appendWriter,
+      checker,
+      compactor,
+      clock
+    );
 
     // Track injected messages
     injectedMessages = [];
@@ -81,6 +91,7 @@ No read messages yet.
       injectMessage: (msg: string) => {
         injectedMessages.push(msg);
       },
+      getState: () => LoopState.RUNNING,
     } as unknown as LoopOrchestrator;
 
     // Create event sink mock
@@ -90,31 +101,20 @@ No read messages yet.
       },
     };
 
-    // Create AgoraProvider with message handler
-    agoraProvider = new AgoraProvider(
+    // Create AgoraMessageHandler
+    agoraMessageHandler = new AgoraMessageHandler(
       agoraService,
-      appendWriter,
-      agoraInboxManager,
+      conversationManager,
+      orchestrator,
       eventSink,
-      clock
+      clock,
+      () => orchestrator.getState()
     );
-    agoraProvider.onMessage(async (message) => {
-      // Convert TinyBus message to agent prompt
-      const payload = message.payload as {
-        senderShort: string;
-        envelopeId: string;
-        messageType: string;
-        payload: unknown;
-      };
-      const agentPrompt = `[AGORA MESSAGE from ${payload.senderShort}]\nType: ${payload.messageType}\nEnvelope ID: ${payload.envelopeId}\nPayload: ${JSON.stringify(payload.payload)}\n\nRespond to this message if appropriate. Use AgoraService.send() to reply.`;
-      orchestrator.injectMessage(agentPrompt);
-    });
-    await agoraProvider.start();
 
     httpServer = new LoopHttpServer(orchestrator);
     httpServer.setOrchestrator(orchestrator);
     httpServer.setEventSink(eventSink, clock);
-    httpServer.setAgoraProvider(agoraProvider, agoraService);
+    httpServer.setAgoraMessageHandler(agoraMessageHandler, agoraService);
   });
 
   it("should process webhook message and inject into agent loop", async () => {
@@ -151,17 +151,13 @@ No read messages yet.
     expect(injectedMessages[0]).toContain("Envelope ID: msg-123");
     expect(injectedMessages[0]).toContain('"question":"Hello, are you there?"');
 
-    // Verify message was persisted to AGORA_INBOX.md
-    const inboxPath = config.getFilePath(SubstrateFileType.AGORA_INBOX);
-    const inboxContent = await fs.readFile(inboxPath);
-    expect(inboxContent).toContain("id:msg-123");
-    expect(inboxContent).toContain("from:...cdefabcd");
-    expect(inboxContent).toContain("type:request");
-
-    // Verify message was logged to PROGRESS.md
-    const progressPath = config.getFilePath(SubstrateFileType.PROGRESS);
-    const progressContent = await fs.readFile(progressPath);
-    expect(progressContent).toContain("[AGORA] Received request from ...cdefabcd");
+    // Verify message was written to CONVERSATION.md
+    const conversationPath = config.getFilePath(SubstrateFileType.CONVERSATION);
+    const conversationContent = await fs.readFile(conversationPath);
+    expect(conversationContent).toContain("[AGORA]");
+    expect(conversationContent).toContain("Envelope: msg-123");
+    expect(conversationContent).toContain("Type: request");
+    expect(conversationContent).toContain("From: ...cdefabcd");
 
     await httpServer.close();
   });
@@ -206,11 +202,11 @@ No read messages yet.
     expect(injectedMessages[0]).toContain("msg-1");
     expect(injectedMessages[1]).toContain("msg-2");
 
-    // Verify both in inbox
-    const inboxPath = config.getFilePath(SubstrateFileType.AGORA_INBOX);
-    const inboxContent = await fs.readFile(inboxPath);
-    expect(inboxContent).toContain("id:msg-1");
-    expect(inboxContent).toContain("id:msg-2");
+    // Verify both in CONVERSATION.md
+    const conversationPath = config.getFilePath(SubstrateFileType.CONVERSATION);
+    const conversationContent = await fs.readFile(conversationPath);
+    expect(conversationContent).toContain("Envelope: msg-1");
+    expect(conversationContent).toContain("Envelope: msg-2");
 
     await httpServer.close();
   });

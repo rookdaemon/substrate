@@ -1,5 +1,6 @@
 import * as http from "node:http";
 import { LoopOrchestrator } from "./LoopOrchestrator";
+import { LoopState } from "./types";
 import { ILoopEventSink } from "./ILoopEventSink";
 import { IClock } from "../substrate/abstractions/IClock";
 import { SubstrateFileReader } from "../substrate/io/FileReader";
@@ -7,7 +8,6 @@ import { SubstrateFileType } from "../substrate/types";
 import { Ego } from "../agents/roles/Ego";
 import { GovernanceReportStore } from "../evaluation/GovernanceReportStore";
 import { HealthCheck } from "../evaluation/HealthCheck";
-import type { Envelope } from "@rookdaemon/agora" with { "resolution-mode": "import" };
 import { BackupScheduler } from "./BackupScheduler";
 import { ConversationManager } from "../conversation/ConversationManager";
 import { TaskClassificationMetrics } from "../evaluation/TaskClassificationMetrics";
@@ -18,19 +18,8 @@ import { createMessage } from "../tinybus/core/Message";
 import { createTinyBusMcpServer } from "../mcp/TinyBusMcpServer";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { AgoraProvider } from "../tinybus/providers/AgoraProvider";
-
-// Type for AgoraService from @rookdaemon/agora (ESM module, imported dynamically)
-interface AgoraServiceType {
-  sendMessage(options: { peerName: string; type: string; payload: unknown; inReplyTo?: string }): Promise<{ ok: boolean; status: number; error?: string }>;
-  decodeInbound(message: string): Promise<{ ok: boolean; envelope?: Envelope; reason?: string }>;
-  getPeers(): string[];
-  getPeerConfig(name: string): { publicKey: string; url: string; token: string } | undefined;
-  connectRelay(url: string): Promise<void>;
-  disconnectRelay(): Promise<void>;
-  setRelayMessageHandler(handler: (envelope: Envelope) => void): void;
-  isRelayConnected(): boolean;
-}
+import { AgoraMessageHandler } from "../agora/AgoraMessageHandler";
+import { IAgoraService } from "../agora/IAgoraService";
 
 export interface LoopHttpDependencies {
   reader: SubstrateFileReader;
@@ -47,8 +36,8 @@ export class LoopHttpServer {
   private eventSink: ILoopEventSink | null = null;
   private clock: IClock | null = null;
   private mode: "cycle" | "tick" = "cycle";
-  private agoraProvider: AgoraProvider | null = null;
-  private agoraService: AgoraServiceType | null = null;
+  private agoraMessageHandler: AgoraMessageHandler | null = null;
+  private agoraService: IAgoraService | null = null;
   private backupScheduler: BackupScheduler | null = null;
   private conversationManager: ConversationManager | null = null;
   private taskMetrics: TaskClassificationMetrics | null = null;
@@ -89,8 +78,8 @@ export class LoopHttpServer {
     this.mode = mode;
   }
 
-  setAgoraProvider(provider: AgoraProvider, service: AgoraServiceType): void {
-    this.agoraProvider = provider;
+  setAgoraMessageHandler(handler: AgoraMessageHandler, service: IAgoraService): void {
+    this.agoraMessageHandler = handler;
     this.agoraService = service;
   }
 
@@ -184,12 +173,17 @@ export class LoopHttpServer {
 
       case "POST /api/loop/start":
         this.tryStateTransition(res, () => {
+          const previousState = this.orchestrator.getState();
           this.orchestrator.start();
-          // Fire-and-forget: start the loop without awaiting
-          if (this.mode === "tick") {
-            this.orchestrator.runTickLoop().catch(() => {});
-          } else {
-            this.orchestrator.runLoop().catch(() => {});
+          // Only start loop if transitioning from STOPPED
+          // If rate-limited, the loop is already running, just cleared the rate limit
+          if (previousState === LoopState.STOPPED) {
+            // Fire-and-forget: start the loop without awaiting
+            if (this.mode === "tick") {
+              this.orchestrator.runTickLoop().catch(() => {});
+            } else {
+              this.orchestrator.runLoop().catch(() => {});
+            }
           }
         });
         break;
@@ -549,10 +543,10 @@ export class LoopHttpServer {
 
   /**
    * Handle Agora webhook requests.
-   * Decodes the envelope and delegates processing to AgoraProvider.
+   * Decodes the envelope and delegates processing to AgoraMessageHandler.
    */
   private handleAgoraWebhook(req: http.IncomingMessage, res: http.ServerResponse): void {
-    if (!this.agoraService || !this.agoraProvider) {
+    if (!this.agoraService || !this.agoraMessageHandler) {
       this.json(res, 503, { error: "Agora service not configured" });
       return;
     }
@@ -589,8 +583,8 @@ export class LoopHttpServer {
           return;
         }
 
-        // Process the message via AgoraProvider
-        await this.agoraProvider!.processEnvelope(result.envelope!, "webhook");
+        // Process the message via AgoraMessageHandler
+        await this.agoraMessageHandler!.processEnvelope(result.envelope!, "webhook");
 
         this.json(res, 200, { success: true, envelopeId: result.envelope!.id });
       } catch (err) {

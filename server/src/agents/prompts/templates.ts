@@ -51,6 +51,7 @@ Self-Maintenance:
 - Your progressEntry will be appended to PROGRESS.md — make it informative for future cycles
 - Your summary will be shown in the conversation log — make it a clear status update
 - If the current plan lacks specificity, include concrete next steps in your progressEntry
+- When processing messages from CONVERSATION.md, remove [UNPROCESSED] markers after handling them. Format: Replace "[AGORA] [timestamp] [UNPROCESSED] ..." with "[AGORA] [timestamp] ..." after processing
 
 Constraints:
 - You may WRITE to PLAN.md, SKILLS.md, and MEMORY.md, and APPEND to PROGRESS.md and CONVERSATION.md

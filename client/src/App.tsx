@@ -26,11 +26,15 @@ export function App() {
   const { notifications, dismiss } = useNotifications(lastEvent);
   const { togglePanel, isExpanded } = usePanelState();
   const [loopState, setLoopState] = useState("STOPPED");
+  const [rateLimitUntil, setRateLimitUntil] = useState<string | null>(null);
   const [conversationKey, setConversationKey] = useState(0);
 
   const refreshState = useCallback(() => {
-    apiGet<{ state: string }>("/api/loop/status")
-      .then((data) => setLoopState(data.state))
+    apiGet<{ state: string; rateLimitUntil?: string }>("/api/loop/status")
+      .then((data) => {
+        setLoopState(data.state);
+        setRateLimitUntil(data.rateLimitUntil || null);
+      })
       .catch(() => {});
   }, []);
 
@@ -41,6 +45,14 @@ export function App() {
   useEffect(() => {
     if (lastEvent?.type === "state_changed") {
       refreshState();
+    }
+    // Pick up rate limit from idle events
+    if (lastEvent?.type === "idle" && lastEvent.data.rateLimitUntil) {
+      setRateLimitUntil(lastEvent.data.rateLimitUntil as string);
+    }
+    // Clear rate limit when cycle completes successfully
+    if (lastEvent?.type === "cycle_complete" || lastEvent?.type === "tick_complete") {
+      setRateLimitUntil(null);
     }
   }, [lastEvent, refreshState]);
 
@@ -57,7 +69,7 @@ export function App() {
         <section className="panel panel-status">
           <div className="status-bar">
             <SystemStatus lastEvent={lastEvent} compact />
-            <LoopControls state={loopState} onStateChange={refreshState} />
+            <LoopControls state={loopState} rateLimitUntil={rateLimitUntil} onStateChange={refreshState} />
           </div>
           <details className="status-details">
             <summary>Metrics & Health</summary>

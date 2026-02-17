@@ -2,10 +2,11 @@ import { apiPost } from "../hooks/useApi";
 
 interface LoopControlsProps {
   state: string;
+  rateLimitUntil?: string | null;
   onStateChange: () => void;
 }
 
-export function LoopControls({ state, onStateChange }: LoopControlsProps) {
+export function LoopControls({ state, rateLimitUntil, onStateChange }: LoopControlsProps) {
   const handleAction = async (action: string) => {
     try {
       await apiPost(`/api/loop/${action}`);
@@ -19,9 +20,9 @@ export function LoopControls({ state, onStateChange }: LoopControlsProps) {
     <div className="loop-controls">
       <button
         onClick={() => handleAction("start")}
-        disabled={state !== "STOPPED"}
+        disabled={state !== "STOPPED" && !rateLimitUntil}
       >
-        Start
+        {rateLimitUntil ? "Try Again" : "Start"}
       </button>
       <button
         onClick={() => handleAction("pause")}

@@ -1,5 +1,6 @@
 import { IConversationCompactor } from "./IConversationCompactor";
 import { IConversationArchiver } from "./IConversationArchiver";
+import { IConversationManager } from "./IConversationManager";
 import { IClock } from "../substrate/abstractions/IClock";
 import { IFileSystem } from "../substrate/abstractions/IFileSystem";
 import { SubstrateFileReader } from "../substrate/io/FileReader";
@@ -17,7 +18,7 @@ export interface ConversationArchiveConfig {
   timeThresholdMs?: number; // Optional: archive after N ms (e.g., weekly)
 }
 
-export class ConversationManager {
+export class ConversationManager implements IConversationManager {
   private lastCompactionTime: Date | null = null;
   private lastArchiveTime: Date | null = null;
   private readonly compactionIntervalMs = 60 * 60 * 1000; // 1 hour

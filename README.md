@@ -230,7 +230,7 @@ The substrate is a directory of 14 markdown files that serve as the system's sha
 | `SUPEREGO.md` | OVERWRITE | Evaluation criteria, references `superego/*.md` |
 | `CLAUDE.md` | OVERWRITE | Claude Code capabilities and self-improvement doctrine |
 | `PEERS.md` | OVERWRITE | Agora peer registry for agent-to-agent communication (optional) |
-| `AGORA_INBOX.md` | OVERWRITE | Incoming Agora messages queue with Unread/Read sections (optional) |
+| `AGORA_INBOX.md` | OVERWRITE | ~~Deprecated: Agora messages now go to CONVERSATION.md~~ (optional, legacy) |
 
 ### Two-Tier Knowledge System
 
@@ -257,22 +257,19 @@ Substrate integrates with the [Agora protocol](https://github.com/rookdaemon/ago
 **Message Flow:**
 1. **Webhook Delivery** — Incoming messages arrive at `POST /hooks/agent` (authenticated with Bearer token)
 2. **Decoding & Verification** — Messages are decoded and signature-verified via `AgoraService.decodeInbound()`
-3. **Persistence** — Messages are logged to `PROGRESS.md` and persisted to `AGORA_INBOX.md` with timestamp, sender, type, and payload
-4. **Injection** — Messages are injected into the agent loop via `injectMessage()` for immediate processing
-5. **Cycle Checking** — At the start of each execution cycle, the orchestrator checks `AGORA_INBOX.md` for any unread messages (ensures messages received while stopped are processed on restart)
-6. **Read Tracking** — Processed messages are moved from the "Unread" to "Read" section with optional reply timestamp
+3. **Persistence** — Messages are written to `CONVERSATION.md` with format: `[AGORA] [timestamp] [UNPROCESSED?] Type: {type} From: {senderShort} Envelope: {envelopeId} Payload: {payload}`
+4. **Unprocessed Markers** — Messages received while the process is STOPPED or PAUSED are marked with `[UNPROCESSED]` prefix
+5. **Injection** — Messages are injected directly into the orchestrator via `injectMessage()` for immediate processing (bypasses TinyBus)
+6. **Auto-Inclusion** — `CONVERSATION.md` is automatically included in all session prompts, so the agent sees unprocessed messages naturally
+7. **Marker Cleanup** — The agent removes `[UNPROCESSED]` markers after processing messages (via HABITS guidance)
 
-**AGORA_INBOX.md Format:**
+**CONVERSATION.md Format:**
 ```markdown
-## Unread
-- [2026-02-15T12:00:00Z] id:msg-123 from:stefan... type:request payload:{"question":"Are you there?"}
-
-## Read
-- [2026-02-15T11:00:00Z] id:msg-456 from:bishop... type:announce payload:{...} → replied 2026-02-15T11:01:00Z
+[SUBCONSCIOUS] [AGORA] [2026-02-15T12:00:00Z] [UNPROCESSED] Type: request From: ...cdefabcd Envelope: msg-123 Payload: {"question":"Are you there?"}
 ```
 
 **Responding to Messages:**
-The agent can reply using the `AgoraService.send()` method, which signs and sends envelopes to configured peers. Replies are tracked in the inbox when the agent marks a message as read.
+The agent can reply using the `AgoraService.send()` method via TinyBus `agora.send` messages, which are handled by `AgoraOutboundProvider`.
 
 **Configuration:**
 Agora configuration lives in `~/.config/agora/config.json` with identity keys and peer registry. If not configured, Agora features are disabled gracefully.
@@ -298,13 +295,13 @@ Each agent role has specific file access permissions enforced by `PermissionChec
 | SUPEREGO | — | — | — | — | ✅ | — | — |
 | CLAUDE | — | — | — | — | ✅ | — | — |
 | PEERS | ✅ | — | ✅ | ✅ overwrite | ✅ | — | — |
-| AGORA_INBOX | ✅ | — | ✅ | ✅ overwrite | ✅ | — | — |
+| AGORA_INBOX | ~~✅~~ | — | ~~✅~~ | ~~✅ overwrite~~ | ✅ | — | — | *Deprecated: messages now go to CONVERSATION.md* |
 
 **Key constraints:**
 - **Superego** has read access to all 14 files but can only append to PROGRESS
 - **Id** has read-only access to 6 files (ID, VALUES, PLAN, PROGRESS, SKILLS, MEMORY) — no writes
-- **Ego** can overwrite PLAN and append to CONVERSATION, read PEERS and AGORA_INBOX
-- **Subconscious** can overwrite PLAN, SKILLS, MEMORY, PEERS, and AGORA_INBOX; append to PROGRESS and CONVERSATION
+- **Ego** can overwrite PLAN and append to CONVERSATION, read PEERS
+- **Subconscious** can overwrite PLAN, SKILLS, MEMORY, and PEERS; append to PROGRESS and CONVERSATION (Agora messages are written to CONVERSATION.md)
 
 ---
 

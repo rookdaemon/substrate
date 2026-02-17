@@ -27,12 +27,10 @@ import { HealthCheckScheduler } from "./HealthCheckScheduler";
 import { EmailScheduler } from "./EmailScheduler";
 import { MetricsScheduler } from "./MetricsScheduler";
 import { LoopWatchdog } from "./LoopWatchdog";
-import { AgoraInboxManager } from "../agora/AgoraInboxManager";
-import { SubstrateFileType } from "../substrate/types";
 import { SuperegoFindingTracker } from "../agents/roles/SuperegoFindingTracker";
-import { shortKey } from "../agora/utils";
+import { IMessageInjector } from "./IMessageInjector";
 
-export class LoopOrchestrator {
+export class LoopOrchestrator implements IMessageInjector {
   private state: LoopState = LoopState.STOPPED;
   private metrics: LoopMetrics = createInitialMetrics();
   private cycleNumber = 0;
@@ -59,9 +57,6 @@ export class LoopOrchestrator {
 
   // Watchdog — detects stalls and injects gentle reminders
   private watchdog: LoopWatchdog | null = null;
-
-  // Agora inbox manager for checking unread messages
-  private agoraInboxManager: AgoraInboxManager | null = null;
 
   // Rate limit state manager for hibernation context
   private rateLimitStateManager: RateLimitStateManager | null = null;
@@ -115,12 +110,23 @@ export class LoopOrchestrator {
     return this.rateLimitUntil;
   }
 
+  isEffectivelyPaused(): boolean {
+    return this.state === LoopState.PAUSED || this.rateLimitUntil !== null;
+  }
+
   start(): void {
-    if (this.state !== LoopState.STOPPED) {
-      throw new Error(`Cannot start: loop is in ${this.state} state`);
+    if (this.state === LoopState.STOPPED) {
+      // Normal start from stopped
+      this.logger.debug("start() called");
+      this.transition(LoopState.RUNNING);
+    } else if (this.state === LoopState.RUNNING && this.rateLimitUntil !== null) {
+      // Start during rate limit = try again (clear rate limit)
+      this.logger.debug("start() called during rate limit — clearing rate limit");
+      this.rateLimitUntil = null;
+      this.timer.wake(); // Wake up the loop immediately
+    } else {
+      throw new Error(`Cannot start: loop is in ${this.state} state${this.rateLimitUntil ? ' (rate limited)' : ''}`);
     }
-    this.logger.debug("start() called");
-    this.transition(LoopState.RUNNING);
     this.watchdog?.recordActivity();
   }
 
@@ -144,10 +150,12 @@ export class LoopOrchestrator {
     if (this.state === LoopState.STOPPED) {
       return;
     }
-    this.logger.debug("stop() called — injecting persist message");
-    this.injectMessage("Persist all changes and exit. Write any pending updates to PLAN.md, PROGRESS.md, and MEMORY.md, then finish.");
+    this.logger.debug("stop() called — exiting gracefully");
     this.watchdog?.stop();
     this.transition(LoopState.STOPPED);
+    if (this.shutdownFn) {
+      this.shutdownFn(0); // Exit with code 0 (graceful shutdown)
+    }
   }
 
   setLauncher(launcher: { inject(message: string): void }): void {
@@ -178,16 +186,14 @@ export class LoopOrchestrator {
     this.watchdog = watchdog;
   }
 
-  setAgoraInboxManager(manager: AgoraInboxManager): void {
-    this.agoraInboxManager = manager;
-  }
+  // Note: setAgoraInboxManager() removed - messages now go directly to CONVERSATION.md
 
   setRateLimitStateManager(manager: RateLimitStateManager): void {
     this.rateLimitStateManager = manager;
   }
 
   requestRestart(): void {
-    this.logger.debug("requestRestart() called — shutting down for rebuild");
+    this.logger.debug("requestRestart() called — exiting for supervisor restart");
     this.eventSink.emit({
       type: "restart_requested",
       timestamp: this.clock.now().toISOString(),
@@ -195,7 +201,7 @@ export class LoopOrchestrator {
     });
     this.transition(LoopState.STOPPED);
     if (this.shutdownFn) {
-      this.shutdownFn(75);
+      this.shutdownFn(75); // Exit with code 75 (restart signal)
     }
   }
 
@@ -250,9 +256,6 @@ export class LoopOrchestrator {
 
     this.logger.debug(`cycle ${this.cycleNumber}: starting`);
     this.watchdog?.recordActivity();
-
-    // Check for unread Agora messages at the start of each cycle
-    await this.checkAgoraInbox();
 
     const dispatch = await this.ego.dispatchNext();
 
@@ -379,45 +382,8 @@ export class LoopOrchestrator {
     return result;
   }
 
-  /**
-   * Check AGORA_INBOX for unread messages and inject them into the agent loop.
-   * Messages are marked as read after being injected.
-   */
-  private async checkAgoraInbox(): Promise<void> {
-    if (!this.agoraInboxManager) {
-      return; // Agora not configured
-    }
-
-    try {
-      const unreadMessages = await this.agoraInboxManager.getUnreadMessages();
-      
-      if (unreadMessages.length === 0) {
-        return;
-      }
-
-      this.logger.debug(`checkAgoraInbox: found ${unreadMessages.length} unread message(s)`);
-
-      // Process each unread message
-      for (const msg of unreadMessages) {
-        const senderShort = shortKey(msg.sender);
-        const agentPrompt = `[AGORA MESSAGE from ${senderShort}]\nType: ${msg.type}\nEnvelope ID: ${msg.envelopeId}\nTimestamp: ${msg.timestamp}\nPayload: ${JSON.stringify(msg.payload)}\n\nRespond to this message if appropriate. Use AgoraService.send() to reply.`;
-        
-        // Inject into agent loop (adds to pendingMessages or forwards to active session)
-        this.injectMessage(agentPrompt);
-        
-        // Mark as read (will be tracked when agent responds)
-        await this.agoraInboxManager.markAsRead(msg.envelopeId);
-      }
-
-      // Log to PROGRESS
-      await this._appendWriter.append(
-        SubstrateFileType.PROGRESS,
-        `[AGORA] Processed ${unreadMessages.length} unread message(s) from inbox`
-      );
-    } catch (err) {
-      this.logger.debug(`checkAgoraInbox: error — ${err instanceof Error ? err.message : String(err)}`);
-    }
-  }
+  // Note: checkAgoraInbox() removed - messages now go directly to CONVERSATION.md
+  // and are automatically included in all sessions, so no startup scanning needed
 
   async runLoop(): Promise<void> {
     this.logger.debug("runLoop() entered");
