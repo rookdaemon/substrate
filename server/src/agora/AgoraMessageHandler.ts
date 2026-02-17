@@ -51,7 +51,9 @@ export class AgoraMessageHandler {
     // Bound size: if over limit, remove oldest entry
     if (this.processedEnvelopeIds.size > this.MAX_DEDUP_SIZE) {
       const oldest = this.processedEnvelopeIds.values().next().value;
-      this.processedEnvelopeIds.delete(oldest);
+      if (oldest !== undefined) {
+        this.processedEnvelopeIds.delete(oldest);
+      }
     }
     
     return false;
