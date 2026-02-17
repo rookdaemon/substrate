@@ -17,8 +17,12 @@ import type { ILogger } from "../logging";
  * - Add [UNPROCESSED] markers when process is stopped/paused
  * - Inject messages directly into orchestrator (bypasses TinyBus)
  * - Emit WebSocket events for frontend visibility
+ * - Deduplicate envelopes to prevent replay attacks
  */
 export class AgoraMessageHandler {
+  private processedEnvelopeIds: Set<string> = new Set();
+  private readonly MAX_DEDUP_SIZE = 1000;
+
   constructor(
     private readonly agoraService: IAgoraService | null,
     private readonly conversationManager: IConversationManager,
@@ -29,6 +33,31 @@ export class AgoraMessageHandler {
     private readonly isRateLimited: () => boolean = () => false,
     private readonly logger: ILogger
   ) {}
+
+  /**
+   * Check if an envelope ID has already been processed.
+   * Returns true if duplicate, false if new.
+   * Maintains a bounded set with oldest-first eviction when MAX_DEDUP_SIZE is exceeded.
+   */
+  private isDuplicate(envelopeId: string): boolean {
+    if (this.processedEnvelopeIds.has(envelopeId)) {
+      this.logger.debug(`[AGORA] Duplicate envelope ${envelopeId} — skipping`);
+      return true;
+    }
+    
+    // Add to set
+    this.processedEnvelopeIds.add(envelopeId);
+    
+    // Bound size: if over limit, remove oldest entry
+    if (this.processedEnvelopeIds.size > this.MAX_DEDUP_SIZE) {
+      const oldest = this.processedEnvelopeIds.values().next().value;
+      if (oldest !== undefined) {
+        this.processedEnvelopeIds.delete(oldest);
+      }
+    }
+    
+    return false;
+  }
 
   /**
    * Resolve sender display name: try relay name hint first, then peer registry, fallback to short key
@@ -60,6 +89,11 @@ export class AgoraMessageHandler {
   }
 
   async processEnvelope(envelope: Envelope, source: "webhook" | "relay" = "webhook", relayNameHint?: string): Promise<void> {
+    // Check for duplicate envelope ID early - return without processing if duplicate
+    if (this.isDuplicate(envelope.id)) {
+      return;
+    }
+
     const timestamp = this.clock.now().toISOString();
     const senderDisplayName = this.resolveSenderName(envelope.sender, relayNameHint);
     const payloadStr = JSON.stringify(envelope.payload);
