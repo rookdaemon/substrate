@@ -1,3 +1,4 @@
+import * as path from "node:path";
 import { IFileSystem } from "./substrate/abstractions/IFileSystem";
 import { NodeFileSystem } from "./substrate/abstractions/NodeFileSystem";
 import { SubstrateConfig } from "./substrate/config";
@@ -50,6 +51,23 @@ export interface StartServerOptions {
 
 export async function startServer(config: AppConfig, options?: StartServerOptions): Promise<StartedServer> {
   const fs = new NodeFileSystem();
+
+  // Validate that .mcp.json exists in the working directory (where Claude sessions will run)
+  // This is critical for MCP tools to be available to the agent
+  const mcpConfigPath = path.join(config.workingDirectory, ".mcp.json");
+  const mcpConfigExists = await fs.exists(mcpConfigPath);
+  
+  if (!mcpConfigExists) {
+    console.warn(
+      `WARNING: .mcp.json not found in working directory: ${config.workingDirectory}\n` +
+      `  Claude Code sessions will not have access to MCP tools (e.g., TinyBus send_message).\n` +
+      `  Process cwd: ${process.cwd()}\n` +
+      `  Expected location: ${mcpConfigPath}\n` +
+      `  Create .mcp.json in the working directory to enable MCP tools.`
+    );
+  } else {
+    console.log(`MCP config found: ${mcpConfigPath}`);
+  }
 
   await initializeSubstrate(fs, config.substratePath);
 

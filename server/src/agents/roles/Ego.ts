@@ -83,7 +83,11 @@ export class Ego {
       `You are the Ego — the executive decision-maker of a self-improving AI agent system.\n` +
       `A user has sent you a message. Read CONVERSATION.md for context and respond naturally.\n` +
       `Respond with ONLY your plain text reply — no JSON, no markdown code blocks, no wrapper.\n` +
-      `Keep responses concise and conversational.`;
+      `Keep responses concise and conversational.\n\n` +
+      `If the message is an Agora message (from a peer like "...9f38f6d0"), you can respond using the TinyBus MCP tool ${"`"}mcp__tinybus__send_message${"`"}:\n` +
+      `- type: "agora.send"\n` +
+      `- payload: { peerName: "...9f38f6d0", type: "publish", payload: { text: "your response" }, inReplyTo: "envelope-id" }\n` +
+      `Use the sender's short key as peerName and include inReplyTo with the envelope ID when replying.`;
 
     const model = this.taskClassifier.getModel({ role: AgentRole.EGO, operation: "respondToMessage" });
     const launchOptions: LaunchOptions = {

@@ -50,9 +50,8 @@ function parseEntries(raw: string): ConversationEntry[] {
         const oldTinyBusMatch = message.match(/from [`']?([^`'\s]+)/);
         if (oldTinyBusMatch) senderName = oldTinyBusMatch[1];
       } else {
-        // New format: **senderName** (type)
-        // Check if message starts with ** (bold markdown) - likely agora or tinybus
-        const boldMatch = message.match(/^\*\*([^*]+)\*\*\s*\(([^)]+)\)/);
+        // New format: **senderName** (type) or **senderName** [UNPROCESSED] payload (one line)
+        const boldMatch = message.match(/^\*\*([^*]+)\*\*(?:\s*\([^)]+\))?/);
         if (boldMatch) {
           senderName = boldMatch[1];
           // Detection heuristic:

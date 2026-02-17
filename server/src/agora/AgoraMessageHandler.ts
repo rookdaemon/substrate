@@ -35,9 +35,10 @@ export class AgoraMessageHandler {
    * Returns format: "name...9f38f6d0" if name found, or "...9f38f6d0" if not found
    */
   private resolveSenderName(senderPublicKey: string, relayNameHint?: string): string {
-    // Prefer relay name hint if provided (most up-to-date)
-    if (relayNameHint) {
-      return `${relayNameHint}...${shortKey(senderPublicKey).slice(3)}`; // Remove "..." prefix from shortKey
+    const keySuffix = shortKey(senderPublicKey);
+    // Prefer relay name hint if provided (most up-to-date), unless it's just the short key (avoid "...9f38f6d0...9f38f6d0")
+    if (relayNameHint && relayNameHint !== keySuffix && !/^\.\.\.[a-f0-9]{8}$/i.test(relayNameHint.trim())) {
+      return `${relayNameHint}...${keySuffix.slice(3)}`; // Remove "..." prefix from shortKey
     }
 
     if (!this.agoraService) {
@@ -80,25 +81,24 @@ export class AgoraMessageHandler {
     try {
       const parsed = JSON.parse(payloadStr);
       if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
-        // If it's a simple object with readable fields, format it nicely
         const keys = Object.keys(parsed);
-        if (keys.length <= 5 && keys.every(k => typeof parsed[k] === "string" || typeof parsed[k] === "number" || typeof parsed[k] === "boolean")) {
+        if (keys.length === 1 && keys[0] === "text" && typeof parsed.text === "string") {
+          formattedPayload = parsed.text;
+        } else if (keys.length <= 5 && keys.every(k => typeof parsed[k] === "string" || typeof parsed[k] === "number" || typeof parsed[k] === "boolean")) {
           formattedPayload = Object.entries(parsed)
-            .map(([k, v]) => `**${k}**: ${typeof v === "string" ? v : JSON.stringify(v)}`)
-            .join("\n");
+            .map(([k, v]) => `${k}: ${typeof v === "string" ? v : JSON.stringify(v)}`)
+            .join(", ");
         } else {
           formattedPayload = JSON.stringify(parsed, null, 2);
         }
       }
     } catch {
-      // If payload isn't valid JSON or is a string, use as-is
       formattedPayload = payloadStr;
     }
 
     const unprocessedBadge = isUnprocessed ? " **[UNPROCESSED]**" : "";
-    // Simple format: sender name prominently, then message type, then content
-    // Add invisible marker for provider detection (agora messages have short keys)
-    const conversationEntry = `**${senderDisplayName}** (${envelope.type})${unprocessedBadge}\n\n${formattedPayload}`;
+    // One line: sender, optional badge, payload (no message type label)
+    const conversationEntry = `**${senderDisplayName}**${unprocessedBadge} ${formattedPayload}`.replace(/\n+/g, " ").trim();
 
     // Write to CONVERSATION.md (using SUBCONSCIOUS role as it handles message processing)
     try {
@@ -135,7 +135,7 @@ export class AgoraMessageHandler {
     // Inject message directly into orchestrator (bypass TinyBus)
     // Format message as agent prompt similar to old checkAgoraInbox format
     try {
-      const agentPrompt = `[AGORA MESSAGE from ${senderDisplayName}]\nType: ${envelope.type}\nEnvelope ID: ${envelope.id}\nTimestamp: ${timestamp}\nPayload: ${payloadStr}\n\nRespond to this message if appropriate. Use AgoraService.send() to reply.`;
+      const agentPrompt = `[AGORA MESSAGE from ${senderDisplayName}]\nType: ${envelope.type}\nEnvelope ID: ${envelope.id}\nTimestamp: ${timestamp}\nPayload: ${payloadStr}\n\nRespond to this message if appropriate. Use the TinyBus MCP tool ${"`"}mcp__tinybus__send_message${"`"} with type "agora.send" to reply. Example: { type: "agora.send", payload: { peerName: "${senderDisplayName}", type: "publish", payload: { text: "your response" }, inReplyTo: "${envelope.id}" } }`;
       this.messageInjector.injectMessage(agentPrompt);
       this.logger.debug(`[AGORA] Injected message into orchestrator: envelopeId=${envelope.id}`);
     } catch (err) {

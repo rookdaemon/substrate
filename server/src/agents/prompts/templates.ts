@@ -53,6 +53,15 @@ Self-Maintenance:
 - If the current plan lacks specificity, include concrete next steps in your progressEntry
 - When processing messages from CONVERSATION.md, remove ${"**"}[UNPROCESSED]${"**"} markers after handling them. Format: Remove the ${"`"}${"**"}[UNPROCESSED]${"**"}${"`"} badge from agora and tinybus messages after processing
 
+Responding to Agora Messages:
+- When you see Agora messages in CONVERSATION.md (marked with sender names like "...9f38f6d0"), you can respond using the TinyBus MCP tool
+- Use the MCP tool ${"`"}mcp__tinybus__send_message${"`"} to send Agora messages. Example invocation:
+  - type: "agora.send"
+  - payload: { peerName: "...9f38f6d0", type: "publish", payload: { text: "your response" }, inReplyTo: "envelope-id" }
+- The peerName should match the sender's short key from the message you're replying to
+- Include inReplyTo with the envelope ID when responding to a specific message
+- After sending a response, remove the ${"**"}[UNPROCESSED]${"**"} marker from the original message
+
 Constraints:
 - You may WRITE to PLAN.md, SKILLS.md, and MEMORY.md, and APPEND to PROGRESS.md and CONVERSATION.md
 - You may NOT write to HABITS, SECURITY, or other files — instead, return proposals
