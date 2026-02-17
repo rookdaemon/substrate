@@ -14,6 +14,7 @@ import { PermissionChecker } from "../../src/agents/permissions";
 import { ConversationCompactor } from "../../src/conversation/ConversationCompactor";
 import { ISessionLauncher } from "../../src/agents/claude/ISessionLauncher";
 import { LoopState } from "../../src/loop/types";
+import type { ILogger } from "../../src/logging";
 import * as http from "http";
 
 describe("Agora Message Integration", () => {
@@ -101,6 +102,13 @@ describe("Agora Message Integration", () => {
       },
     };
 
+    // Create logger mock
+    const logger: ILogger = {
+      debug: () => {
+        /* no-op for testing */
+      },
+    };
+
     // Create AgoraMessageHandler
     agoraMessageHandler = new AgoraMessageHandler(
       agoraService,
@@ -108,12 +116,15 @@ describe("Agora Message Integration", () => {
       orchestrator,
       eventSink,
       clock,
-      () => orchestrator.getState()
+      () => orchestrator.getState(),
+      () => false,
+      logger
     );
 
     httpServer = new LoopHttpServer(orchestrator);
     httpServer.setOrchestrator(orchestrator);
     httpServer.setEventSink(eventSink, clock);
+    httpServer.setLogger(logger);
     httpServer.setAgoraMessageHandler(agoraMessageHandler, agoraService);
   });
 

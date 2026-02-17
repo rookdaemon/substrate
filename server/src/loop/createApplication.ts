@@ -235,7 +235,8 @@ export async function createApplication(config: ApplicationConfig): Promise<Appl
       wsServer,
       clock,
       () => orchestrator.getState(), // getState callback
-      () => orchestrator.getRateLimitUntil() !== null // isRateLimited callback
+      () => orchestrator.getRateLimitUntil() !== null, // isRateLimited callback
+      logger
     );
 
     // Set up relay message handler if relay is configured
@@ -243,19 +244,25 @@ export async function createApplication(config: ApplicationConfig): Promise<Appl
       const agora = await import("@rookdaemon/agora");
       agoraService.setRelayMessageHandler(async (envelope: Envelope) => {
         try {
+          logger.debug(`[AGORA] Relay message received: envelopeId=${envelope.id} type=${envelope.type}`);
+          
           // SECURITY: Verify signature before processing
           // The relay passes raw envelopes - we must verify them
           const verifyResult = agora.verifyEnvelope(envelope);
 
           if (!verifyResult.valid) {
-            logger.debug(`Rejected relay message: ${verifyResult.reason ?? "invalid signature"}`);
+            logger.debug(`[AGORA] Rejected relay message: ${verifyResult.reason ?? "invalid signature"} envelopeId=${envelope.id}`);
             return;
           }
 
+          logger.debug(`[AGORA] Relay message verified: envelopeId=${envelope.id}`);
+
           // Process the verified envelope via AgoraMessageHandler
           await agoraMessageHandler!.processEnvelope(envelope, "relay");
+          
+          logger.debug(`[AGORA] Relay message processed: envelopeId=${envelope.id}`);
         } catch (err) {
-          logger.debug("Failed to process relay message: " + (err instanceof Error ? err.message : String(err)));
+          logger.debug(`[AGORA] Failed to process relay message: ${err instanceof Error ? err.message : String(err)}`);
         }
       });
     }
@@ -302,6 +309,7 @@ export async function createApplication(config: ApplicationConfig): Promise<Appl
   httpServer.setOrchestrator(orchestrator);
   httpServer.setDependencies({ reader, ego });
   httpServer.setEventSink(wsServer, clock);
+  httpServer.setLogger(logger);
   
   // Set up TinyBus MCP server
   await httpServer.setTinyBus(tinyBus);

@@ -20,6 +20,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { AgoraMessageHandler } from "../agora/AgoraMessageHandler";
 import { IAgoraService } from "../agora/IAgoraService";
+import type { ILogger } from "../logging";
 
 export interface LoopHttpDependencies {
   reader: SubstrateFileReader;
@@ -38,6 +39,7 @@ export class LoopHttpServer {
   private mode: "cycle" | "tick" = "cycle";
   private agoraMessageHandler: AgoraMessageHandler | null = null;
   private agoraService: IAgoraService | null = null;
+  private logger: ILogger | null = null;
   private backupScheduler: BackupScheduler | null = null;
   private conversationManager: ConversationManager | null = null;
   private taskMetrics: TaskClassificationMetrics | null = null;
@@ -81,6 +83,10 @@ export class LoopHttpServer {
   setAgoraMessageHandler(handler: AgoraMessageHandler, service: IAgoraService): void {
     this.agoraMessageHandler = handler;
     this.agoraService = service;
+  }
+
+  setLogger(logger: ILogger): void {
+    this.logger = logger;
   }
 
   setBackupScheduler(scheduler: BackupScheduler): void {
@@ -557,6 +563,7 @@ export class LoopHttpServer {
    */
   private handleAgoraWebhook(req: http.IncomingMessage, res: http.ServerResponse): void {
     if (!this.agoraService || !this.agoraMessageHandler) {
+      this.logger?.debug("[AGORA] Webhook rejected: Agora service not configured");
       this.json(res, 503, { error: "Agora service not configured" });
       return;
     }
@@ -564,6 +571,7 @@ export class LoopHttpServer {
     // Check Authorization header for Bearer token
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      this.logger?.debug("[AGORA] Webhook rejected: Missing or invalid Authorization header");
       this.json(res, 401, { error: "Missing or invalid Authorization header" });
       return;
     }
@@ -571,34 +579,45 @@ export class LoopHttpServer {
     let body = "";
     req.on("data", (chunk: Buffer) => { body += chunk.toString(); });
     req.on("end", async () => {
+      this.logger?.debug(`[AGORA] Webhook received: bodyLength=${body.length}`);
+      
       let parsed: { message?: string };
       try {
         parsed = JSON.parse(body);
       } catch {
+        this.logger?.debug("[AGORA] Webhook rejected: Invalid JSON");
         this.json(res, 400, { error: "Invalid JSON" });
         return;
       }
 
       if (!parsed.message || typeof parsed.message !== "string") {
+        this.logger?.debug("[AGORA] Webhook rejected: Missing required field: message");
         this.json(res, 400, { error: "Missing required field: message" });
         return;
       }
 
       try {
+        this.logger?.debug(`[AGORA] Decoding inbound envelope: messageLength=${parsed.message.length}`);
+        
         // Decode and verify the inbound envelope
         const result = await this.agoraService!.decodeInbound(parsed.message);
 
         if (!result.ok) {
+          this.logger?.debug(`[AGORA] Webhook rejected: Invalid envelope: ${result.reason}`);
           this.json(res, 400, { error: `Invalid envelope: ${result.reason}` });
           return;
         }
 
+        this.logger?.debug(`[AGORA] Envelope decoded successfully: envelopeId=${result.envelope!.id} type=${result.envelope!.type}`);
+
         // Process the message via AgoraMessageHandler
         await this.agoraMessageHandler!.processEnvelope(result.envelope!, "webhook");
 
+        this.logger?.debug(`[AGORA] Webhook processed successfully: envelopeId=${result.envelope!.id}`);
         this.json(res, 200, { success: true, envelopeId: result.envelope!.id });
       } catch (err) {
         const message = err instanceof Error ? err.message : "Unknown error";
+        this.logger?.debug(`[AGORA] Webhook error: ${message}`);
         this.json(res, 500, { error: message });
       }
     });

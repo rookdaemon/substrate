@@ -7,6 +7,7 @@ import { IAgoraService } from "../../src/agora/IAgoraService";
 import { LoopState } from "../../src/loop/types";
 import { AgentRole } from "../../src/agents/types";
 import type { Envelope } from "@rookdaemon/agora" with { "resolution-mode": "import" };
+import type { ILogger } from "../../src/logging";
 
 // Mock implementations
 class MockConversationManager implements IConversationManager {
@@ -38,6 +39,12 @@ class MockClock implements IClock {
 
   now(): Date {
     return this.currentTime;
+  }
+}
+
+class MockLogger implements ILogger {
+  debug(_message: string): void {
+    // No-op for testing
   }
 }
 
@@ -76,6 +83,7 @@ describe("AgoraMessageHandler", () => {
   let eventSink: MockEventSink;
   let clock: MockClock;
   let agoraService: MockAgoraService;
+  let logger: MockLogger;
   let getState: () => LoopState;
   let isRateLimited: () => boolean;
 
@@ -85,6 +93,7 @@ describe("AgoraMessageHandler", () => {
     eventSink = new MockEventSink();
     clock = new MockClock(new Date("2026-02-15T12:00:00Z"));
     agoraService = new MockAgoraService();
+    logger = new MockLogger();
     getState = () => LoopState.RUNNING;
     isRateLimited = () => false;
 
@@ -95,7 +104,8 @@ describe("AgoraMessageHandler", () => {
       eventSink,
       clock,
       getState,
-      isRateLimited
+      isRateLimited,
+      logger
     );
   });
 
@@ -130,7 +140,8 @@ describe("AgoraMessageHandler", () => {
         eventSink,
         clock,
         getState,
-        isRateLimited
+        isRateLimited,
+        logger
       );
 
       await handler.processEnvelope(testEnvelope, "webhook");
@@ -149,7 +160,8 @@ describe("AgoraMessageHandler", () => {
         eventSink,
         clock,
         getState,
-        isRateLimited
+        isRateLimited,
+        logger
       );
 
       await handler.processEnvelope(testEnvelope, "webhook");
@@ -169,7 +181,8 @@ describe("AgoraMessageHandler", () => {
         eventSink,
         clock,
         getState,
-        rateLimited
+        rateLimited,
+        logger
       );
 
       await handler.processEnvelope(testEnvelope, "webhook");
