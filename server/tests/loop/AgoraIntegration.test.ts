@@ -1,6 +1,7 @@
 import { LoopHttpServer } from "../../src/loop/LoopHttpServer";
 import { LoopOrchestrator } from "../../src/loop/LoopOrchestrator";
 import type { AgoraServiceConfig, Envelope } from "@rookdaemon/agora" with { "resolution-mode": "import" };
+import { AgoraService } from "@rookdaemon/agora";
 import { AgoraMessageHandler } from "../../src/agora/AgoraMessageHandler";
 import { ConversationManager } from "../../src/conversation/ConversationManager";
 import { InMemoryFileSystem } from "../../src/substrate/abstractions/InMemoryFileSystem";
@@ -20,7 +21,7 @@ import * as http from "http";
 describe("Agora Message Integration", () => {
   let httpServer: LoopHttpServer;
   let orchestrator: LoopOrchestrator;
-  let agoraService: any; // AgoraService from dynamic import
+  let agoraService: AgoraService; // AgoraService from dynamic import
   let agoraMessageHandler: AgoraMessageHandler;
   let fs: InMemoryFileSystem;
   let clock: FixedClock;

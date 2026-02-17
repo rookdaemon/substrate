@@ -13,13 +13,12 @@ export type RelayClientFactory = (opts: object) => RelayClientLike;
 export function createEnvelope<T>(
   type: string,
   sender: string,
-  privateKey: string,
+  _privateKey: string, // Unused in mock but kept for API compatibility
   payload: T,
   timestamp: number = Date.now(),
   inReplyTo?: string
 ): Envelope {
-  // Create a canonical representation for ID generation
-  const canonical = JSON.stringify({ type, sender, timestamp, payload, inReplyTo }, Object.keys({ type, sender, timestamp, payload, inReplyTo }).sort());
+  // Create a mock ID (real implementation would hash the canonical representation)
   const id = `id-${Math.random().toString(36).substring(7)}`;
   
   // Generate a mock signature (in real implementation this would use Ed25519)
