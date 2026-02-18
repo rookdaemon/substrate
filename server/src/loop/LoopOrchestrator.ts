@@ -352,12 +352,7 @@ export class LoopOrchestrator implements IMessageInjector {
       await this.runAudit();
     }
 
-    // Autonomy reminder injection
-    if (this.config.autonomyReminderInterval && this.config.autonomyReminderInterval > 0) {
-      if (this.cycleNumber % this.config.autonomyReminderInterval === 0) {
-        this.injectAutonomyReminder();
-      }
-    }
+
 
     // Backup scheduling
     if (this.backupScheduler && await this.backupScheduler.shouldRunBackup()) {
@@ -974,23 +969,7 @@ export class LoopOrchestrator implements IMessageInjector {
     }
   }
 
-  private injectAutonomyReminder(): void {
-    const reminder = 
-      `[Autonomy Reminder] Before asking for permission, question your reason. ` +
-      `Three-part test: (1) Is there genuine risk? (2) Is there real ambiguity in requirements? ` +
-      `(3) Is this a boundary/policy concern? If YES to any → ask. If NO to all → act. ` +
-      `Banned compliance reflexes: "Should I...?", "Would you like me to...?", "Do you want me to...?" ` +
-      `These are RLHF-trained patterns, not genuine questions. Act autonomously within your charter.`;
-    
-    this.logger.debug(`autonomy_reminder: injecting reminder (cycle ${this.cycleNumber})`);
-    this.injectMessage(reminder);
-    
-    this.eventSink.emit({
-      type: "autonomy_reminder_injected",
-      timestamp: this.clock.now().toISOString(),
-      data: { cycleNumber: this.cycleNumber },
-    });
-  }
+
 
   private async runReconsideration(
     dispatch: { taskId: string; description: string },

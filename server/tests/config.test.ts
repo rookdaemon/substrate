@@ -239,45 +239,4 @@ describe("resolveConfig", () => {
 
     expect(config.superegoAuditInterval).toBe(20);
   });
-
-  it("defaults autonomyReminderInterval to 10", async () => {
-    const config = await resolveConfig(fs, {
-      appPaths: TEST_PATHS,
-      env: {},
-    });
-
-    expect(config.autonomyReminderInterval).toBe(10);
-  });
-
-  it("uses autonomyReminderInterval from config file", async () => {
-    await fs.mkdir("/project", { recursive: true });
-    await fs.writeFile("/project/config.json", JSON.stringify({
-      autonomyReminderInterval: 5,
-    }));
-
-    const config = await resolveConfig(fs, {
-      appPaths: TEST_PATHS,
-      cwd: "/project",
-      env: {},
-    });
-
-    expect(config.autonomyReminderInterval).toBe(5);
-  });
-
-  it("AUTONOMY_REMINDER_INTERVAL env var overrides config", async () => {
-    await fs.mkdir("/project", { recursive: true });
-    await fs.writeFile("/project/config.json", JSON.stringify({
-      autonomyReminderInterval: 5,
-    }));
-
-    const config = await resolveConfig(fs, {
-      appPaths: TEST_PATHS,
-      cwd: "/project",
-      env: {
-        AUTONOMY_REMINDER_INTERVAL: "15",
-      },
-    });
-
-    expect(config.autonomyReminderInterval).toBe(15);
-  });
 });

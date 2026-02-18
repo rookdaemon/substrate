@@ -63,7 +63,6 @@ export interface ApplicationConfig {
   httpPort?: number;
   cycleDelayMs?: number;
   superegoAuditInterval?: number;
-  autonomyReminderInterval?: number;
   maxConsecutiveIdleCycles?: number;
   mode?: "cycle" | "tick";
   sdkQueryFn?: SdkQueryFn;
@@ -91,12 +90,6 @@ export interface ApplicationConfig {
   agora?: {
     security?: {
       unknownSenderPolicy?: 'allow' | 'quarantine' | 'reject'; // default: 'quarantine'
-    };
-  };
-  conversationIdleTimeoutMs?: number; // Default: 60000 (60s)
-  abandonedProcessGraceMs?: number; // Default: 600000 (10 min)
-  agora?: {
-    security?: {
       perSenderRateLimit?: {
         enabled: boolean;
         maxMessages: number;
@@ -104,6 +97,8 @@ export interface ApplicationConfig {
       };
     };
   };
+  conversationIdleTimeoutMs?: number; // Default: 60000 (60s)
+  abandonedProcessGraceMs?: number; // Default: 600000 (10 min)
 }
 
 export interface Application {
@@ -203,7 +198,6 @@ export async function createApplication(config: ApplicationConfig): Promise<Appl
   const loopConfig = defaultLoopConfig({
     cycleDelayMs: config.cycleDelayMs,
     superegoAuditInterval: config.superegoAuditInterval,
-    autonomyReminderInterval: config.autonomyReminderInterval,
     maxConsecutiveIdleCycles: config.maxConsecutiveIdleCycles,
   });
 

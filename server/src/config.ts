@@ -20,8 +20,6 @@ export interface AppConfig {
   backupRetentionCount?: number;
   /** Number of cycles between SUPEREGO audits (default: 20). Can be overridden by SUPEREGO_AUDIT_INTERVAL env var. */
   superegoAuditInterval?: number;
-  /** Number of cycles between autonomy reminders (default: 10). Set to 0 to disable. Can be overridden by AUTONOMY_REMINDER_INTERVAL env var. */
-  autonomyReminderInterval?: number;
   /** Configuration for CONVERSATION.md archiving */
   conversationArchive?: {
     enabled: boolean;
@@ -76,7 +74,6 @@ export async function resolveConfig(
     autoStartAfterRestart: true,
     backupRetentionCount: 14,
     superegoAuditInterval: 20,
-    autonomyReminderInterval: 10,
     conversationArchive: {
       enabled: false, // Disabled by default to maintain backward compatibility
       linesToKeep: 100,
@@ -139,7 +136,6 @@ export async function resolveConfig(
     autoStartAfterRestart: fileConfig.autoStartAfterRestart ?? defaults.autoStartAfterRestart,
     backupRetentionCount: fileConfig.backupRetentionCount ?? defaults.backupRetentionCount,
     superegoAuditInterval: fileConfig.superegoAuditInterval ?? defaults.superegoAuditInterval,
-    autonomyReminderInterval: fileConfig.autonomyReminderInterval ?? defaults.autonomyReminderInterval,
     conversationArchive: fileConfig.conversationArchive
       ? {
           enabled: fileConfig.conversationArchive.enabled ?? defaults.conversationArchive!.enabled,
@@ -183,9 +179,6 @@ export async function resolveConfig(
   }
   if (env["SUPEREGO_AUDIT_INTERVAL"]) {
     merged.superegoAuditInterval = parseInt(env["SUPEREGO_AUDIT_INTERVAL"], 10);
-  }
-  if (env["AUTONOMY_REMINDER_INTERVAL"]) {
-    merged.autonomyReminderInterval = parseInt(env["AUTONOMY_REMINDER_INTERVAL"], 10);
   }
 
   return merged;
