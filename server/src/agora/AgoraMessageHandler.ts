@@ -13,6 +13,23 @@ import type { AgoraInboxManager } from "./AgoraInboxManager";
 export type UnknownSenderPolicy = 'allow' | 'quarantine' | 'reject';
 
 /**
+ * Sliding window state for per-sender rate limiting
+ */
+interface SenderWindow {
+  count: number;
+  windowStart: number;
+}
+
+/**
+ * Configuration for per-sender rate limiting
+ */
+export interface RateLimitConfig {
+  enabled: boolean;
+  maxMessages: number;
+  windowMs: number;
+}
+
+/**
  * AgoraMessageHandler - Handles inbound Agora messages
  * 
  * Responsibilities:
@@ -22,10 +39,13 @@ export type UnknownSenderPolicy = 'allow' | 'quarantine' | 'reject';
  * - Emit WebSocket events for frontend visibility
  * - Deduplicate envelopes to prevent replay attacks
  * - Enforce peer allowlist via unknownSenderPolicy
+ * - Per-sender rate limiting to prevent flooding
  */
 export class AgoraMessageHandler {
   private processedEnvelopeIds: Set<string> = new Set();
   private readonly MAX_DEDUP_SIZE = 1000;
+  private readonly senderWindows: Map<string, SenderWindow> = new Map();
+  private static readonly MAX_SENDER_ENTRIES = 500;
 
   constructor(
     private readonly agoraService: IAgoraService | null,
@@ -37,7 +57,8 @@ export class AgoraMessageHandler {
     private readonly isRateLimited: () => boolean = () => false,
     private readonly logger: ILogger,
     private readonly unknownSenderPolicy: UnknownSenderPolicy = 'quarantine',
-    private readonly inboxManager: AgoraInboxManager | null = null
+    private readonly inboxManager: AgoraInboxManager | null = null,
+    private readonly rateLimitConfig: RateLimitConfig = { enabled: true, maxMessages: 10, windowMs: 60000 }
   ) {}
 
   /**
@@ -83,6 +104,62 @@ export class AgoraMessageHandler {
     }
 
     return undefined;
+  }
+
+  /**
+   * Check if sender should be rate-limited based on sliding window
+   * Also handles Map eviction to prevent unbounded memory growth
+   */
+  private isRateLimitedSender(senderPublicKey: string): boolean {
+    if (!this.rateLimitConfig.enabled) {
+      return false;
+    }
+
+    const now = this.clock.now().getTime();
+    const window = this.senderWindows.get(senderPublicKey);
+
+    // Check if we need to evict oldest entries to keep Map bounded
+    if (this.senderWindows.size >= AgoraMessageHandler.MAX_SENDER_ENTRIES && !window) {
+      this.evictOldestSenderWindow();
+    }
+
+    if (!window || (now - window.windowStart) > this.rateLimitConfig.windowMs) {
+      // New window - reset count
+      this.senderWindows.set(senderPublicKey, { count: 1, windowStart: now });
+      return false;
+    }
+
+    // Within existing window - increment count
+    window.count++;
+
+    if (window.count > this.rateLimitConfig.maxMessages) {
+      this.logger.debug(
+        `[AGORA] Rate limiting sender ${shortKey(senderPublicKey)}: ${window.count} messages in ${this.rateLimitConfig.windowMs}ms window (max: ${this.rateLimitConfig.maxMessages})`
+      );
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * Evict the oldest sender window entry to prevent unbounded Map growth
+   */
+  private evictOldestSenderWindow(): void {
+    let oldestKey: string | null = null;
+    let oldestTime = Infinity;
+
+    for (const [key, window] of this.senderWindows.entries()) {
+      if (window.windowStart < oldestTime) {
+        oldestTime = window.windowStart;
+        oldestKey = key;
+      }
+    }
+
+    if (oldestKey !== null) {
+      this.senderWindows.delete(oldestKey);
+      this.logger.debug(`[AGORA] Evicted oldest sender window: ${shortKey(oldestKey)}`);
+    }
   }
 
   /**
@@ -134,6 +211,13 @@ export class AgoraMessageHandler {
         return;
       }
       // 'allow' = existing behavior, fall through
+    }
+
+    // Check per-sender rate limit
+    if (this.isRateLimitedSender(envelope.sender)) {
+      this.logger.debug(`[AGORA] Dropping rate-limited message: envelopeId=${envelope.id} from=${senderDisplayName}`);
+      // Silently drop the message - don't reveal rate limit state to potential spammers
+      return;
     }
 
     // Determine if we should add [UNPROCESSED] marker

@@ -41,6 +41,10 @@ class MockClock implements IClock {
   now(): Date {
     return this.currentTime;
   }
+
+  setTime(newTime: Date): void {
+    this.currentTime = newTime;
+  }
 }
 
 class MockLogger implements ILogger {
@@ -116,6 +120,12 @@ describe("AgoraMessageHandler", () => {
     signature: "test-signature",
   };
 
+  const defaultRateLimitConfig = {
+    enabled: true,
+    maxMessages: 10,
+    windowMs: 60000,
+  };
+
   beforeEach(() => {
     conversationManager = new MockConversationManager();
     messageInjector = new MockMessageInjector();
@@ -138,7 +148,8 @@ describe("AgoraMessageHandler", () => {
       isRateLimited,
       logger,
       'allow', // unknownSenderPolicy
-      inboxManager as unknown as AgoraInboxManager
+      inboxManager as unknown as AgoraInboxManager,
+      defaultRateLimitConfig
     );
   });
 
@@ -166,7 +177,8 @@ describe("AgoraMessageHandler", () => {
         isRateLimited,
         logger,
         'allow',
-        inboxManager as unknown as AgoraInboxManager
+        inboxManager as unknown as AgoraInboxManager,
+        defaultRateLimitConfig
       );
 
       await handler.processEnvelope(testEnvelope, "webhook");
@@ -188,7 +200,8 @@ describe("AgoraMessageHandler", () => {
         isRateLimited,
         logger,
         'allow',
-        inboxManager as unknown as AgoraInboxManager
+        inboxManager as unknown as AgoraInboxManager,
+        defaultRateLimitConfig
       );
 
       await handler.processEnvelope(testEnvelope, "webhook");
@@ -211,7 +224,8 @@ describe("AgoraMessageHandler", () => {
         rateLimited,
         logger,
         'allow',
-        inboxManager as unknown as AgoraInboxManager
+        inboxManager as unknown as AgoraInboxManager,
+        defaultRateLimitConfig
       );
 
       await handler.processEnvelope(testEnvelope, "webhook");
@@ -299,6 +313,7 @@ describe("AgoraMessageHandler", () => {
       // Create a handler with a small MAX_DEDUP_SIZE for testing
       // We'll use reflection to set a smaller size
       const testHandler = new AgoraMessageHandler(
+
         agoraService,
         conversationManager,
         messageInjector,
@@ -493,6 +508,146 @@ describe("AgoraMessageHandler", () => {
       // Should log debug message about quarantine
       const quarantineLog = logger.debugMessages.find(m => m.includes("quarantined"));
       expect(quarantineLog).toBeDefined();
+    });
+  });
+
+  describe("per-sender rate limiting", () => {
+    const testEnvelope2: Envelope = {
+      id: "envelope-456",
+      type: "request",
+      sender: "302a300506032b6570032100ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      timestamp: 1708000000000,
+      payload: { question: "Different sender" },
+      signature: "test-signature-2",
+    };
+
+    it("should allow messages under the rate limit", async () => {
+      // Send 10 messages (the limit)
+      for (let i = 0; i < 10; i++) {
+        await handler.processEnvelope({ ...testEnvelope, id: `envelope-${i}` }, "webhook");
+      }
+
+      expect(conversationManager.appendedEntries).toHaveLength(10);
+      expect(messageInjector.injectedMessages).toHaveLength(10);
+    });
+
+    it("should drop messages exceeding the rate limit", async () => {
+      // Send 11 messages (one over the limit)
+      for (let i = 0; i < 11; i++) {
+        await handler.processEnvelope({ ...testEnvelope, id: `envelope-${i}` }, "webhook");
+      }
+
+      // Only 10 messages should have been processed
+      expect(conversationManager.appendedEntries).toHaveLength(10);
+      expect(messageInjector.injectedMessages).toHaveLength(10);
+    });
+
+    it("should track rate limits per sender independently", async () => {
+      // Send 10 messages from first sender
+      for (let i = 0; i < 10; i++) {
+        await handler.processEnvelope({ ...testEnvelope, id: `envelope-1-${i}` }, "webhook");
+      }
+
+      // Send 10 messages from second sender
+      for (let i = 0; i < 10; i++) {
+        await handler.processEnvelope({ ...testEnvelope2, id: `envelope-2-${i}` }, "webhook");
+      }
+
+      // Both senders should have all messages processed
+      expect(conversationManager.appendedEntries).toHaveLength(20);
+      expect(messageInjector.injectedMessages).toHaveLength(20);
+    });
+
+    it("should reset rate limit window after time expires", async () => {
+      const mutableClock = new MockClock(new Date("2026-02-15T12:00:00Z"));
+      handler = new AgoraMessageHandler(
+        agoraService,
+        conversationManager,
+        messageInjector,
+        eventSink,
+        mutableClock,
+        getState,
+        isRateLimited,
+        logger,
+        defaultRateLimitConfig
+      );
+
+      // Send 10 messages (the limit)
+      for (let i = 0; i < 10; i++) {
+        await handler.processEnvelope({ ...testEnvelope, id: `envelope-first-${i}` }, "webhook");
+      }
+
+      // Advance time by more than the window (60 seconds)
+      mutableClock.setTime(new Date("2026-02-15T12:01:01Z"));
+
+      // Send 10 more messages (should be allowed as window reset)
+      for (let i = 0; i < 10; i++) {
+        await handler.processEnvelope({ ...testEnvelope, id: `envelope-second-${i}` }, "webhook");
+      }
+
+      expect(conversationManager.appendedEntries).toHaveLength(20);
+      expect(messageInjector.injectedMessages).toHaveLength(20);
+    });
+
+    it("should not rate limit when disabled in config", async () => {
+      const disabledConfig = {
+        enabled: false,
+        maxMessages: 10,
+        windowMs: 60000,
+      };
+
+      handler = new AgoraMessageHandler(
+        agoraService,
+        conversationManager,
+        messageInjector,
+        eventSink,
+        clock,
+        getState,
+        isRateLimited,
+        logger,
+        'allow',
+        inboxManager as unknown as AgoraInboxManager,
+        disabledConfig
+      );
+
+      // Send 15 messages (over the limit, but rate limiting is disabled)
+      for (let i = 0; i < 15; i++) {
+        await handler.processEnvelope({ ...testEnvelope, id: `envelope-${i}` }, "webhook");
+      }
+
+      expect(conversationManager.appendedEntries).toHaveLength(15);
+      expect(messageInjector.injectedMessages).toHaveLength(15);
+    });
+
+    it("should evict oldest sender window when Map exceeds 500 entries", async () => {
+      // Create 500 unique senders and send one message each
+      for (let i = 0; i < 500; i++) {
+        const sender = `sender-${i.toString().padStart(10, "0")}`;
+        await handler.processEnvelope(
+          {
+            ...testEnvelope,
+            id: `envelope-${i}`,
+            sender,
+          },
+          "webhook"
+        );
+      }
+
+      // All 500 messages should have been processed
+      expect(conversationManager.appendedEntries).toHaveLength(500);
+
+      // Now add a 501st sender - this should trigger eviction
+      await handler.processEnvelope(
+        {
+          ...testEnvelope,
+          id: "envelope-501",
+          sender: "sender-new",
+        },
+        "webhook"
+      );
+
+      // The 501st message should still be processed (eviction doesn't affect message processing)
+      expect(conversationManager.appendedEntries).toHaveLength(501);
     });
   });
 });

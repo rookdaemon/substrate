@@ -95,6 +95,15 @@ export interface ApplicationConfig {
   };
   conversationIdleTimeoutMs?: number; // Default: 60000 (60s)
   abandonedProcessGraceMs?: number; // Default: 600000 (10 min)
+  agora?: {
+    security?: {
+      perSenderRateLimit?: {
+        enabled: boolean;
+        maxMessages: number;
+        windowMs: number;
+      };
+    };
+  };
 }
 
 export interface Application {
@@ -250,6 +259,12 @@ export async function createApplication(config: ApplicationConfig): Promise<Appl
       clock
     );
 
+    const rateLimitConfig = config.agora?.security?.perSenderRateLimit ?? {
+      enabled: true,
+      maxMessages: 10,
+      windowMs: 60000,
+    };
+
     agoraMessageHandler = new AgoraMessageHandler(
       agoraService,
       conversationManager,
@@ -260,7 +275,8 @@ export async function createApplication(config: ApplicationConfig): Promise<Appl
       () => orchestrator.getRateLimitUntil() !== null, // isRateLimited callback
       logger,
       config.agora?.security?.unknownSenderPolicy ?? 'quarantine', // Default to quarantine
-      agoraInboxManager // for quarantine support
+      agoraInboxManager, // for quarantine support
+      rateLimitConfig // Rate limit config
     );
 
     // Set up relay message handler if relay is configured
