@@ -29,6 +29,7 @@ import { MetricsScheduler } from "./MetricsScheduler";
 import { LoopWatchdog } from "./LoopWatchdog";
 import { SuperegoFindingTracker } from "../agents/roles/SuperegoFindingTracker";
 import { IMessageInjector } from "./IMessageInjector";
+import { GovernanceReportStore } from "../evaluation/GovernanceReportStore";
 
 export class LoopOrchestrator implements IMessageInjector {
   private state: LoopState = LoopState.STOPPED;
@@ -60,6 +61,9 @@ export class LoopOrchestrator implements IMessageInjector {
 
   // Rate limit state manager for hibernation context
   private rateLimitStateManager: RateLimitStateManager | null = null;
+
+  // Governance report store for persisting audit reports
+  private reportStore: GovernanceReportStore | null = null;
 
   // SUPEREGO finding tracker for recurring finding escalation
   private findingTracker: SuperegoFindingTracker = new SuperegoFindingTracker();
@@ -190,6 +194,10 @@ export class LoopOrchestrator implements IMessageInjector {
 
   setRateLimitStateManager(manager: RateLimitStateManager): void {
     this.rateLimitStateManager = manager;
+  }
+
+  setReportStore(store: GovernanceReportStore): void {
+    this.reportStore = store;
   }
 
   requestRestart(): void {
@@ -767,6 +775,7 @@ export class LoopOrchestrator implements IMessageInjector {
       // Audit results are emitted via eventSink (below) and available in systemd logs
       // No need to log to PROGRESS.md as it would pollute the high-level summary file
       this.logger.debug(`audit: complete — ${report.summary}`);
+      await this.reportStore?.save(report as Record<string, unknown>);
     } catch (err) {
       this.logger.debug(`audit: failed — ${err instanceof Error ? err.message : String(err)}`);
     }

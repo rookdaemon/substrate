@@ -24,6 +24,7 @@ export interface GovernanceReport {
   findings: Finding[];
   proposalEvaluations: ProposalEvaluation[];
   summary: string;
+  [key: string]: unknown;
 }
 
 export interface Proposal {

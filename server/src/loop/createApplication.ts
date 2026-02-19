@@ -29,6 +29,7 @@ import { LoopWebSocketServer } from "./LoopWebSocketServer";
 import { defaultLoopConfig } from "./types";
 import { HealthCheck } from "../evaluation/HealthCheck";
 import { MetricsStore } from "../evaluation/MetricsStore";
+import { GovernanceReportStore } from "../evaluation/GovernanceReportStore";
 import { TickPromptBuilder } from "../session/TickPromptBuilder";
 import { createSdkSessionFactory } from "../session/SdkSessionAdapter";
 import { BackupScheduler } from "./BackupScheduler";
@@ -356,6 +357,13 @@ export async function createApplication(config: ApplicationConfig): Promise<Appl
   const metricsStore = new MetricsStore(fs, clock, config.substratePath);
   httpServer.setHealthCheck(new HealthCheck(reader, metricsStore));
   httpServer.setMetricsComponents(taskMetrics, sizeTracker, delegationTracker);
+
+  // Create governance report store and wire into both httpServer and orchestrator
+  const reportsDir = path.resolve(config.substratePath, "..", "reports");
+  await fs.mkdir(reportsDir, { recursive: true });
+  const reportStore = new GovernanceReportStore(fs, reportsDir, clock);
+  httpServer.setReportStore(reportStore);
+  orchestrator.setReportStore(reportStore);
 
   orchestrator.setLauncher(launcher);
   // Set shutdown function that closes resources before exiting
