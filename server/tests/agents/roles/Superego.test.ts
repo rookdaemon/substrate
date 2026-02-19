@@ -1,4 +1,4 @@
-import { Superego } from "../../../src/agents/roles/Superego";
+import { Superego, ProposalEvaluation } from "../../../src/agents/roles/Superego";
 import { PermissionChecker } from "../../../src/agents/permissions";
 import { PromptBuilder } from "../../../src/agents/prompts/PromptBuilder";
 import { InMemorySessionLauncher } from "../../../src/agents/claude/InMemorySessionLauncher";
@@ -423,7 +423,7 @@ describe("Superego agent", () => {
 
     it("logs a warning when a proposal has no evaluation", async () => {
       const proposals = [{ target: "HABITS", content: "# Habits\n\nSome habit" }];
-      const evaluations: never[] = []; // no evaluation for first proposal
+      const evaluations: ProposalEvaluation[] = []; // no evaluation for first proposal
 
       await superego.applyProposals(proposals, evaluations);
 
