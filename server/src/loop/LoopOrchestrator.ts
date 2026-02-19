@@ -68,6 +68,9 @@ export class LoopOrchestrator implements IMessageInjector {
   // SUPEREGO finding tracker for recurring finding escalation
   private findingTracker: SuperegoFindingTracker = new SuperegoFindingTracker();
 
+  // Optional callback to persist finding tracker state after each audit
+  private findingTrackerSave: (() => Promise<void>) | null = null;
+
   // Tick mode
   private tickPromptBuilder: TickPromptBuilder | null = null;
   private sdkSessionFactory: SdkSessionFactory | null = null;
@@ -97,9 +100,15 @@ export class LoopOrchestrator implements IMessageInjector {
     private readonly config: LoopConfig,
     private readonly logger: ILogger,
     private readonly idleHandler?: IdleHandler,
-    conversationIdleTimeoutMs?: number
+    conversationIdleTimeoutMs?: number,
+    findingTracker?: SuperegoFindingTracker,
+    findingTrackerSave?: () => Promise<void>
   ) {
     this.conversationIdleTimeoutMs = conversationIdleTimeoutMs ?? 60_000; // Default 60s
+    if (findingTracker) {
+      this.findingTracker = findingTracker;
+    }
+    this.findingTrackerSave = findingTrackerSave ?? null;
   }
 
   getState(): LoopState {
@@ -778,6 +787,14 @@ export class LoopOrchestrator implements IMessageInjector {
       await this.reportStore?.save(report as Record<string, unknown>);
     } catch (err) {
       this.logger.debug(`audit: failed — ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      if (this.findingTrackerSave) {
+        try {
+          await this.findingTrackerSave();
+        } catch (err) {
+          this.logger.debug(`audit: failed to persist finding tracker — ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
     }
     this.eventSink.emit({
       type: "audit_complete",

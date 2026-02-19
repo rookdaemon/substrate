@@ -1,4 +1,6 @@
 import { SuperegoFindingTracker, Finding } from "../../../src/agents/roles/SuperegoFindingTracker";
+import { InMemoryFileSystem } from "../../../src/substrate/abstractions/InMemoryFileSystem";
+import { InMemoryLogger } from "../../../src/logging";
 
 describe("SuperegoFindingTracker", () => {
   describe("generateSignature", () => {
@@ -329,6 +331,75 @@ describe("SuperegoFindingTracker", () => {
       expect(tracked).toContain(sig1);
       expect(tracked).toContain(sig2);
       expect(tracked).toHaveLength(2);
+    });
+  });
+
+  describe("save and load", () => {
+    const TRACKER_PATH = "/state/.superego-tracker.json";
+
+    it("round-trips finding history through save and load", async () => {
+      const fs = new InMemoryFileSystem();
+      await fs.mkdir("/state", { recursive: true });
+
+      const tracker = new SuperegoFindingTracker();
+      const finding: Finding = { severity: "critical", message: "Persistent finding" };
+      tracker.track(finding, 10);
+      tracker.track(finding, 30);
+
+      await tracker.save(TRACKER_PATH, fs);
+
+      const loaded = await SuperegoFindingTracker.load(TRACKER_PATH, fs);
+      const sig = tracker.generateSignature(finding);
+
+      expect(loaded.getFindingHistory(sig)).toEqual([10, 30]);
+      expect(loaded.getTrackedFindings()).toHaveLength(1);
+    });
+
+    it("preserves escalation threshold across save/load", async () => {
+      const fs = new InMemoryFileSystem();
+      await fs.mkdir("/state", { recursive: true });
+
+      const tracker = new SuperegoFindingTracker();
+      const finding: Finding = { severity: "critical", message: "Recurring issue" };
+      tracker.track(finding, 10);
+      tracker.track(finding, 30);
+      await tracker.save(TRACKER_PATH, fs);
+
+      // Simulate restart by loading from disk
+      const loaded = await SuperegoFindingTracker.load(TRACKER_PATH, fs);
+
+      // Third occurrence after restart should trigger escalation
+      const shouldEscalate = loaded.track(finding, 50);
+      expect(shouldEscalate).toBe(true);
+    });
+
+    it("returns empty tracker when file does not exist", async () => {
+      const fs = new InMemoryFileSystem();
+      const tracker = await SuperegoFindingTracker.load(TRACKER_PATH, fs);
+      expect(tracker.getTrackedFindings()).toHaveLength(0);
+    });
+
+    it("returns empty tracker and logs warning when file is corrupted", async () => {
+      const fs = new InMemoryFileSystem();
+      await fs.mkdir("/state", { recursive: true });
+      await fs.writeFile(TRACKER_PATH, "{ not valid json ~~~");
+
+      const logger = new InMemoryLogger();
+      const tracker = await SuperegoFindingTracker.load(TRACKER_PATH, fs, logger);
+
+      expect(tracker.getTrackedFindings()).toHaveLength(0);
+      const logs = logger.getEntries();
+      expect(logs.some((l) => l.includes("could not load state"))).toBe(true);
+    });
+
+    it("returns empty tracker silently when file has wrong shape", async () => {
+      const fs = new InMemoryFileSystem();
+      await fs.mkdir("/state", { recursive: true });
+      // Valid JSON but wrong shape — arrays of non-numbers should be ignored
+      await fs.writeFile(TRACKER_PATH, JSON.stringify({ abc123: ["not", "numbers"] }));
+
+      const tracker = await SuperegoFindingTracker.load(TRACKER_PATH, fs);
+      expect(tracker.getTrackedFindings()).toHaveLength(0);
     });
   });
 });

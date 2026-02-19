@@ -51,6 +51,7 @@ import { AgoraOutboundProvider } from "../agora/AgoraOutboundProvider";
 import { AgoraInboxManager } from "../agora/AgoraInboxManager";
 import { IAgoraService } from "../agora/IAgoraService";
 import { FileWatcher } from "../substrate/watcher/FileWatcher";
+import { SuperegoFindingTracker } from "../agents/roles/SuperegoFindingTracker";
 
 // Note: AgoraServiceType is now IAgoraService interface in agora/IAgoraService.ts
 
@@ -131,6 +132,11 @@ export async function createApplication(config: ApplicationConfig): Promise<Appl
   // Logger — created early so all layers can use it
   const logPath = path.resolve(config.substratePath, "..", "debug.log");
   const logger = new FileLogger(logPath);
+
+  // Finding tracker — loaded from disk for durable escalation across restarts
+  const trackerStatePath = path.resolve(config.substratePath, "..", ".superego-tracker.json");
+  const findingTracker = await SuperegoFindingTracker.load(trackerStatePath, fs, logger);
+  const findingTrackerSave = () => findingTracker.save(trackerStatePath, fs);
 
   // Agent layer
   const checker = new PermissionChecker();
@@ -241,7 +247,9 @@ export async function createApplication(config: ApplicationConfig): Promise<Appl
     ego, subconscious, superego, id,
     appendWriter, clock, timer, wsServer, loopConfig,
     logger, idleHandler,
-    config.conversationIdleTimeoutMs
+    config.conversationIdleTimeoutMs,
+    findingTracker,
+    findingTrackerSave
   );
 
   // Create AgoraMessageHandler now that orchestrator exists

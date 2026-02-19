@@ -1,4 +1,6 @@
 import * as crypto from "crypto";
+import { IFileSystem } from "../../substrate/abstractions/IFileSystem";
+import { ILogger } from "../../logging";
 
 export interface Finding {
   severity: "info" | "warning" | "critical";
@@ -112,5 +114,38 @@ export class SuperegoFindingTracker {
    */
   getFindingHistory(findingId: string): number[] | undefined {
     return this.findingHistory.get(findingId);
+  }
+
+  /**
+   * Serialize tracker state to a JSON file for persistence across restarts.
+   */
+  async save(filePath: string, fs: IFileSystem): Promise<void> {
+    const data = JSON.stringify(Object.fromEntries(this.findingHistory));
+    await fs.writeFile(filePath, data);
+  }
+
+  /**
+   * Deserialize tracker state from a JSON file.
+   * Returns a fresh tracker if the file does not exist or is corrupted.
+   */
+  static async load(filePath: string, fs: IFileSystem, logger?: ILogger): Promise<SuperegoFindingTracker> {
+    const tracker = new SuperegoFindingTracker();
+    try {
+      const content = await fs.readFile(filePath);
+      const parsed: unknown = JSON.parse(content);
+      if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)) {
+        for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
+          if (Array.isArray(value) && value.every((v) => typeof v === "number")) {
+            tracker.findingHistory.set(key, value as number[]);
+          }
+        }
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (!message.includes("ENOENT")) {
+        logger?.debug(`SuperegoFindingTracker: could not load state from ${filePath}: ${message}`);
+      }
+    }
+    return tracker;
   }
 }
