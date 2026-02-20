@@ -1,4 +1,4 @@
-import { AgoraMessageHandler, UnknownSenderPolicy } from "../../src/agora/AgoraMessageHandler";
+import { AgoraMessageHandler } from "../../src/agora/AgoraMessageHandler";
 import { IConversationManager } from "../../src/conversation/IConversationManager";
 import { IMessageInjector } from "../../src/loop/IMessageInjector";
 import { ILoopEventSink } from "../../src/loop/ILoopEventSink";
@@ -326,7 +326,7 @@ describe("AgoraMessageHandler", () => {
       );
 
       // Override MAX_DEDUP_SIZE to 3 for testing
-      (testHandler as any).MAX_DEDUP_SIZE = 3;
+      (testHandler as unknown as { MAX_DEDUP_SIZE: number }).MAX_DEDUP_SIZE = 3;
 
       // Process 4 envelopes (exceeds limit of 3)
       await testHandler.processEnvelope({ ...testEnvelope, id: "envelope-1" }, "webhook");

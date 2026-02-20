@@ -190,8 +190,6 @@ describe("supervisor rollback logic", () => {
   });
 });
 
-=======
->>>>>>> main
 describe("validateRestartSafety", () => {
   const serverDir = "/srv";
   const dataDir = "/data";
