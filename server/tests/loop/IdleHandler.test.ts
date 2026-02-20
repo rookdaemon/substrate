@@ -147,6 +147,26 @@ describe("IdleHandler", () => {
     expect(progress).not.toContain("Generated");
   });
 
+  it("tags Id-generated tasks with [ID-generated YYYY-MM-DD] in the plan", async () => {
+    deps.launcher.enqueueSuccess(JSON.stringify({
+      goalCandidates: [
+        { title: "Research alignment", description: "Read alignment papers", priority: "high" },
+      ],
+    }));
+
+    deps.launcher.enqueueSuccess(JSON.stringify({
+      proposalEvaluations: [
+        { approved: true, reason: "Valuable" },
+      ],
+    }));
+
+    await handler.handleIdle();
+
+    const plan = await deps.fs.readFile("/substrate/PLAN.md");
+    // Task should include the ID-generated tag with the clock date
+    expect(plan).toContain("[ID-generated 2025-06-15]");
+  });
+
   it("creates plan with multiple approved goals", async () => {
     deps.launcher.enqueueSuccess(JSON.stringify({
       goalCandidates: [

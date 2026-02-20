@@ -8,6 +8,7 @@ import { PlanParser } from "../parsers/PlanParser";
 import { extractJson } from "../parsers/extractJson";
 import { AgentRole } from "../types";
 import { TaskClassifier } from "../TaskClassifier";
+import { DriveQualityTracker } from "../../evaluation/DriveQualityTracker";
 
 export interface GoalCandidate {
   title: string;
@@ -29,7 +30,8 @@ export class Id {
     private readonly sessionLauncher: ISessionLauncher,
     private readonly clock: IClock,
     private readonly taskClassifier: TaskClassifier,
-    private readonly workingDirectory?: string
+    private readonly workingDirectory?: string,
+    private readonly driveQualityTracker?: DriveQualityTracker
   ) {}
 
   async detectIdle(): Promise<IdleDetectionResult> {
@@ -61,6 +63,18 @@ export class Id {
       if (lazyRefs) {
         message += `=== AVAILABLE FILES (read on demand) ===\nUse the Read tool to access any of these when needed:\n${lazyRefs}\n\n`;
       }
+
+      if (this.driveQualityTracker) {
+        const categoryStats = await this.driveQualityTracker.getCategoryStats();
+        const statEntries = Object.entries(categoryStats);
+        if (statEntries.length > 0) {
+          const statsText = statEntries
+            .map(([cat, s]) => `  ${cat}: ${s.avgRating.toFixed(1)}/10 avg (${s.count} task${s.count === 1 ? "" : "s"})`)
+            .join("\n");
+          message += `=== HISTORICAL DRIVE QUALITY ===\nAverage ratings by category (higher is better):\n${statsText}\n\nPrioritize categories with higher historical ratings. Avoid repeatedly suggesting drives in consistently low-performing categories unless there is clear strategic reason.\n\n`;
+        }
+      }
+
       message += `Analyze the current state. Are we idle? What goals should we pursue?`;
       
       const model = this.taskClassifier.getModel({ role: AgentRole.ID, operation: "generateDrives" });

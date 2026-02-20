@@ -178,4 +178,78 @@ describe("Subconscious agent", () => {
       expect(content).toContain("Proficient");
     });
   });
+
+  describe("computeDriveRating", () => {
+    it("returns baseline 5 for a successful task with no special signals", () => {
+      const rating = Subconscious.computeDriveRating({
+        result: "success",
+        summary: "Done",
+        progressEntry: "Completed something",
+        skillUpdates: null,
+        memoryUpdates: null,
+        proposals: [],
+      });
+      expect(rating).toBe(5);
+    });
+
+    it("adds 3 points when skill or memory updates are present", () => {
+      const rating = Subconscious.computeDriveRating({
+        result: "success",
+        summary: "Learned something",
+        progressEntry: "Read papers",
+        skillUpdates: "# Skills\nupdated",
+        memoryUpdates: null,
+        proposals: [],
+      });
+      expect(rating).toBe(8);
+    });
+
+    it("subtracts 2 points for failed tasks", () => {
+      const rating = Subconscious.computeDriveRating({
+        result: "failure",
+        summary: "Blocked",
+        progressEntry: "Could not complete",
+        skillUpdates: null,
+        memoryUpdates: null,
+        proposals: [],
+      });
+      expect(rating).toBe(3);
+    });
+
+    it("adds 4 points for blog/PR progress entries", () => {
+      const rating = Subconscious.computeDriveRating({
+        result: "success",
+        summary: "Wrote a blog post",
+        progressEntry: "Published blog about alignment",
+        skillUpdates: null,
+        memoryUpdates: null,
+        proposals: [],
+      });
+      expect(rating).toBe(9);
+    });
+
+    it("clamps score to the 0-10 range", () => {
+      // Max: 5 + 3 + 4 = 12 → clamped to 10
+      const maxRating = Subconscious.computeDriveRating({
+        result: "success",
+        summary: "Did everything",
+        progressEntry: "Merged a PR and wrote blog",
+        skillUpdates: "updated",
+        memoryUpdates: null,
+        proposals: [],
+      });
+      expect(maxRating).toBe(10);
+
+      // Min: 5 - 2 = 3, but with no bonus → 3 (already above 0)
+      const minRating = Subconscious.computeDriveRating({
+        result: "failure",
+        summary: "Bad",
+        progressEntry: "Failed attempt",
+        skillUpdates: null,
+        memoryUpdates: null,
+        proposals: [],
+      });
+      expect(minRating).toBe(3);
+    });
+  });
 });

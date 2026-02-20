@@ -59,6 +59,7 @@ export class IdleHandler {
 
     // Step 7: Write new plan from approved goals
     this.logger.debug(`IdleHandler: ${approved.length} proposal(s) approved, writing plan`);
+    const dateTag = `[ID-generated ${this.clock.now().toISOString().split("T")[0]}]`;
     const planLines = [
       "# Plan",
       "",
@@ -66,7 +67,7 @@ export class IdleHandler {
       approved.map((g) => g.title).join(", "),
       "",
       "## Tasks",
-      ...approved.map((g) => `- [ ] ${g.title}: ${g.description}`),
+      ...approved.map((g) => `- [ ] ${g.title}: ${g.description} ${dateTag}`),
     ];
     await this.ego.writePlan(planLines.join("\n"));
 

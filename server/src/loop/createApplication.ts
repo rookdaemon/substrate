@@ -37,9 +37,11 @@ import { NodeProcessRunner } from "../agents/claude/NodeProcessRunner";
 import { HealthCheckScheduler } from "./HealthCheckScheduler";
 import { EmailScheduler } from "./EmailScheduler";
 import { MetricsScheduler } from "./MetricsScheduler";
+import { ValidationScheduler } from "./ValidationScheduler";
 import { TaskClassificationMetrics } from "../evaluation/TaskClassificationMetrics";
 import { SubstrateSizeTracker } from "../evaluation/SubstrateSizeTracker";
 import { DelegationTracker } from "../evaluation/DelegationTracker";
+import { SelfImprovementMetricsCollector } from "../evaluation/SelfImprovementMetrics";
 import type { Envelope } from "@rookdaemon/agora" with { "resolution-mode": "import" };
 import type { AgoraService } from "@rookdaemon/agora" with { "resolution-mode": "import" };
 import { LoopWatchdog } from "./LoopWatchdog";
@@ -52,6 +54,7 @@ import { AgoraInboxManager } from "../agora/AgoraInboxManager";
 import { IAgoraService } from "../agora/IAgoraService";
 import { FileWatcher } from "../substrate/watcher/FileWatcher";
 import { SuperegoFindingTracker } from "../agents/roles/SuperegoFindingTracker";
+import { DriveQualityTracker } from "../evaluation/DriveQualityTracker";
 
 // Note: AgoraServiceType is now IAgoraService interface in agora/IAgoraService.ts
 
@@ -87,6 +90,10 @@ export interface ApplicationConfig {
   };
   metrics?: {
     enabled: boolean;
+    intervalMs?: number; // Default: 604800000 (7 days)
+  };
+  validation?: {
+    enabled?: boolean;
     intervalMs?: number; // Default: 604800000 (7 days)
   };
   agora?: {
@@ -195,10 +202,14 @@ export async function createApplication(config: ApplicationConfig): Promise<Appl
     archiver, archiveConfig
   );
 
+  // Drive quality tracker — persists Id drive ratings for learning loop
+  const driveRatingsPath = path.resolve(config.substratePath, "..", "data", "drive-ratings.jsonl");
+  const driveQualityTracker = new DriveQualityTracker(fs, driveRatingsPath);
+
   const ego = new Ego(reader, writer, conversationManager, checker, promptBuilder, launcher, clock, taskClassifier, cwd);
   const subconscious = new Subconscious(reader, writer, appendWriter, conversationManager, checker, promptBuilder, launcher, clock, taskClassifier, cwd);
   const superego = new Superego(reader, appendWriter, checker, promptBuilder, launcher, clock, taskClassifier, writer, cwd);
-  const id = new Id(reader, checker, promptBuilder, launcher, clock, taskClassifier, cwd);
+  const id = new Id(reader, checker, promptBuilder, launcher, clock, taskClassifier, cwd, driveQualityTracker);
 
   // Loop layer — build httpServer first for the underlying http.Server,
   // then wsServer, then orchestrator, then wire orchestrator back into httpServer
@@ -372,6 +383,7 @@ export async function createApplication(config: ApplicationConfig): Promise<Appl
   const reportStore = new GovernanceReportStore(fs, reportsDir, clock);
   httpServer.setReportStore(reportStore);
   orchestrator.setReportStore(reportStore);
+  orchestrator.setDriveQualityTracker(driveQualityTracker);
 
   orchestrator.setLauncher(launcher);
   // Set shutdown function that closes resources before exiting
@@ -502,6 +514,45 @@ export async function createApplication(config: ApplicationConfig): Promise<Appl
       delegationTracker
     );
     orchestrator.setMetricsScheduler(metricsScheduler);
+
+    // Wire up monthly self-improvement metrics collection
+    const serverSrcPath = config.sourceCodePath
+      ? path.join(config.sourceCodePath, "server", "src")
+      : path.join(config.substratePath, "..", "..", "server", "src");
+    const selfImprovementCollector = new SelfImprovementMetricsCollector(
+      fs,
+      config.substratePath,
+      serverSrcPath,
+      clock,
+      reportStore
+    );
+    metricsScheduler.setSelfImprovementCollector(
+      selfImprovementCollector,
+      30 * 24 * 60 * 60 * 1000, // 30 days
+      () => {
+        const m = orchestrator.getMetrics();
+        return {
+          idleRate: m.totalCycles > 0 ? m.idleCycles / m.totalCycles : 0,
+        };
+      }
+    );
+  }
+
+  // Validation scheduler setup
+  if (config.validation?.enabled !== false) { // Default enabled
+    const appPaths = getAppPaths();
+    const stateFilePath = path.join(appPaths.config, "validation-scheduler-state.txt");
+    const validationScheduler = new ValidationScheduler(
+      fs,
+      clock,
+      logger,
+      {
+        substratePath: config.substratePath,
+        validationIntervalMs: config.validation?.intervalMs ?? 604800000, // Default: 7 days
+        stateFilePath,
+      }
+    );
+    orchestrator.setValidationScheduler(validationScheduler);
   }
 
   // Watchdog — detects stalls and injects gentle reminders

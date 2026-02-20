@@ -4,6 +4,7 @@ import { ILogger } from "../logging";
 import { TaskClassificationMetrics } from "../evaluation/TaskClassificationMetrics";
 import { SubstrateSizeTracker } from "../evaluation/SubstrateSizeTracker";
 import { DelegationTracker } from "../evaluation/DelegationTracker";
+import { SelfImprovementMetricsCollector, PerformanceInput } from "../evaluation/SelfImprovementMetrics";
 import * as path from "node:path";
 
 export interface MetricsSchedulerConfig {
@@ -41,6 +42,12 @@ export class MetricsScheduler {
   private metricsCount = 0;
   private stateLoaded = false;
 
+  // Self-improvement metrics (monthly)
+  private selfImprovementCollector: SelfImprovementMetricsCollector | null = null;
+  private selfImprovementIntervalMs = 30 * 24 * 60 * 60 * 1000; // 30 days
+  private lastSelfImprovementTime: Date | null = null;
+  private getPerformanceSnapshot: (() => PerformanceInput) | null = null;
+
   constructor(
     private readonly fs: IFileSystem,
     private readonly clock: IClock,
@@ -50,6 +57,22 @@ export class MetricsScheduler {
     private readonly sizeTracker: SubstrateSizeTracker,
     private readonly delegationTracker: DelegationTracker
   ) {}
+
+  /**
+   * Configure optional monthly self-improvement metrics collection.
+   * @param collector The SelfImprovementMetricsCollector instance.
+   * @param intervalMs Collection interval in ms (default: 30 days).
+   * @param getPerformance Optional callback to get current performance data from the orchestrator.
+   */
+  setSelfImprovementCollector(
+    collector: SelfImprovementMetricsCollector,
+    intervalMs = 30 * 24 * 60 * 60 * 1000,
+    getPerformance?: () => PerformanceInput
+  ): void {
+    this.selfImprovementCollector = collector;
+    this.selfImprovementIntervalMs = intervalMs;
+    this.getPerformanceSnapshot = getPerformance ?? null;
+  }
 
   /**
    * Check if metrics collection should run based on interval
@@ -117,6 +140,11 @@ export class MetricsScheduler {
       // Persist state after successful collection
       await this.persistLastMetricsTime(this.lastMetricsTime);
 
+      // Run monthly self-improvement metrics if due
+      if (this.selfImprovementCollector && this.isSelfImprovementDue()) {
+        await this.runSelfImprovement();
+      }
+
       return {
         success: true,
         timestamp,
@@ -131,6 +159,39 @@ export class MetricsScheduler {
         timestamp,
         collected,
       };
+    }
+  }
+
+  /**
+   * Whether monthly self-improvement metrics collection is due.
+   */
+  private isSelfImprovementDue(): boolean {
+    if (!this.lastSelfImprovementTime) {
+      return true;
+    }
+    const elapsed = this.clock.now().getTime() - this.lastSelfImprovementTime.getTime();
+    return elapsed >= this.selfImprovementIntervalMs;
+  }
+
+  /**
+   * Run self-improvement metrics collection and save results.
+   */
+  private async runSelfImprovement(): Promise<void> {
+    if (!this.selfImprovementCollector) {
+      return;
+    }
+    try {
+      this.logger.debug("MetricsScheduler: collecting monthly self-improvement metrics");
+      const perf = this.getPerformanceSnapshot ? this.getPerformanceSnapshot() : {};
+      const snapshot = await this.selfImprovementCollector.collect(perf);
+      await this.selfImprovementCollector.save(snapshot);
+      this.lastSelfImprovementTime = this.clock.now();
+      this.logger.debug(
+        `MetricsScheduler: self-improvement metrics saved for period ${snapshot.period}`
+      );
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      this.logger.debug(`MetricsScheduler: self-improvement metrics failed — ${errorMsg}`);
     }
   }
 

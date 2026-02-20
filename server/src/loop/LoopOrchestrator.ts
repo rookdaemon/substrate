@@ -26,10 +26,12 @@ import { BackupScheduler } from "./BackupScheduler";
 import { HealthCheckScheduler } from "./HealthCheckScheduler";
 import { EmailScheduler } from "./EmailScheduler";
 import { MetricsScheduler } from "./MetricsScheduler";
+import { ValidationScheduler } from "./ValidationScheduler";
 import { LoopWatchdog } from "./LoopWatchdog";
 import { SuperegoFindingTracker } from "../agents/roles/SuperegoFindingTracker";
 import { IMessageInjector } from "./IMessageInjector";
 import { GovernanceReportStore } from "../evaluation/GovernanceReportStore";
+import { DriveQualityTracker } from "../evaluation/DriveQualityTracker";
 
 export class LoopOrchestrator implements IMessageInjector {
   private state: LoopState = LoopState.STOPPED;
@@ -56,6 +58,9 @@ export class LoopOrchestrator implements IMessageInjector {
   // Metrics scheduler
   private metricsScheduler: MetricsScheduler | null = null;
 
+  // Validation scheduler
+  private validationScheduler: ValidationScheduler | null = null;
+
   // Watchdog — detects stalls and injects gentle reminders
   private watchdog: LoopWatchdog | null = null;
 
@@ -64,6 +69,9 @@ export class LoopOrchestrator implements IMessageInjector {
 
   // Governance report store for persisting audit reports
   private reportStore: GovernanceReportStore | null = null;
+
+  // Drive quality tracker for Id learning loop
+  private driveQualityTracker: DriveQualityTracker | null = null;
 
   // SUPEREGO finding tracker for recurring finding escalation
   private findingTracker: SuperegoFindingTracker = new SuperegoFindingTracker();
@@ -195,6 +203,10 @@ export class LoopOrchestrator implements IMessageInjector {
     this.metricsScheduler = scheduler;
   }
 
+  setValidationScheduler(scheduler: ValidationScheduler): void {
+    this.validationScheduler = scheduler;
+  }
+
   setWatchdog(watchdog: LoopWatchdog): void {
     this.watchdog = watchdog;
   }
@@ -207,6 +219,10 @@ export class LoopOrchestrator implements IMessageInjector {
 
   setReportStore(store: GovernanceReportStore): void {
     this.reportStore = store;
+  }
+
+  setDriveQualityTracker(tracker: DriveQualityTracker): void {
+    this.driveQualityTracker = tracker;
   }
 
   requestRestart(): void {
@@ -337,6 +353,9 @@ export class LoopOrchestrator implements IMessageInjector {
         }
       }
 
+      // Drive learning: if task was Id-generated, record a quality rating for future drive improvement
+      await this.recordDriveRatingIfApplicable(dispatch.description, taskResult);
+
       if (taskResult.proposals.length > 0) {
         this.logger.debug(`cycle ${this.cycleNumber}: evaluating ${taskResult.proposals.length} proposal(s)`);
         const evaluations = await this.superego.evaluateProposals(taskResult.proposals, this.createLogCallback("SUPEREGO"));
@@ -390,6 +409,11 @@ export class LoopOrchestrator implements IMessageInjector {
     // Metrics scheduling
     if (this.metricsScheduler && await this.metricsScheduler.shouldRunMetrics()) {
       await this.runScheduledMetrics();
+    }
+
+    // Validation scheduling
+    if (this.validationScheduler && await this.validationScheduler.shouldRunValidation()) {
+      await this.runScheduledValidation();
     }
 
     return result;
@@ -996,7 +1020,80 @@ export class LoopOrchestrator implements IMessageInjector {
     }
   }
 
+  private async runScheduledValidation(): Promise<void> {
+    this.logger.debug(`validation: starting scheduled substrate validation (cycle ${this.cycleNumber})`);
+    try {
+      const result = await this.validationScheduler!.runValidation();
+      if (result.success && result.report) {
+        const { brokenReferences, orphanedFiles, staleFiles } = result.report;
+        this.logger.debug(
+          `validation: success — ${brokenReferences.length} broken refs, ` +
+          `${orphanedFiles.length} orphaned files, ${staleFiles.length} stale files`
+        );
+        this.eventSink.emit({
+          type: "validation_complete",
+          timestamp: this.clock.now().toISOString(),
+          data: {
+            cycleNumber: this.cycleNumber,
+            success: true,
+            brokenReferences: brokenReferences.length,
+            orphanedFiles: orphanedFiles.length,
+            staleFiles: staleFiles.length,
+          },
+        });
+      } else {
+        this.logger.debug(`validation: failed — ${result.error}`);
+        this.eventSink.emit({
+          type: "validation_complete",
+          timestamp: this.clock.now().toISOString(),
+          data: {
+            cycleNumber: this.cycleNumber,
+            success: false,
+            error: result.error,
+          },
+        });
+      }
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      this.logger.debug(`validation: unexpected error — ${errorMsg}`);
+      this.eventSink.emit({
+        type: "validation_complete",
+        timestamp: this.clock.now().toISOString(),
+        data: {
+          cycleNumber: this.cycleNumber,
+          success: false,
+          error: errorMsg,
+        },
+      });
+    }
+  }
 
+
+
+  private async recordDriveRatingIfApplicable(description: string, taskResult: TaskResult): Promise<void> {
+    if (!this.driveQualityTracker) return;
+
+    const match = description.match(/\[ID-generated (\d{4}-\d{2}-\d{2})\]/);
+    if (!match) return;
+
+    const generatedAt = match[1];
+    const rating = Subconscious.computeDriveRating(taskResult);
+    const category = DriveQualityTracker.inferCategory(description);
+
+    try {
+      await this.driveQualityTracker.recordRating({
+        task: description,
+        generatedAt,
+        completedAt: this.clock.now().toISOString(),
+        rating,
+        category,
+      });
+      this.logger.debug(`drive-quality: recorded rating ${rating}/10 for "${category}" task`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.debug(`drive-quality: failed to record rating — ${msg}`);
+    }
+  }
 
   private async runReconsideration(
     dispatch: { taskId: string; description: string },

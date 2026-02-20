@@ -134,6 +134,24 @@ export class Subconscious {
     await this.writer.write(SubstrateFileType.MEMORY, content);
   }
 
+  /**
+   * Compute a 0-10 quality rating for a completed Id-generated drive task.
+   * Uses heuristics based on the task outcome without requiring an LLM call.
+   */
+  static computeDriveRating(result: TaskResult): number {
+    let score = 5; // baseline
+    if (result.memoryUpdates || result.skillUpdates) score += 3;
+    if (result.result === "failure") score -= 2;
+    if (
+      result.progressEntry.toLowerCase().includes("blog") ||
+      result.progressEntry.toLowerCase().includes(" pr ") ||
+      result.progressEntry.toLowerCase().includes("pull request")
+    ) {
+      score += 4;
+    }
+    return Math.max(0, Math.min(10, score));
+  }
+
   async evaluateOutcome(
     task: TaskAssignment,
     result: TaskResult,
