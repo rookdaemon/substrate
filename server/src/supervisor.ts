@@ -8,7 +8,11 @@
  * - After restart (exit 75): add --forceStart iff autoStartAfterRestart is true (default true).
  * - Any other exit code: propagate (clean exit; no restart).
  *
- * Rollback behavior:
+ * Safety gates (pre-restart):
+ * - Runs tests, checks restart-context.md exists/non-empty, and verifies clean git state.
+ * - Skip with --skip-safety-gates flag.
+ *
+ * Rollback behavior (post-restart):
  * - After a successful build and restart, polls /api/health/critical (5 attempts, 2s intervals).
  * - On healthy restart: tags current commit as `last-known-good`.
  * - After 3 consecutive unhealthy restarts: checks out `last-known-good`, rebuilds, and restarts.
@@ -21,6 +25,7 @@ import * as path from "path";
 import { resolveConfig } from "./config";
 import { getAppPaths } from "./paths";
 import { NodeFileSystem } from "./substrate/abstractions/NodeFileSystem";
+import type { IFileSystem } from "./substrate/abstractions/IFileSystem";
 
 const RESTART_EXIT_CODE = 75;
 const MAX_BUILD_RETRIES = 5;
@@ -53,6 +58,41 @@ async function waitForHealthy(port: number, maxAttempts = HEALTH_CHECK_ATTEMPTS)
     }
   }
   return false;
+}
+
+export async function validateRestartSafety(
+  serverDir: string,
+  dataDir: string,
+  fs: IFileSystem
+): Promise<boolean> {
+  // 1. Run tests
+  const testCode = await run("npm", ["test"], serverDir);
+  if (testCode !== 0) {
+    console.error("[supervisor] Safety gate failed: tests did not pass");
+    return false;
+  }
+
+  // 2. Check restart-context.md
+  const restartContextPath = path.join(dataDir, "memory", "restart-context.md");
+  const contextExists = await fs.exists(restartContextPath);
+  if (!contextExists) {
+    console.error("[supervisor] Safety gate failed: memory/restart-context.md does not exist");
+    return false;
+  }
+  const stat = await fs.stat(restartContextPath);
+  if (stat.size === 0) {
+    console.error("[supervisor] Safety gate failed: memory/restart-context.md is empty");
+    return false;
+  }
+
+  // 3. Check git state
+  const gitStatusCode = await run("git", ["diff-index", "--quiet", "HEAD", "--"], serverDir);
+  if (gitStatusCode !== 0) {
+    console.error("[supervisor] Safety gate failed: uncommitted changes in working tree");
+    return false;
+  }
+
+  return true;
 }
 
 async function main(): Promise<void> {
@@ -100,6 +140,14 @@ async function main(): Promise<void> {
     } else {
       consecutiveFailures = 0;
       currentRetryDelay = INITIAL_RETRY_DELAY_MS;
+      const skipGates = process.argv.includes("--skip-safety-gates");
+      if (!skipGates) {
+        const safeToRestart = await validateRestartSafety(serverDir, config.workingDirectory, fs);
+        if (!safeToRestart) {
+          console.error("[supervisor] Restart aborted due to failed safety gates");
+          process.exit(1);
+        }
+      }
       console.log("[supervisor] Build succeeded — restarting server");
 
       const healthy = await waitForHealthy(config.port);
@@ -132,7 +180,9 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((err) => {
-  console.error("[supervisor] Fatal error:", err);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch((err) => {
+    console.error("[supervisor] Fatal error:", err);
+    process.exit(1);
+  });
+}
