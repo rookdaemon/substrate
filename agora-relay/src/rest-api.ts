@@ -11,6 +11,7 @@
 
 import { Router } from "express";
 import type { Request, Response } from "express";
+import { rateLimit } from "express-rate-limit";
 import {
   createToken,
   revokeToken,
@@ -18,6 +19,18 @@ import {
   type AuthenticatedRequest,
 } from "./jwt-auth.js";
 import { MessageBuffer, type BufferedMessage } from "./message-buffer.js";
+
+// ---------------------------------------------------------------------------
+// Rate limiter: 60 requests per 60 seconds per IP
+// ---------------------------------------------------------------------------
+
+const apiRateLimit = rateLimit({
+  windowMs: 60_000,
+  limit: 60,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: { error: "Too many requests — try again later" },
+});
 
 /**
  * A session for a REST-connected agent.
@@ -119,6 +132,9 @@ export function createRestRouter(
   verifyEnv: VerifyEnvelopeFn
 ): Router {
   const router = Router();
+
+  // Apply rate limiting to all routes
+  router.use(apiRateLimit);
 
   // Wire relay message-relayed event → buffer for REST polling clients
   relay.on("message-relayed", (from, to, envelope) => {
