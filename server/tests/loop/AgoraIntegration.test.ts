@@ -95,6 +95,7 @@ describe("Agora Message Integration", () => {
     orchestrator = {
       injectMessage: (msg: string) => {
         injectedMessages.push(msg);
+        return true; // Simulate active session delivery
       },
       getState: () => LoopState.RUNNING,
     } as unknown as LoopOrchestrator;

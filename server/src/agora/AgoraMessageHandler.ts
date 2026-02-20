@@ -220,13 +220,31 @@ export class AgoraMessageHandler {
       return;
     }
 
-    // Determine if we should add [UNPROCESSED] marker
-    // Check if effectively paused (explicitly paused OR rate-limited)
+    // Inject message into orchestrator FIRST so we know if it was delivered to an active session.
+    // This determines whether to mark the CONVERSATION.md entry as [UNPROCESSED].
+    // Format message as agent prompt similar to old checkAgoraInbox format
+    let injected = false;
+    try {
+      const agentPrompt = `[AGORA MESSAGE from ${senderDisplayName}]\nType: ${envelope.type}\nEnvelope ID: ${envelope.id}\nTimestamp: ${timestamp}\nPayload: ${payloadStr}\n\nRespond to this message if appropriate. Use the TinyBus MCP tool ${"`"}mcp__tinybus__send_message${"`"} with type "agora.send" to reply. Example: { type: "agora.send", payload: { peerName: "${senderDisplayName}", type: "publish", payload: { text: "your response" }, inReplyTo: "${envelope.id}" } }`;
+      injected = this.messageInjector.injectMessage(agentPrompt);
+      this.logger.debug(`[AGORA] Injected message into orchestrator: envelopeId=${envelope.id} delivered=${injected}`);
+    } catch (err) {
+      this.logger.debug(`[AGORA] Failed to inject message into orchestrator: ${err instanceof Error ? err.message : String(err)}`);
+      throw err;
+    }
+
+    // Determine if we should add [UNPROCESSED] marker.
+    // Mark as unprocessed when:
+    // - message was NOT delivered to an active session (between cycles or between ticks), OR
+    // - loop is explicitly stopped/paused, OR
+    // - global rate limit is active
+    // The [UNPROCESSED] badge persists in CONVERSATION.md across restarts so the agent
+    // can pick it up on the next cycle without losing the message.
     const state = this.getState();
-    const isUnprocessed = state === LoopState.STOPPED || state === LoopState.PAUSED || this.isRateLimited();
+    const isUnprocessed = !injected || state === LoopState.STOPPED || state === LoopState.PAUSED || this.isRateLimited();
 
     if (isUnprocessed) {
-      this.logger.debug(`[AGORA] Message marked as UNPROCESSED (state=${state}, rateLimited=${this.isRateLimited()})`);
+      this.logger.debug(`[AGORA] Message marked as UNPROCESSED (delivered=${injected}, state=${state}, rateLimited=${this.isRateLimited()})`);
     }
 
     // Format a user-friendly message (timestamp is added by AppendOnlyWriter, role by ConversationManager)
@@ -284,17 +302,6 @@ export class AgoraMessageHandler {
       }
     } else {
       this.logger.debug(`[AGORA] No eventSink configured, skipping WebSocket event`);
-    }
-
-    // Inject message directly into orchestrator (bypass TinyBus)
-    // Format message as agent prompt similar to old checkAgoraInbox format
-    try {
-      const agentPrompt = `[AGORA MESSAGE from ${senderDisplayName}]\nType: ${envelope.type}\nEnvelope ID: ${envelope.id}\nTimestamp: ${timestamp}\nPayload: ${payloadStr}\n\nRespond to this message if appropriate. Use the TinyBus MCP tool ${"`"}mcp__tinybus__send_message${"`"} with type "agora.send" to reply. Example: { type: "agora.send", payload: { peerName: "${senderDisplayName}", type: "publish", payload: { text: "your response" }, inReplyTo: "${envelope.id}" } }`;
-      this.messageInjector.injectMessage(agentPrompt);
-      this.logger.debug(`[AGORA] Injected message into orchestrator: envelopeId=${envelope.id}`);
-    } catch (err) {
-      this.logger.debug(`[AGORA] Failed to inject message into orchestrator: ${err instanceof Error ? err.message : String(err)}`);
-      throw err;
     }
   }
 

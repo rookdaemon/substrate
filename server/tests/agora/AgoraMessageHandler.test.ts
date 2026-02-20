@@ -21,9 +21,11 @@ class MockConversationManager implements IConversationManager {
 
 class MockMessageInjector implements IMessageInjector {
   public injectedMessages: string[] = [];
+  public returnValue = true; // Default: simulate active session delivery
 
-  injectMessage(message: string): void {
+  injectMessage(message: string): boolean {
     this.injectedMessages.push(message);
+    return this.returnValue;
   }
 }
 
@@ -154,7 +156,8 @@ describe("AgoraMessageHandler", () => {
   });
 
   describe("processEnvelope", () => {
-    it("should write to CONVERSATION.md with correct format when RUNNING", async () => {
+    it("should write to CONVERSATION.md with correct format when RUNNING with active session", async () => {
+      // messageInjector.returnValue = true (default) → active session, no [UNPROCESSED]
       await handler.processEnvelope(testEnvelope, "webhook");
 
       expect(conversationManager.appendedEntries).toHaveLength(1);
@@ -163,6 +166,17 @@ describe("AgoraMessageHandler", () => {
       expect(entry.entry).toContain("...cdefabcd");
       expect(entry.entry).toContain("question");
       expect(entry.entry).not.toContain("[UNPROCESSED]");
+    });
+
+    it("should add [UNPROCESSED] marker when RUNNING but no active session (between cycles)", async () => {
+      // Simulate injection failing (between cycles — no active session)
+      messageInjector.returnValue = false;
+
+      await handler.processEnvelope(testEnvelope, "webhook");
+
+      expect(conversationManager.appendedEntries).toHaveLength(1);
+      const entry = conversationManager.appendedEntries[0];
+      expect(entry.entry).toContain("**[UNPROCESSED]**");
     });
 
     it("should add [UNPROCESSED] marker when STOPPED", async () => {
@@ -233,6 +247,16 @@ describe("AgoraMessageHandler", () => {
       expect(conversationManager.appendedEntries).toHaveLength(1);
       const entry = conversationManager.appendedEntries[0];
       expect(entry.entry).toContain("**[UNPROCESSED]**");
+    });
+
+    it("should inject message into orchestrator before writing to CONVERSATION.md", async () => {
+      await handler.processEnvelope(testEnvelope, "webhook");
+
+      expect(messageInjector.injectedMessages).toHaveLength(1);
+      const injected = messageInjector.injectedMessages[0];
+      expect(injected).toContain("[AGORA MESSAGE from");
+      expect(injected).toContain("Type: request");
+      expect(injected).toContain("Envelope ID: envelope-123");
     });
 
     it("should inject message into orchestrator", async () => {

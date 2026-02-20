@@ -86,6 +86,10 @@ export class AgentSdkLauncher implements ISessionLauncher {
     this.mcpServers = mcpServers ?? {};
   }
 
+  isActive(): boolean {
+    return this.activeChannel !== null;
+  }
+
   inject(message: string): void {
     if (!this.activeChannel) {
       this.logger.debug("sdk-launch: inject called but no active session");

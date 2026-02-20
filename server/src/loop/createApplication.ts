@@ -55,6 +55,7 @@ import { IAgoraService } from "../agora/IAgoraService";
 import { FileWatcher } from "../substrate/watcher/FileWatcher";
 import { SuperegoFindingTracker } from "../agents/roles/SuperegoFindingTracker";
 import { DriveQualityTracker } from "../evaluation/DriveQualityTracker";
+import { SubstrateFileType } from "../substrate/types";
 
 // Note: AgoraServiceType is now IAgoraService interface in agora/IAgoraService.ts
 
@@ -578,6 +579,20 @@ export async function createApplication(config: ApplicationConfig): Promise<Appl
   }
 
   const mode = config.mode ?? "cycle";
+
+  // Startup scan: check CONVERSATION.md for [UNPROCESSED] messages from before a restart.
+  // If found, queue a startup prompt so the agent will check for and handle them on the first cycle.
+  try {
+    const conversationContent = await reader.read(SubstrateFileType.CONVERSATION);
+    if (conversationContent.rawMarkdown.includes("[UNPROCESSED]")) {
+      const startupPrompt = "[STARTUP SCAN] Unprocessed messages detected in CONVERSATION.md from before the last restart. Please read CONVERSATION.md and respond to any messages marked with [UNPROCESSED].";
+      orchestrator.queueStartupMessage(startupPrompt);
+      logger.debug("createApplication: queued startup message for unprocessed messages in CONVERSATION.md");
+    }
+  } catch {
+    // CONVERSATION.md may not exist yet (first run) — skip startup scan
+    logger.debug("createApplication: startup scan skipped (CONVERSATION.md not readable)");
+  }
 
   return {
     orchestrator,
