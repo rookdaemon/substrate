@@ -43,7 +43,7 @@ export class LoopOrchestrator implements IMessageInjector {
   private rateLimitUntil: string | null = null;
 
   // Message injection — works in both cycle and tick mode
-  private launcher: { inject(message: string): void } | null = null;
+  private launcher: { inject(message: string): void; isActive(): boolean } | null = null;
   private shutdownFn: ((exitCode: number) => void) | null = null;
 
   // Backup scheduler
@@ -179,8 +179,19 @@ export class LoopOrchestrator implements IMessageInjector {
     }
   }
 
-  setLauncher(launcher: { inject(message: string): void }): void {
+  setLauncher(launcher: { inject(message: string): void; isActive(): boolean }): void {
     this.launcher = launcher;
+  }
+
+  /**
+   * Queue a startup message to be injected at the start of the first active session.
+   * Used by the startup scan to recover [UNPROCESSED] messages after a restart.
+   * In tick mode: consumed at the start of the next tick.
+   * In cycle mode: serves as a reminder alongside [UNPROCESSED] markers in CONVERSATION.md.
+   */
+  queueStartupMessage(message: string): void {
+    this.pendingMessages.push(message);
+    this.logger.debug(`queueStartupMessage: queued startup message (${message.length} chars)`);
   }
 
   setShutdown(fn: (exitCode: number) => void): void {
@@ -750,7 +761,7 @@ export class LoopOrchestrator implements IMessageInjector {
     await sessionPromise;
   }
 
-  injectMessage(message: string): void {
+  injectMessage(message: string): boolean {
     this.logger.debug(`injectMessage: "${message}"`);
 
     this.eventSink.emit({
@@ -762,18 +773,20 @@ export class LoopOrchestrator implements IMessageInjector {
     // Tick mode: forward to active session manager
     if (this.activeSessionManager?.isActive()) {
       this.activeSessionManager.inject(message);
-      return;
+      return true;
     }
 
     // Cycle mode: forward to launcher's active session (via streamInput)
-    if (this.launcher) {
+    if (this.launcher?.isActive()) {
       this.launcher.inject(message);
-      return;
+      return true;
     }
 
-    // No active session — queue for next tick
-    this.logger.debug("injectMessage: no active session or launcher, queuing");
+    // No active session — queue for next tick/cycle and wake the timer for immediate pickup
+    this.logger.debug("injectMessage: no active session, queuing and waking timer");
     this.pendingMessages.push(message);
+    this.timer.wake();
+    return false;
   }
 
   private transition(to: LoopState): void {

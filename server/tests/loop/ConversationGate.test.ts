@@ -69,7 +69,8 @@ describe("ConversationGate and TickGating", () => {
     orchestrator.setLauncher({ 
       inject: (msg: string) => {
         injectedMessages.push(msg);
-      }
+      },
+      isActive: () => true,
     });
   });
 
