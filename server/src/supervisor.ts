@@ -16,6 +16,7 @@ import * as path from "path";
 import { resolveConfig } from "./config";
 import { getAppPaths } from "./paths";
 import { NodeFileSystem } from "./substrate/abstractions/NodeFileSystem";
+import type { IFileSystem } from "./substrate/abstractions/IFileSystem";
 
 const RESTART_EXIT_CODE = 75;
 const MAX_BUILD_RETRIES = 5;
@@ -29,6 +30,41 @@ function run(cmd: string, args: string[], cwd: string): Promise<number> {
     child.on("exit", (code) => resolve(code ?? 1));
     child.on("error", () => resolve(1));
   });
+}
+
+export async function validateRestartSafety(
+  serverDir: string,
+  dataDir: string,
+  fs: IFileSystem
+): Promise<boolean> {
+  // 1. Run tests
+  const testCode = await run("npm", ["test"], serverDir);
+  if (testCode !== 0) {
+    console.error("[supervisor] Safety gate failed: tests did not pass");
+    return false;
+  }
+
+  // 2. Check restart-context.md
+  const restartContextPath = path.join(dataDir, "memory", "restart-context.md");
+  const contextExists = await fs.exists(restartContextPath);
+  if (!contextExists) {
+    console.error("[supervisor] Safety gate failed: memory/restart-context.md does not exist");
+    return false;
+  }
+  const stat = await fs.stat(restartContextPath);
+  if (stat.size === 0) {
+    console.error("[supervisor] Safety gate failed: memory/restart-context.md is empty");
+    return false;
+  }
+
+  // 3. Check git state
+  const gitStatusCode = await run("git", ["diff-index", "--quiet", "HEAD", "--"], serverDir);
+  if (gitStatusCode !== 0) {
+    console.error("[supervisor] Safety gate failed: uncommitted changes in working tree");
+    return false;
+  }
+
+  return true;
 }
 
 async function main(): Promise<void> {
@@ -75,12 +111,22 @@ async function main(): Promise<void> {
     } else {
       consecutiveFailures = 0;
       currentRetryDelay = INITIAL_RETRY_DELAY_MS;
+      const skipGates = process.argv.includes("--skip-safety-gates");
+      if (!skipGates) {
+        const safeToRestart = await validateRestartSafety(serverDir, config.workingDirectory, fs);
+        if (!safeToRestart) {
+          console.error("[supervisor] Restart aborted due to failed safety gates");
+          process.exit(1);
+        }
+      }
       console.log("[supervisor] Build succeeded — restarting server");
     }
   }
 }
 
-main().catch((err) => {
-  console.error("[supervisor] Fatal error:", err);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch((err) => {
+    console.error("[supervisor] Fatal error:", err);
+    process.exit(1);
+  });
+}
