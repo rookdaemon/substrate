@@ -8,6 +8,7 @@
  */
 
 import jwt from "jsonwebtoken";
+import { randomBytes } from "crypto";
 import type { Request, Response, NextFunction } from "express";
 
 export interface JwtPayload {
@@ -74,7 +75,7 @@ export function createToken(payload: JwtPayload): {
 } {
   const secret = getJwtSecret();
   const expirySeconds = getExpirySeconds();
-  const jti = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const jti = `${Date.now()}-${randomBytes(16).toString("hex")}`;
 
   const token = jwt.sign(
     { publicKey: payload.publicKey, name: payload.name, jti },

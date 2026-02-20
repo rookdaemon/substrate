@@ -108,3 +108,52 @@ jobs:
       - name: Test client
         if: steps.filter.outputs.client == 'true'
         run: npm run test --workspace=client
+
+  agora-relay:
+    name: Agora Relay - Lint, Build, and Test
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: read
+    
+    strategy:
+      matrix:
+        node-version: [24.x]
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Check for agora-relay changes
+        uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            agora-relay:
+              - 'agora-relay/**'
+              - 'package.json'
+              - 'package-lock.json'
+              - '.github/workflows/ci.yml'
+      
+      - name: Setup Node.js ${{ matrix.node-version }}
+        if: steps.filter.outputs.agora-relay == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+      
+      - name: Install dependencies
+        if: steps.filter.outputs.agora-relay == 'true'
+        run: npm ci
+      
+      - name: Lint agora-relay
+        if: steps.filter.outputs.agora-relay == 'true'
+        run: npm run lint --workspace=agora-relay
+      
+      - name: Build agora-relay
+        if: steps.filter.outputs.agora-relay == 'true'
+        run: npm run build --workspace=agora-relay
+      
+      - name: Test agora-relay
+        if: steps.filter.outputs.agora-relay == 'true'
+        run: npm run test --workspace=agora-relay

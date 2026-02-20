@@ -8,13 +8,13 @@ module.exports = {
   moduleNameMapper: {
     "^(\\.{1,2}/.*)\\.js$": "$1",
   },
-  globals: {
-    "ts-jest": {
+  transform: {
+    "^.+\\.tsx?$": ["ts-jest", {
       tsconfig: {
         module: "commonjs",
         moduleResolution: "node",
       },
-    },
+    }],
   },
   forceExit: true,
   testTimeout: 10000,

@@ -5,7 +5,8 @@
   "description": "Self-Referential Agent Shell",
   "workspaces": [
     "server",
-    "client"
+    "client",
+    "agora-relay"
   ],
   "scripts": {
     "init": "tsx server/src/cli.ts init",
