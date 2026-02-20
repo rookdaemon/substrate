@@ -234,6 +234,10 @@ export class LoopHttpServer {
         this.handleHealthCheck(res);
         break;
 
+      case "GET /api/health/critical":
+        this.handleCriticalHealthCheck(res);
+        break;
+
       case "GET /api/substrate/health":
         this.handleSubstrateHealth(res);
         break;
@@ -414,6 +418,17 @@ export class LoopHttpServer {
         const message = err instanceof Error ? err.message : "Unknown error";
         this.json(res, 500, { error: message });
       }
+    );
+  }
+
+  private handleCriticalHealthCheck(res: http.ServerResponse): void {
+    if (!this.healthCheck) {
+      this.json(res, 503, { healthy: false, error: "Health check not configured" });
+      return;
+    }
+    this.healthCheck.runCriticalChecks().then(
+      (healthy) => this.json(res, healthy ? 200 : 503, { healthy }),
+      () => this.json(res, 503, { healthy: false })
     );
   }
 

@@ -33,6 +33,23 @@ export class HealthCheck {
     this.metricsStore = metricsStore;
   }
 
+  /**
+   * Lightweight critical health check for the supervisor's post-restart validation.
+   * Returns true only if the substrate files are readable (core system function).
+   */
+  async runCriticalChecks(): Promise<boolean> {
+    try {
+      const [drift, consistency] = await Promise.all([
+        this.driftAnalyzer.analyze(),
+        this.consistencyChecker.check(),
+      ]);
+      // Critical: drift and consistency analyzers must complete without throwing
+      return drift !== null && consistency !== null;
+    } catch {
+      return false;
+    }
+  }
+
   async run(): Promise<HealthCheckResult> {
     const [drift, consistency, security, planQuality, reasoning] = await Promise.all([
       this.driftAnalyzer.analyze(),

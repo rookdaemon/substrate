@@ -8,6 +8,11 @@
  * - After restart (exit 75): add --forceStart iff autoStartAfterRestart is true (default true).
  * - Any other exit code: propagate (clean exit; no restart).
  *
+ * Rollback behavior:
+ * - After a successful build and restart, polls /api/health/critical (5 attempts, 2s intervals).
+ * - On healthy restart: tags current commit as `last-known-good`.
+ * - After 3 consecutive unhealthy restarts: checks out `last-known-good`, rebuilds, and restarts.
+ *
  * Usage: node dist/supervisor.js
  */
 
@@ -22,6 +27,9 @@ const MAX_BUILD_RETRIES = 5;
 const INITIAL_RETRY_DELAY_MS = 5_000;
 const MAX_RETRY_DELAY_MS = 60_000;
 const BACKOFF_MULTIPLIER = 2;
+const HEALTH_CHECK_ATTEMPTS = 5;
+const HEALTH_CHECK_INTERVAL_MS = 2_000;
+const MAX_CONSECUTIVE_UNHEALTHY = 3;
 
 function run(cmd: string, args: string[], cwd: string): Promise<number> {
   return new Promise((resolve) => {
@@ -29,6 +37,22 @@ function run(cmd: string, args: string[], cwd: string): Promise<number> {
     child.on("exit", (code) => resolve(code ?? 1));
     child.on("error", () => resolve(1));
   });
+}
+
+async function waitForHealthy(port: number, maxAttempts = HEALTH_CHECK_ATTEMPTS): Promise<boolean> {
+  const url = `http://127.0.0.1:${port}/api/health/critical`;
+  for (let i = 0; i < maxAttempts; i++) {
+    if (i > 0) {
+      await new Promise((r) => setTimeout(r, HEALTH_CHECK_INTERVAL_MS));
+    }
+    try {
+      const res = await fetch(url);
+      if (res.ok) return true;
+    } catch {
+      // Server not yet up — continue polling
+    }
+  }
+  return false;
 }
 
 async function main(): Promise<void> {
@@ -43,6 +67,7 @@ async function main(): Promise<void> {
   let isFirstTime = true;
   let consecutiveFailures = 0;
   let currentRetryDelay = INITIAL_RETRY_DELAY_MS;
+  let consecutiveUnhealthyRestarts = 0;
 
   for (;;) {
     const config = await resolveConfig(fs, resolveOptions);
@@ -76,6 +101,33 @@ async function main(): Promise<void> {
       consecutiveFailures = 0;
       currentRetryDelay = INITIAL_RETRY_DELAY_MS;
       console.log("[supervisor] Build succeeded — restarting server");
+
+      const healthy = await waitForHealthy(config.port);
+      if (healthy) {
+        consecutiveUnhealthyRestarts = 0;
+        // Tag current commit as last-known-good
+        await run("git", ["tag", "-f", "last-known-good"], serverDir);
+        console.log("[supervisor] Server is healthy — tagged current commit as last-known-good");
+      } else {
+        consecutiveUnhealthyRestarts++;
+        console.error(`[supervisor] Health check failed after restart (${consecutiveUnhealthyRestarts}/${MAX_CONSECUTIVE_UNHEALTHY})`);
+
+        if (consecutiveUnhealthyRestarts >= MAX_CONSECUTIVE_UNHEALTHY) {
+          console.error("[supervisor] 3 consecutive unhealthy restarts — rolling back to last-known-good");
+          const checkoutCode = await run("git", ["checkout", "last-known-good"], serverDir);
+          if (checkoutCode !== 0) {
+            console.error("[supervisor] Rollback failed — no last-known-good tag found, giving up");
+            process.exit(1);
+          }
+          const rollbackBuildCode = await run("npx", ["tsc"], serverDir);
+          if (rollbackBuildCode !== 0) {
+            console.error("[supervisor] Rollback build failed, giving up");
+            process.exit(1);
+          }
+          consecutiveUnhealthyRestarts = 0;
+          console.log("[supervisor] Rollback build succeeded — restarting with last-known-good version");
+        }
+      }
     }
   }
 }

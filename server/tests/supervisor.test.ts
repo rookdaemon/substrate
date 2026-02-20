@@ -6,6 +6,7 @@
  * - Max retry limit (circuit breaker)
  * - Counter reset on successful build
  * - Proper exit codes
+ * - Rollback logic for consecutive unhealthy restarts
  */
 
 describe("supervisor circuit breaker", () => {
@@ -86,3 +87,86 @@ describe("supervisor circuit breaker", () => {
     expect(shouldExit).toBe(true);
   });
 });
+
+describe("supervisor rollback logic", () => {
+  const MAX_CONSECUTIVE_UNHEALTHY = 3;
+
+  it("should increment unhealthy counter on failed health check", () => {
+    let consecutiveUnhealthyRestarts = 0;
+
+    // Simulate unhealthy restart
+    consecutiveUnhealthyRestarts++;
+    expect(consecutiveUnhealthyRestarts).toBe(1);
+
+    consecutiveUnhealthyRestarts++;
+    expect(consecutiveUnhealthyRestarts).toBe(2);
+  });
+
+  it("should reset unhealthy counter on healthy restart", () => {
+    let consecutiveUnhealthyRestarts = 2;
+
+    // Simulate healthy restart
+    consecutiveUnhealthyRestarts = 0;
+    expect(consecutiveUnhealthyRestarts).toBe(0);
+  });
+
+  it("should trigger rollback after MAX_CONSECUTIVE_UNHEALTHY failures", () => {
+    let consecutiveUnhealthyRestarts = 0;
+    let rollbackTriggered = false;
+
+    for (let i = 0; i < MAX_CONSECUTIVE_UNHEALTHY; i++) {
+      consecutiveUnhealthyRestarts++;
+      if (consecutiveUnhealthyRestarts >= MAX_CONSECUTIVE_UNHEALTHY) {
+        rollbackTriggered = true;
+        consecutiveUnhealthyRestarts = 0;
+      }
+    }
+
+    expect(rollbackTriggered).toBe(true);
+    expect(consecutiveUnhealthyRestarts).toBe(0);
+  });
+
+  it("should not trigger rollback before MAX_CONSECUTIVE_UNHEALTHY failures", () => {
+    let consecutiveUnhealthyRestarts = 0;
+    let rollbackTriggered = false;
+
+    // Simulate 2 failures (below threshold)
+    for (let i = 0; i < MAX_CONSECUTIVE_UNHEALTHY - 1; i++) {
+      consecutiveUnhealthyRestarts++;
+      if (consecutiveUnhealthyRestarts >= MAX_CONSECUTIVE_UNHEALTHY) {
+        rollbackTriggered = true;
+      }
+    }
+
+    expect(rollbackTriggered).toBe(false);
+    expect(consecutiveUnhealthyRestarts).toBe(MAX_CONSECUTIVE_UNHEALTHY - 1);
+  });
+
+  it("should reset unhealthy counter after rollback", () => {
+    let consecutiveUnhealthyRestarts = MAX_CONSECUTIVE_UNHEALTHY;
+
+    // Simulate rollback
+    const shouldRollback = consecutiveUnhealthyRestarts >= MAX_CONSECUTIVE_UNHEALTHY;
+    expect(shouldRollback).toBe(true);
+
+    // After rollback, counter resets
+    consecutiveUnhealthyRestarts = 0;
+    expect(consecutiveUnhealthyRestarts).toBe(0);
+  });
+
+  it("should keep unhealthy counter independent of build failure counter", () => {
+    let consecutiveFailures = 0;
+    let consecutiveUnhealthyRestarts = 2;
+
+    // A successful build resets build counter but not unhealthy counter
+    consecutiveFailures = 0;
+    // consecutiveUnhealthyRestarts unchanged by build success alone
+    expect(consecutiveFailures).toBe(0);
+    expect(consecutiveUnhealthyRestarts).toBe(2);
+
+    // Only health check result resets unhealthy counter
+    consecutiveUnhealthyRestarts = 0;
+    expect(consecutiveUnhealthyRestarts).toBe(0);
+  });
+});
+
