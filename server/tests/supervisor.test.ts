@@ -1,6 +1,6 @@
 /**
  * Unit tests for supervisor.ts circuit breaker logic
- * 
+ *
  * These tests verify:
  * - Exponential backoff timing
  * - Max retry limit (circuit breaker)
@@ -190,6 +190,8 @@ describe("supervisor rollback logic", () => {
   });
 });
 
+=======
+>>>>>>> main
 describe("validateRestartSafety", () => {
   const serverDir = "/srv";
   const dataDir = "/data";
