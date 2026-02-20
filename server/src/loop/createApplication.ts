@@ -109,6 +109,10 @@ export interface ApplicationConfig {
   };
   conversationIdleTimeoutMs?: number; // Default: 60000 (60s)
   abandonedProcessGraceMs?: number; // Default: 600000 (10 min)
+  idleSleepConfig?: {
+    enabled: boolean; // Whether to enable idle sleep (default: false)
+    idleCyclesBeforeSleep: number; // Number of consecutive idle cycles before sleeping (default: 5)
+  };
 }
 
 export interface Application {
@@ -217,7 +221,10 @@ export async function createApplication(config: ApplicationConfig): Promise<Appl
   const loopConfig = defaultLoopConfig({
     cycleDelayMs: config.cycleDelayMs,
     superegoAuditInterval: config.superegoAuditInterval,
-    maxConsecutiveIdleCycles: config.maxConsecutiveIdleCycles,
+    maxConsecutiveIdleCycles: config.idleSleepConfig?.enabled
+      ? config.idleSleepConfig.idleCyclesBeforeSleep
+      : config.maxConsecutiveIdleCycles,
+    idleSleepEnabled: config.idleSleepConfig?.enabled ?? false,
   });
 
   const httpServer = new LoopHttpServer(null as unknown as LoopOrchestrator);
@@ -264,6 +271,39 @@ export async function createApplication(config: ApplicationConfig): Promise<Appl
     findingTrackerSave
   );
 
+  // Wire up sleep/wake infrastructure
+  const mode = config.mode ?? "cycle";
+  orchestrator.setResumeLoopFn(() => {
+    if (mode === "tick") {
+      return orchestrator.runTickLoop();
+    } else {
+      return orchestrator.runLoop();
+    }
+  });
+
+  // Sleep state persistence — write flag file on sleep, clear on wake
+  if (config.idleSleepConfig?.enabled) {
+    const sleepStatePath = path.resolve(config.substratePath, "..", ".sleep-state");
+    orchestrator.setSleepCallbacks(
+      async () => {
+        try { await fs.writeFile(sleepStatePath, "sleeping"); } catch { /* ignore */ }
+      },
+      async () => {
+        try { await fs.writeFile(sleepStatePath, "awake"); } catch { /* ignore */ }
+      }
+    );
+    // Check for persisted sleep state from before restart
+    try {
+      const sleepContent = await fs.readFile(sleepStatePath);
+      if (sleepContent.trim() === "sleeping") {
+        orchestrator.initializeSleeping();
+        logger.debug("createApplication: resumed in SLEEPING state (persisted from before restart)");
+      }
+    } catch {
+      // Flag file doesn't exist — not sleeping
+    }
+  }
+
   // Create AgoraMessageHandler now that orchestrator exists
   if (agoraService && agoraConfig) {
     // Create AgoraInboxManager for quarantine support
@@ -291,7 +331,10 @@ export async function createApplication(config: ApplicationConfig): Promise<Appl
       logger,
       config.agora?.security?.unknownSenderPolicy ?? 'quarantine', // Default to quarantine
       agoraInboxManager, // for quarantine support
-      rateLimitConfig // Rate limit config
+      rateLimitConfig, // Rate limit config
+      () => { // wakeLoop callback — wake orchestrator if sleeping on incoming Agora message
+        try { orchestrator.wake(); } catch { /* not sleeping */ }
+      }
     );
 
     // Set up relay message handler if relay is configured
@@ -578,8 +621,6 @@ export async function createApplication(config: ApplicationConfig): Promise<Appl
     orchestrator.setTickDependencies({ tickPromptBuilder, sdkSessionFactory });
   }
 
-  const mode = config.mode ?? "cycle";
-
   // Startup scan: check CONVERSATION.md for [UNPROCESSED] messages from before a restart.
   // If found, queue a startup prompt so the agent will check for and handle them on the first cycle.
   try {
@@ -606,11 +647,15 @@ export async function createApplication(config: ApplicationConfig): Promise<Appl
       // Start file watcher to emit file_changed events
       fileWatcher.start();
       if (forceStart) {
+        const previousState = orchestrator.getState();
         orchestrator.start();
-        if (mode === "tick") {
-          orchestrator.runTickLoop().catch(() => {});
-        } else {
-          orchestrator.runLoop().catch(() => {});
+        // Only start loop if transitioning from STOPPED — SLEEPING delegates to wake() internally
+        if (previousState === "STOPPED") {
+          if (mode === "tick") {
+            orchestrator.runTickLoop().catch(() => {});
+          } else {
+            orchestrator.runLoop().catch(() => {});
+          }
         }
       }
       return boundPort;
