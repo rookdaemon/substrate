@@ -10,10 +10,17 @@ interface VersionInfo {
   buildTime: string;
 }
 
+interface SessionMeta {
+  name: string;
+  fullName: string;
+  birthdate: string;
+}
+
 interface LoopStatus {
   state: string;
   rateLimitUntil?: string;
   version?: VersionInfo;
+  meta?: SessionMeta;
   metrics: {
     totalCycles: number;
     successfulCycles: number;
@@ -27,6 +34,17 @@ interface LoopStatus {
 interface SystemStatusProps {
   lastEvent: LoopEvent | null;
   compact?: boolean;
+}
+
+function formatAge(birthdate: string): string {
+  const born = new Date(birthdate);
+  if (isNaN(born.getTime())) return "unknown";
+  const ms = Date.now() - born.getTime();
+  const hours = Math.floor(ms / (1000 * 60 * 60));
+  const days = Math.floor(ms / (1000 * 60 * 60 * 24));
+  if (days === 0) return `${hours}h`;
+  if (days < 30) return `${days}d`;
+  return `${Math.floor(days / 30)}mo`;
 }
 
 export function SystemStatus({ lastEvent, compact }: SystemStatusProps) {
@@ -79,6 +97,11 @@ export function SystemStatus({ lastEvent, compact }: SystemStatusProps) {
         <span>Failed: {status.metrics.failedCycles}</span>
         <span>Idle: {status.metrics.idleCycles}</span>
         <span>Audits: {status.metrics.superegoAudits}</span>
+        {status.meta && (
+          <span title={`Born: ${new Date(status.meta.birthdate).toString() === "Invalid Date" ? status.meta.birthdate : new Date(status.meta.birthdate).toLocaleString()}`}>
+            Age: {formatAge(status.meta.birthdate)}
+          </span>
+        )}
       </div>
       {status.version && (
         <div className="status-version">

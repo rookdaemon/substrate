@@ -21,6 +21,7 @@ import { AgoraMessageHandler } from "../agora/AgoraMessageHandler";
 import { IAgoraService } from "../agora/IAgoraService";
 import type { ILogger } from "../logging";
 import { getVersionInfo } from "../version";
+import { SubstrateMeta } from "../substrate/MetaManager";
 
 export interface LoopHttpDependencies {
   reader: SubstrateFileReader;
@@ -46,6 +47,7 @@ export class LoopHttpServer {
   private sizeTracker: SubstrateSizeTracker | null = null;
   private delegationTracker: DelegationTracker | null = null;
   private tinyBus: TinyBus | null = null;
+  private meta: SubstrateMeta | null = null;
 
   constructor(orchestrator: LoopOrchestrator) {
     this.orchestrator = orchestrator;
@@ -109,6 +111,9 @@ export class LoopHttpServer {
     this.tinyBus = tinyBus;
   }
 
+  setMeta(meta: SubstrateMeta | null): void {
+    this.meta = meta;
+  }
   listen(port: number): Promise<number> {
     return new Promise((resolve) => {
       this.server.listen(port, "127.0.0.1", () => {
@@ -157,6 +162,7 @@ export class LoopHttpServer {
         };
         const rlu = this.orchestrator.getRateLimitUntil();
         if (rlu) statusPayload.rateLimitUntil = rlu;
+        if (this.meta) statusPayload.meta = this.meta;
         this.json(res, 200, statusPayload);
         break;
       }

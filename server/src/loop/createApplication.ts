@@ -56,6 +56,7 @@ import { FileWatcher } from "../substrate/watcher/FileWatcher";
 import { SuperegoFindingTracker } from "../agents/roles/SuperegoFindingTracker";
 import { DriveQualityTracker } from "../evaluation/DriveQualityTracker";
 import { SubstrateFileType } from "../substrate/types";
+import { MetaManager } from "../substrate/MetaManager";
 
 // Note: AgoraServiceType is now IAgoraService interface in agora/IAgoraService.ts
 
@@ -140,6 +141,10 @@ export async function createApplication(config: ApplicationConfig): Promise<Appl
   const lock = new FileLock();
   const writer = new SubstrateFileWriter(fs, substrateConfig, lock);
   const appendWriter = new AppendOnlyWriter(fs, substrateConfig, lock, clock);
+
+  // Meta — session identity (name, fullName, birthdate) stored in meta.json
+  const metaManager = new MetaManager(fs, clock, config.substratePath);
+  await metaManager.initialize();
 
   // Logger — created early so all layers can use it
   const logPath = path.resolve(config.substratePath, "..", "debug.log");
@@ -408,6 +413,7 @@ export async function createApplication(config: ApplicationConfig): Promise<Appl
   httpServer.setDependencies({ reader, ego });
   httpServer.setEventSink(wsServer, clock);
   httpServer.setLogger(logger);
+  httpServer.setMeta(await metaManager.read());
   
   // Set up TinyBus MCP server
   httpServer.setTinyBus(tinyBus);

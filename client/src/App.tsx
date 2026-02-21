@@ -28,12 +28,14 @@ export function App() {
   const [loopState, setLoopState] = useState("STOPPED");
   const [rateLimitUntil, setRateLimitUntil] = useState<string | null>(null);
   const [conversationKey, setConversationKey] = useState(0);
+  const [sessionName, setSessionName] = useState<string | null>(null);
 
   const refreshState = useCallback(() => {
-    apiGet<{ state: string; rateLimitUntil?: string }>("/api/loop/status")
+    apiGet<{ state: string; rateLimitUntil?: string; meta?: { name: string } }>("/api/loop/status")
       .then((data) => {
         setLoopState(data.state);
         setRateLimitUntil(data.rateLimitUntil || null);
+        if (data.meta?.name) setSessionName(data.meta.name);
       })
       .catch(() => {});
   }, []);
@@ -41,6 +43,10 @@ export function App() {
   useEffect(() => {
     refreshState();
   }, [refreshState]);
+
+  useEffect(() => {
+    document.title = sessionName ? `${sessionName} — Substrate` : "Substrate";
+  }, [sessionName]);
 
   useEffect(() => {
     if (lastEvent?.type === "state_changed") {
@@ -59,7 +65,7 @@ export function App() {
   return (
     <div className="app">
       <header className="app-header">
-        <h1>Substrate</h1>
+        <h1>{sessionName ? `${sessionName} — Substrate` : "Substrate"}</h1>
         <span 
           className={`ws-status ${connected ? "connected" : "disconnected"} ${reconnecting ? "reconnecting" : ""}`}
           onClick={!connected && !reconnecting ? reconnect : undefined}
