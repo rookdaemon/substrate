@@ -3,6 +3,8 @@ Description=Substrate AI Agent Orchestration Service
 After=network.target
 Documentation=https://github.com/rookdaemon/substrate
 OnFailure=substrate-recovery.service
+StartLimitBurst=5
+StartLimitIntervalSec=300
 
 [Service]
 Type=simple
@@ -10,8 +12,8 @@ User=rook
 Group=rook
 WorkingDirectory=/home/rook/substrate/server
 Environment="NODE_ENV=production"
-# PATH: Uses default node from rook's environment (nvm, system node, etc.)
-# If using nvm, ensure nvm is loaded in rook's .bashrc or .profile
+Environment="HOME=/home/rook"
+# PATH: Uses default node symlink for version-agnostic deployment
 Environment="PATH=/home/rook/.nvm/versions/node/default/bin:/home/rook/.local/bin:/usr/local/bin:/usr/bin:/bin"
 
 # Start the substrate server (uses supervisor.js for auto-rebuild on exit code 75)
@@ -23,8 +25,6 @@ ExecStartPost=/home/rook/substrate/scripts/recovery.sh --reset
 # Restart policy
 Restart=on-failure
 RestartSec=10s
-StartLimitBurst=5
-StartLimitIntervalSec=300
 
 # Resource limits (adjust based on your deployment needs)
 # MemoryMax: 2GB suitable for typical substrate workloads
