@@ -197,11 +197,6 @@ body {
   max-height: 500px;
 }
 
-.panel-row > .panel-process-log {
-  flex: 0 1 380px;
-  max-height: 500px;
-}
-
 /* Conversation panel fills remaining space and uses flex layout for its content */
 .panel-row > .panel-conversation {
   display: flex;

@@ -119,18 +119,18 @@ export function App() {
             <ConversationView lastEvent={lastEvent} refreshKey={conversationKey} />
             <InputField onSent={() => setConversationKey((k) => k + 1)} />
           </CollapsiblePanel>
-
-          <CollapsiblePanel
-            panelId="processLog"
-            title="Process Log"
-            isExpanded={isExpanded("processLog")}
-            onToggle={togglePanel}
-            collapseDirection="right"
-            className="panel-process-log"
-          >
-            <ProcessLog lastEvent={lastEvent} />
-          </CollapsiblePanel>
         </div>
+
+        <CollapsiblePanel
+          panelId="processLog"
+          title="Process Log"
+          isExpanded={isExpanded("processLog")}
+          onToggle={togglePanel}
+          collapseDirection="up"
+          className="panel-process-log"
+        >
+          <ProcessLog lastEvent={lastEvent} />
+        </CollapsiblePanel>
 
         <CollapsiblePanel
           panelId="substrate"

@@ -1,6 +1,6 @@
 {
   "name": "@substrate/client",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "private": true,
   "description": "Substrate frontend interface",
   "type": "module",
