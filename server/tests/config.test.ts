@@ -239,4 +239,45 @@ describe("resolveConfig", () => {
 
     expect(config.superegoAuditInterval).toBe(20);
   });
+
+  it("idleSleepConfig defaults to undefined", async () => {
+    const config = await resolveConfig(fs, {
+      appPaths: TEST_PATHS,
+      env: {},
+    });
+
+    expect(config.idleSleepConfig).toBeUndefined();
+  });
+
+  it("reads idleSleepConfig from config file", async () => {
+    await fs.mkdir("/project", { recursive: true });
+    await fs.writeFile("/project/config.json", JSON.stringify({
+      idleSleepConfig: { enabled: true, idleCyclesBeforeSleep: 3 },
+    }));
+
+    const config = await resolveConfig(fs, {
+      appPaths: TEST_PATHS,
+      cwd: "/project",
+      env: {},
+    });
+
+    expect(config.idleSleepConfig?.enabled).toBe(true);
+    expect(config.idleSleepConfig?.idleCyclesBeforeSleep).toBe(3);
+  });
+
+  it("idleSleepConfig uses defaults for missing fields", async () => {
+    await fs.mkdir("/project", { recursive: true });
+    await fs.writeFile("/project/config.json", JSON.stringify({
+      idleSleepConfig: {},
+    }));
+
+    const config = await resolveConfig(fs, {
+      appPaths: TEST_PATHS,
+      cwd: "/project",
+      env: {},
+    });
+
+    expect(config.idleSleepConfig?.enabled).toBe(false);
+    expect(config.idleSleepConfig?.idleCyclesBeforeSleep).toBe(5);
+  });
 });

@@ -2,12 +2,14 @@ export enum LoopState {
   STOPPED = "STOPPED",
   RUNNING = "RUNNING",
   PAUSED = "PAUSED",
+  SLEEPING = "SLEEPING",
 }
 
 export interface LoopConfig {
   cycleDelayMs: number;
   superegoAuditInterval: number;
   maxConsecutiveIdleCycles: number;
+  idleSleepEnabled: boolean;
 }
 
 export function defaultLoopConfig(overrides?: Partial<LoopConfig>): LoopConfig {
@@ -15,12 +17,14 @@ export function defaultLoopConfig(overrides?: Partial<LoopConfig>): LoopConfig {
     cycleDelayMs: 30000,
     superegoAuditInterval: 20,
     maxConsecutiveIdleCycles: 1,
+    idleSleepEnabled: false,
   };
   if (!overrides) return defaults;
   return {
     cycleDelayMs: overrides.cycleDelayMs ?? defaults.cycleDelayMs,
     superegoAuditInterval: overrides.superegoAuditInterval ?? defaults.superegoAuditInterval,
     maxConsecutiveIdleCycles: overrides.maxConsecutiveIdleCycles ?? defaults.maxConsecutiveIdleCycles,
+    idleSleepEnabled: overrides.idleSleepEnabled ?? defaults.idleSleepEnabled,
   };
 }
 
