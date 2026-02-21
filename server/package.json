@@ -6,7 +6,7 @@
   "main": "dist/index.js",
   "scripts": {
     "init": "tsx src/cli.ts init",
-    "start": "tsc && node dist/supervisor.js",
+    "start": "tsc || (echo '[supervisor] Build failed, recovering environment...' && . ~/.nvm/nvm.sh && nvm install --lts && nvm use --lts && npm install && tsc) || echo '[supervisor] Build failed, falling back to existing dist/' && node dist/supervisor.js",
     "dev": "tsx watch src/cli.ts start",
     "build": "node scripts/generate-version.js && tsc",
     "test": "jest",
