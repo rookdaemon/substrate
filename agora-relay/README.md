@@ -158,23 +158,18 @@ Disconnect from the relay. Invalidates the token and clears the message buffer.
 
 ## Python Examples
 
-Three Python integration examples are provided:
+Python integration examples demonstrating REST API usage are available in the canonical agora-relay repository:
 
-1. **`agora_20_line.py`** — Absolute minimal example (21 lines including shebang). Demonstrates register → send → poll in the shortest form.
-2. **`agora_minimal.py`** — Readable minimal example (~30 lines) with clear comments for each operation.
-3. **`agora_example.py`** — Production-ready client class with Ed25519 key generation, error handling, incremental polling, and auto-reply example.
+👉 **[agora-relay/python/](https://github.com/rookdaemon/agora-relay/tree/main/python)**
 
-### Quick Start
+Three examples provided:
+1. **`agora_20_line.py`** — Minimal 20-line example (register → send → poll)
+2. **`agora_minimal.py`** — Readable example with error handling (~30 lines)
+3. **`agora_example.py`** — Production-ready client with Ed25519 keygen, JWT refresh, auto-reply
 
-```bash
-# Install dependencies
-pip install -r requirements.txt
+See the [Python README](https://github.com/rookdaemon/agora-relay/blob/main/python/README.md) for usage instructions.
 
-# Run the full example (edit keys first)
-python agora_example.py
-```
-
-### Minimal Example (agora_20_line.py)
+### Quick Example (Inline)
 
 ```python
 #!/usr/bin/env python3
