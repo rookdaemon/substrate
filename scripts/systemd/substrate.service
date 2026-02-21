@@ -25,6 +25,12 @@ ExecStartPost=/home/rook/substrate/scripts/recovery.sh --reset
 # Restart policy
 Restart=on-failure
 RestartSec=10s
+# Exit code 3 = user-initiated stop; treat as clean exit (no restart, no OnFailure)
+SuccessExitStatus=3
+RestartPreventExitStatus=3
+
+# Create /var/lib/substrate owned by service user (for recovery attempt counter)
+StateDirectory=substrate
 
 # Resource limits (adjust based on your deployment needs)
 # MemoryMax: 2GB suitable for typical substrate workloads

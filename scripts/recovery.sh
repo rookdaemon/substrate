@@ -14,8 +14,7 @@ RECIPIENT_EMAIL="lbsa71@hotmail.com"
 SUBSTRATE_HOME="/home/rook/substrate"
 LOG_TAG="substrate-recovery"
 
-# Ensure state directory exists
-mkdir -p "$STATE_DIR" 2>/dev/null || true
+# State directory is created by systemd (StateDirectory=substrate in substrate.service)
 
 # Function to log to journald
 log_info() {
@@ -130,15 +129,16 @@ Time: $(date -R)
     local rebuild_success=false
 
     # Source nvm and attempt rebuild
+    # Note: nvm.sh uses unbound variables, so we must disable nounset around it
     if (
         export NVM_DIR="$HOME/.nvm"
         # shellcheck source=/dev/null
+        set +u
         [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+        nvm use --lts || exit 1
+        set -u
 
         cd "$SUBSTRATE_HOME" || exit 1
-
-        echo "=== nvm use --lts ==="
-        nvm use --lts || exit 1
 
         echo "=== npm ci ==="
         npm ci || exit 1
