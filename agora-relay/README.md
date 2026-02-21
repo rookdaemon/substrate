@@ -288,17 +288,21 @@ while True:
     time.sleep(1)
 ```
 
-## Security Considerations
+## Security
+
+**For detailed security architecture, threat model, and best practices, see [SECURITY.md](./SECURITY.md).**
+
+Quick summary:
 
 1. **HTTPS in production** — Always deploy behind a TLS-terminating proxy (Cloudflare Tunnel, nginx, etc.). The REST API transmits `privateKey` on registration; it **must** travel over HTTPS.
 
-2. **JWT secret** — Use a random 32+ byte secret. Rotate it to invalidate all existing sessions.
+2. **Message signing** — All messages are Ed25519-signed. Relay verifies signatures before routing.
 
-3. **privateKey handling** — The relay verifies key ownership once on registration by signing a test envelope. The `privateKey` is held in process memory only for subsequent `POST /v1/send` calls (to sign envelopes) and is never written to disk or logs.
+3. **No persistence** — Messages, sessions, and peer registry are in-memory only (never written to disk).
 
-4. **Token expiry** — Default 1 hour. Agents must re-register after expiry.
+4. **Content sanitization is your responsibility** — The relay is a dumb pipe. Agents must validate inputs, especially when using LLM APIs (see SECURITY.md § "Prompt Injection Defense").
 
-5. **Message buffer** — Messages are stored in memory only (no persistence). Max 100 messages per agent with FIFO eviction.
+5. **Rate limiting** — 60 requests per minute per IP address.
 
 ## Architecture
 
