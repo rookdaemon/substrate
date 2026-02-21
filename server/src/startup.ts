@@ -52,21 +52,38 @@ export interface StartServerOptions {
 export async function startServer(config: AppConfig, options?: StartServerOptions): Promise<StartedServer> {
   const fs = new NodeFileSystem();
 
-  // Validate that .mcp.json exists in the working directory (where Claude sessions will run)
-  // This is critical for MCP tools to be available to the agent
+  // Ensure .mcp.json exists in the working directory with the correct server port.
+  // Claude Code sessions use the working directory as cwd, so this file must be there
+  // for MCP tools (e.g. TinyBus send_message, agora.send) to be available to the agent.
   const mcpConfigPath = path.join(config.workingDirectory, ".mcp.json");
+  const expectedMcpUrl = `http://localhost:${config.port}/mcp`;
+  const expectedMcpConfig = JSON.stringify(
+    { mcpServers: { tinybus: { type: "http", url: expectedMcpUrl } } },
+    null,
+    2
+  );
   const mcpConfigExists = await fs.exists(mcpConfigPath);
-  
   if (!mcpConfigExists) {
-    console.warn(
-      `WARNING: .mcp.json not found in working directory: ${config.workingDirectory}\n` +
-      `  Claude Code sessions will not have access to MCP tools (e.g., TinyBus send_message).\n` +
-      `  Process cwd: ${process.cwd()}\n` +
-      `  Expected location: ${mcpConfigPath}\n` +
-      `  Create .mcp.json in the working directory to enable MCP tools.`
-    );
+    await fs.writeFile(mcpConfigPath, expectedMcpConfig + "\n");
+    console.log(`MCP config created: ${mcpConfigPath} (port ${config.port})`);
   } else {
-    console.log(`MCP config found: ${mcpConfigPath}`);
+    // Check if the tinybus URL matches the configured port; update if stale.
+    const existing = await fs.readFile(mcpConfigPath);
+    let needsUpdate = false;
+    try {
+      const parsed = JSON.parse(existing) as { mcpServers?: { tinybus?: { url?: string } } };
+      if (parsed.mcpServers?.tinybus?.url !== expectedMcpUrl) {
+        needsUpdate = true;
+      }
+    } catch {
+      needsUpdate = true;
+    }
+    if (needsUpdate) {
+      await fs.writeFile(mcpConfigPath, expectedMcpConfig + "\n");
+      console.log(`MCP config updated: ${mcpConfigPath} (port ${config.port})`);
+    } else {
+      console.log(`MCP config ok: ${mcpConfigPath}`);
+    }
   }
 
   await initializeSubstrate(fs, config.substratePath);
