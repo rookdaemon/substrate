@@ -123,57 +123,102 @@ Time: $(date -R)
     log_info "Waiting ${backoff_seconds}s before recovery attempt (escalating backoff)..."
     sleep "$backoff_seconds"
     
-    # Prepare Claude diagnostic prompt
-    local claude_prompt="The substrate systemd service has crashed (attempt $attempt_count/$MAX_ATTEMPTS).
+    # Step 1: Try standard rebuild first (nvm use --lts, npm ci, npm run build)
+    log_info "Attempting standard rebuild: nvm use --lts, npm ci, npm run build..."
 
-Please diagnose the issue by:
-1. Checking recent logs: journalctl -u substrate --no-pager -n 50
-2. Checking build state: cd $SUBSTRATE_HOME/server && npx tsc --noEmit
-3. Checking disk space: df -h
-4. Checking memory: free -h
-5. Checking node version: node --version
-6. Checking process state: ps aux | grep -i substrate
+    local rebuild_output="/tmp/substrate-recovery-rebuild-output.txt"
+    local rebuild_success=false
 
-After diagnosis, attempt to fix the issue (e.g., rebuild if TypeScript compilation fails, clean up if disk space is low, restart if stuck process exists).
+    # Source nvm and attempt rebuild
+    if (
+        export NVM_DIR="$HOME/.nvm"
+        # shellcheck source=/dev/null
+        [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
 
-If you successfully fix the issue, indicate success in your response.
-"
-    
-    # Run Claude with timeout
-    log_info "Invoking Claude CLI for diagnosis (timeout: ${CLAUDE_TIMEOUT}s)..."
-    
-    local claude_output="/tmp/substrate-recovery-claude-output.txt"
-    local claude_exit_code=0
-    
-    # Run claude with timeout
-    if timeout "$CLAUDE_TIMEOUT" claude -p "$claude_prompt" --dangerously-skip-permissions > "$claude_output" 2>&1; then
-        claude_exit_code=0
-        log_info "Claude diagnostic completed successfully"
-        
-        # Check if Claude indicated success
-        if grep -qiE "success|fixed|resolved" "$claude_output"; then
-            log_info "Claude reported successful fix. Restarting substrate service..."
-            
-            # Restart the service
-            if systemctl restart substrate.service; then
-                log_info "Substrate service restarted successfully"
-                
-                # Send success notification
-                send_email \
-                    "Substrate Recovery Successful (Attempt $attempt_count)" \
-                    "The substrate service has been successfully recovered by the automated recovery system.
+        cd "$SUBSTRATE_HOME" || exit 1
+
+        echo "=== nvm use --lts ==="
+        nvm use --lts || exit 1
+
+        echo "=== npm ci ==="
+        npm ci || exit 1
+
+        echo "=== npm run build ==="
+        npm run build || exit 1
+
+        echo "=== Rebuild completed successfully ==="
+    ) > "$rebuild_output" 2>&1; then
+        rebuild_success=true
+        log_info "Standard rebuild succeeded"
+    else
+        log_error "Standard rebuild failed (see $rebuild_output)"
+    fi
+
+    if [ "$rebuild_success" = true ]; then
+        # Rebuild worked, try restarting the service
+        if systemctl restart substrate.service; then
+            log_info "Substrate service restarted successfully after rebuild"
+
+            send_email \
+                "Substrate Recovery Successful via Rebuild (Attempt $attempt_count)" \
+                "The substrate service was recovered by a standard rebuild (nvm use --lts, npm ci, npm run build).
 
 Attempt: $attempt_count of $MAX_ATTEMPTS
 Hostname: $(hostname)
 Time: $(date -R)
 
+Rebuild output:
+$(head -c 10000 < "$rebuild_output")
+"
+
+            reset_attempt_count
+            rm -f "$rebuild_output"
+            exit 0
+        else
+            log_error "Service restart failed after successful rebuild, escalating to Claude..."
+        fi
+    fi
+
+    # Step 2: Rebuild failed or service didn't restart — escalate to Claude
+    log_info "Escalating to Claude CLI for full diagnosis and fix..."
+
+    local claude_prompt="The substrate process has crashed and the recovery service isn't resurrecting it. Please fix the root cause, build, lint, test, push and restart services."
+
+    local claude_output="/tmp/substrate-recovery-claude-output.txt"
+    local claude_exit_code=0
+
+    # Run claude with timeout
+    if timeout "$CLAUDE_TIMEOUT" claude -p "$claude_prompt" --dangerously-skip-permissions > "$claude_output" 2>&1; then
+        claude_exit_code=0
+        log_info "Claude diagnostic completed successfully"
+
+        # Check if Claude indicated success
+        if grep -qiE "success|fixed|resolved" "$claude_output"; then
+            log_info "Claude reported successful fix. Restarting substrate service..."
+
+            # Restart the service
+            if systemctl restart substrate.service; then
+                log_info "Substrate service restarted successfully"
+
+                # Send success notification
+                send_email \
+                    "Substrate Recovery Successful via Claude (Attempt $attempt_count)" \
+                    "The substrate service has been successfully recovered by the Claude-assisted recovery system.
+
+Attempt: $attempt_count of $MAX_ATTEMPTS
+Hostname: $(hostname)
+Time: $(date -R)
+
+Rebuild output (failed):
+$(head -c 5000 < "$rebuild_output" 2>/dev/null || echo "No rebuild output")
+
 Claude diagnostic output:
 $(head -c 10000 < "$claude_output")
 "
-                
+
                 # Reset counter on success
                 reset_attempt_count
-                rm -f "$claude_output"
+                rm -f "$claude_output" "$rebuild_output"
                 exit 0
             else
                 log_error "Failed to restart substrate service after Claude fix"
@@ -187,6 +232,8 @@ $(head -c 10000 < "$claude_output")
         claude_exit_code=$?
         log_error "Claude invocation failed or timed out (exit code: $claude_exit_code)"
     fi
+
+    rm -f "$rebuild_output"
     
     # Recovery attempt failed
     log_error "Recovery attempt $attempt_count failed"
