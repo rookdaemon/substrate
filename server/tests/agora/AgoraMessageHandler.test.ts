@@ -674,4 +674,77 @@ describe("AgoraMessageHandler", () => {
       expect(conversationManager.appendedEntries).toHaveLength(501);
     });
   });
+
+  describe("wake on incoming message", () => {
+    it("calls wakeLoop callback when loop is SLEEPING", async () => {
+      let wakeCalled = false;
+      const sleepingHandler = new AgoraMessageHandler(
+        agoraService,
+        conversationManager,
+        messageInjector,
+        eventSink,
+        clock,
+        () => LoopState.SLEEPING,
+        isRateLimited,
+        logger,
+        'allow',
+        inboxManager as unknown as AgoraInboxManager,
+        defaultRateLimitConfig,
+        () => { wakeCalled = true; }
+      );
+
+      await sleepingHandler.processEnvelope(testEnvelope, "webhook");
+
+      expect(wakeCalled).toBe(true);
+    });
+
+    it("does not call wakeLoop when loop is RUNNING", async () => {
+      let wakeCalled = false;
+      const runningHandler = new AgoraMessageHandler(
+        agoraService,
+        conversationManager,
+        messageInjector,
+        eventSink,
+        clock,
+        () => LoopState.RUNNING,
+        isRateLimited,
+        logger,
+        'allow',
+        inboxManager as unknown as AgoraInboxManager,
+        defaultRateLimitConfig,
+        () => { wakeCalled = true; }
+      );
+
+      await runningHandler.processEnvelope(testEnvelope, "webhook");
+
+      expect(wakeCalled).toBe(false);
+    });
+
+    it("does not call wakeLoop when wakeLoop is null (backward compatible)", async () => {
+      // Default handler has no wakeLoop — should not throw
+      await expect(handler.processEnvelope(testEnvelope, "webhook")).resolves.toBeUndefined();
+    });
+
+    it("still processes message normally after waking", async () => {
+      const sleepingHandler = new AgoraMessageHandler(
+        agoraService,
+        conversationManager,
+        messageInjector,
+        eventSink,
+        clock,
+        () => LoopState.SLEEPING,
+        isRateLimited,
+        logger,
+        'allow',
+        inboxManager as unknown as AgoraInboxManager,
+        defaultRateLimitConfig,
+        () => {}
+      );
+
+      await sleepingHandler.processEnvelope(testEnvelope, "webhook");
+
+      // Message should be written to conversation even when sleeping
+      expect(conversationManager.appendedEntries).toHaveLength(1);
+    });
+  });
 });

@@ -190,6 +190,10 @@ export class LoopHttpServer {
         this.tryStateTransition(res, () => this.orchestrator.resume());
         break;
 
+      case "POST /api/loop/wake":
+        this.tryStateTransition(res, () => this.orchestrator.wake());
+        break;
+
       case "POST /api/loop/stop":
         try {
           // Send response first, then stop (which will exit the process)

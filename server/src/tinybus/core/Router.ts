@@ -30,6 +30,11 @@ export class DefaultRouter implements Router {
     }
 
     // Broadcast: deliver to all providers except source
-    return providers.filter((p) => p.id !== message.source);
+    // Don't route agora.* messages to loopback to prevent duplicate outbound sends
+    return providers.filter((p) => {
+      if (p.id === message.source) return false;
+      if (p.id === "loopback" && message.type.startsWith("agora.")) return false;
+      return true;
+    });
   }
 }

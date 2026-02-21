@@ -47,6 +47,11 @@ export interface AppConfig {
       };
     };
   };
+  /** Configuration for idle sleep (reduces token burn when idle) */
+  idleSleepConfig?: {
+    enabled: boolean; // Whether to enable idle sleep (default: false)
+    idleCyclesBeforeSleep: number; // Number of consecutive idle cycles before sleeping (default: 5)
+  };
 }
 
 export interface ResolveConfigOptions {
@@ -172,6 +177,12 @@ export async function resolveConfig(
             : defaults.agora!.security,
         }
       : defaults.agora,
+    idleSleepConfig: fileConfig.idleSleepConfig
+      ? {
+          enabled: fileConfig.idleSleepConfig.enabled ?? false,
+          idleCyclesBeforeSleep: fileConfig.idleSleepConfig.idleCyclesBeforeSleep ?? 5,
+        }
+      : undefined,
   };
 
   // Env vars override everything

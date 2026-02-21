@@ -112,5 +112,62 @@ describe("Router", () => {
         expect(targets).toHaveLength(0);
       });
     });
+
+    describe("loopback exclusion for agora messages", () => {
+      let loopbackProvider: MemoryProvider;
+
+      beforeEach(() => {
+        loopbackProvider = new MemoryProvider("loopback", [], true);
+      });
+
+      it("excludes loopback provider from agora.* broadcast messages", () => {
+        const message = createMessage({
+          type: "agora.send",
+          source: "provider-1",
+        });
+
+        const targets = router.route(message, [
+          provider1,
+          provider2,
+          loopbackProvider,
+        ]);
+
+        expect(targets.map((t) => t.id)).not.toContain("loopback");
+        expect(targets.map((t) => t.id)).toContain("provider-2");
+      });
+
+      it("does not exclude loopback provider for non-agora broadcast messages", () => {
+        const message = createMessage({
+          type: "system.health.ping",
+          source: "provider-1",
+        });
+
+        const targets = router.route(message, [
+          provider1,
+          provider2,
+          loopbackProvider,
+        ]);
+
+        expect(targets.map((t) => t.id)).toContain("loopback");
+        expect(targets.map((t) => t.id)).toContain("provider-2");
+      });
+
+      it("still routes agora.* messages to direct destinations (loopback or otherwise)", () => {
+        const message = createMessage({
+          type: "agora.send",
+          source: "provider-1",
+          destination: "loopback",
+        });
+
+        const targets = router.route(message, [
+          provider1,
+          provider2,
+          loopbackProvider,
+        ]);
+
+        expect(targets).toHaveLength(1);
+        expect(targets[0].id).toBe("loopback");
+      });
+    });
   });
 });

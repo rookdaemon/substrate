@@ -58,7 +58,8 @@ export class AgoraMessageHandler {
     private readonly logger: ILogger,
     private readonly unknownSenderPolicy: UnknownSenderPolicy = 'quarantine',
     private readonly inboxManager: AgoraInboxManager | null = null,
-    private readonly rateLimitConfig: RateLimitConfig = { enabled: true, maxMessages: 10, windowMs: 60000 }
+    private readonly rateLimitConfig: RateLimitConfig = { enabled: true, maxMessages: 10, windowMs: 60000 },
+    private readonly wakeLoop: (() => void) | null = null
   ) {}
 
   /**
@@ -218,6 +219,12 @@ export class AgoraMessageHandler {
       this.logger.debug(`[AGORA] Dropping rate-limited message: envelopeId=${envelope.id} from=${senderDisplayName}`);
       // Silently drop the message - don't reveal rate limit state to potential spammers
       return;
+    }
+
+    // Wake loop if sleeping — incoming Agora message should restart cycles
+    if (this.getState() === LoopState.SLEEPING && this.wakeLoop) {
+      this.logger.debug(`[AGORA] Waking loop from SLEEPING state for incoming message: envelopeId=${envelope.id}`);
+      this.wakeLoop();
     }
 
     // Inject message into orchestrator FIRST so we know if it was delivered to an active session.
