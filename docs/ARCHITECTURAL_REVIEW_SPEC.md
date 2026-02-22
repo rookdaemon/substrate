@@ -95,7 +95,7 @@ This spec does **not** require the review to implement changes; it defines what 
   - Graceful shutdown: orchestrator stop, resource cleanup, in-flight request handling.
   - Restart and recovery: startup scan for UNPROCESSED, sleep state persistence, rate-limit state.
 - **Align with existing security docs**
-  - Reference `agora-relay/SECURITY.md` and any other security notes; state what the substrate server assumes and what it must enforce itself.
+  - Reference relay security notes in the [agora](https://github.com/rookdaemon/agora) repo and any substrate-specific assumptions.
 
 **Relevant code areas:**
 
@@ -103,7 +103,7 @@ This spec does **not** require the review to implement changes; it defines what 
 - `server/src/substrate/validation/SecretDetector.ts`, `server/src/substrate/io/FileLock.ts`, `server/src/substrate/initialization/SubstrateValidator.ts`.
 - `server/src/loop/LoopHttpServer.ts` (auth, routes).
 - `server/src/loop/createApplication.ts` (shutdown, cleanup).
-- `agora-relay/SECURITY.md`, `agora-relay/src/server.ts`.
+- `server/src/agora-relay/` (in-process relay using [agora](https://github.com/rookdaemon/agora)); relay implementation and REST API live in the agora repo.
 
 ---
 

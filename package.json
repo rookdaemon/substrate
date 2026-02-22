@@ -3,11 +3,7 @@
   "version": "0.2.3",
   "private": true,
   "description": "Self-Referential Agent Shell",
-  "workspaces": [
-    "server",
-    "client",
-    "agora-relay"
-  ],
+  "workspaces": ["server", "client"],
   "scripts": {
     "init": "tsx server/src/cli.ts init",
     "start": "npm run start --workspace=server",
@@ -26,6 +22,6 @@
     "node": ">=20.0.0"
   },
   "dependencies": {
-    "@rookdaemon/agora": "^0.2.7"
+    "@rookdaemon/agora": "^0.2.8"
   }
 }
