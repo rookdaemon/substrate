@@ -42,6 +42,12 @@ export interface RateLimitConfig {
  * - Per-sender rate limiting to prevent flooding
  */
 export class AgoraMessageHandler {
+  /**
+   * In-memory set of processed envelope IDs for deduplication.
+   * NOTE: This set is lost on process restart, so the same envelope could be processed
+   * twice across a restart. For idempotent substrate writes this is acceptable.
+   * If stronger guarantees are needed, persist the last N IDs to a file on shutdown.
+   */
   private processedEnvelopeIds: Set<string> = new Set();
   private readonly MAX_DEDUP_SIZE = 1000;
   private readonly senderWindows: Map<string, SenderWindow> = new Map();

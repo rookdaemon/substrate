@@ -558,8 +558,13 @@ export class LoopOrchestrator implements IMessageInjector {
         await this.timer.delay(waitMs);
         this.rateLimitUntil = null;
       } else {
-        this.logger.debug(`runLoop: delaying ${this.config.cycleDelayMs}ms before next cycle`);
-        await this.timer.delay(this.config.cycleDelayMs);
+        // Skip the inter-cycle delay when messages are already waiting — process them immediately.
+        if (this.pendingMessages.length > 0) {
+          this.logger.debug("runLoop: pending messages detected, skipping cycle delay");
+        } else {
+          this.logger.debug(`runLoop: delaying ${this.config.cycleDelayMs}ms before next cycle`);
+          await this.timer.delay(this.config.cycleDelayMs);
+        }
       }
     }
     this.logger.debug("runLoop() exited");

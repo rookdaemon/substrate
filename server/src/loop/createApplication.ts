@@ -46,7 +46,7 @@ import type { Envelope } from "@rookdaemon/agora" with { "resolution-mode": "imp
 import type { AgoraService } from "@rookdaemon/agora" with { "resolution-mode": "import" };
 import { LoopWatchdog } from "./LoopWatchdog";
 import { getAppPaths } from "../paths";
-import { TinyBus, MemoryProvider, SessionInjectionProvider, ChatMessageProvider } from "../tinybus";
+import { TinyBus, SessionInjectionProvider, ChatMessageProvider } from "../tinybus";
 import { ConversationProvider } from "../tinybus/providers/ConversationProvider";
 import { AgoraMessageHandler } from "../agora/AgoraMessageHandler";
 import { AgoraOutboundProvider } from "../agora/AgoraOutboundProvider";
@@ -232,7 +232,7 @@ export async function createApplication(config: ApplicationConfig): Promise<Appl
     idleSleepEnabled: config.idleSleepConfig?.enabled ?? false,
   });
 
-  const httpServer = new LoopHttpServer(null as unknown as LoopOrchestrator);
+  const httpServer = new LoopHttpServer();
   const wsServer = new LoopWebSocketServer(httpServer.getServer());
   const timer = new NodeTimer();
 
@@ -372,25 +372,21 @@ export async function createApplication(config: ApplicationConfig): Promise<Appl
   }
 
   // Set up TinyBus providers
-  // 1. Loopback provider - emits messages back when received
-  const loopbackProvider = new MemoryProvider("loopback", [], true);
-  tinyBus.registerProvider(loopbackProvider);
-  
-  // 2. Session injection provider - injects messages into Claude Code session
+  // 1. Session injection provider - injects messages into Claude Code session
   const sessionProvider = new SessionInjectionProvider(
     "session-injection",
     (message: string) => orchestrator.injectMessage(message)
   );
   tinyBus.registerProvider(sessionProvider);
   
-  // 3. Chat message provider - handles UI chat messages
+  // 2. Chat message provider - handles UI chat messages
   const chatProvider = new ChatMessageProvider(
     "chat-handler",
     (message: string) => orchestrator.handleUserMessage(message)
   );
   tinyBus.registerProvider(chatProvider);
   
-  // 4. Conversation provider - writes messages to CONVERSATION.md when effectively paused
+  // 3. Conversation provider - writes messages to CONVERSATION.md when effectively paused
   const conversationProvider = new ConversationProvider(
     "conversation",
     conversationManager,
@@ -400,7 +396,7 @@ export async function createApplication(config: ApplicationConfig): Promise<Appl
   );
   tinyBus.registerProvider(conversationProvider);
   
-  // 5. Agora outbound provider - handles outbound agora.send messages (if configured)
+  // 4. Agora outbound provider - handles outbound agora.send messages (if configured)
   if (agoraService) {
     agoraOutboundProvider = new AgoraOutboundProvider(agoraService);
     tinyBus.registerProvider(agoraOutboundProvider);
