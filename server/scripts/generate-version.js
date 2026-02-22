@@ -4,34 +4,36 @@
  * This runs during build to embed version info into the built code
  */
 
-const fs = require('fs');
-const path = require('path');
-const { execSync } = require('child_process');
+import fs from "node:fs";
+import path from "node:path";
+import { execSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
-const serverDir = path.resolve(__dirname, '..');
-const packageJsonPath = path.join(serverDir, 'package.json');
-const outputPath = path.join(serverDir, 'dist', 'version.json');
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const serverDir = path.resolve(__dirname, "..");
+const packageJsonPath = path.join(serverDir, "package.json");
+const outputPath = path.join(serverDir, "dist", "version.json");
 
 // Read version from package.json
-const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
-const version = packageJson.version || '0.0.0';
+const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, "utf8"));
+const version = packageJson.version || "0.0.0";
 
 // Get git hash (short, 7 chars)
-let gitHash = 'unknown';
-let gitBranch = 'unknown';
+let gitHash = "unknown";
+let gitBranch = "unknown";
 try {
-  gitHash = execSync('git rev-parse --short HEAD', { 
-    cwd: serverDir, 
-    encoding: 'utf8' 
-  }).trim();
-  
-  gitBranch = execSync('git rev-parse --abbrev-ref HEAD', {
+  gitHash = execSync("git rev-parse --short HEAD", {
     cwd: serverDir,
-    encoding: 'utf8'
+    encoding: "utf8",
+  }).trim();
+
+  gitBranch = execSync("git rev-parse --abbrev-ref HEAD", {
+    cwd: serverDir,
+    encoding: "utf8",
   }).trim();
 } catch (err) {
   // Not a git repo or git not available - use defaults
-  console.warn('[generate-version] Could not get git info:', err.message);
+  console.warn("[generate-version] Could not get git info:", err.message);
 }
 
 // Get build timestamp
@@ -51,5 +53,5 @@ if (!fs.existsSync(distDir)) {
 }
 
 // Write version.json
-fs.writeFileSync(outputPath, JSON.stringify(versionInfo, null, 2), 'utf8');
+fs.writeFileSync(outputPath, JSON.stringify(versionInfo, null, 2), "utf8");
 console.log(`[generate-version] Generated ${outputPath}:`, versionInfo);

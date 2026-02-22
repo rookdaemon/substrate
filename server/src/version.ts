@@ -6,6 +6,10 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 
+declare const __dirname: string;
+const SERVER_DIR =
+  typeof __dirname !== "undefined" ? path.resolve(__dirname, "..") : process.cwd();
+
 export interface VersionInfo {
   version: string;
   gitHash: string;
@@ -30,9 +34,9 @@ export function getVersionInfo(): VersionInfo {
     
     // Try multiple possible locations
     const possiblePaths = [
-      path.join(__dirname, '..', 'dist', 'version.json'), // Compiled code location
-      path.join(__dirname, '..', '..', 'dist', 'version.json'), // Alternative location
-      path.join(process.cwd(), 'dist', 'version.json'), // CWD-based location
+      path.join(SERVER_DIR, "dist", "version.json"), // ESM bundle or CJS
+      path.join(SERVER_DIR, "..", "dist", "version.json"), // Alternative
+      path.join(process.cwd(), "dist", "version.json"), // CWD-based
     ];
 
     for (const versionPath of possiblePaths) {

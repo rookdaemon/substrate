@@ -20,12 +20,16 @@
  * Usage: node dist/supervisor.js
  */
 
-import { spawn } from "child_process";
-import * as path from "path";
+import { spawn } from "node:child_process";
+import * as path from "node:path";
 import { resolveConfig } from "./config";
 import { getAppPaths } from "./paths";
 import { NodeFileSystem } from "./substrate/abstractions/NodeFileSystem";
 import type { IFileSystem } from "./substrate/abstractions/IFileSystem";
+
+declare const __dirname: string;
+const SERVER_DIR =
+  typeof __dirname !== "undefined" ? path.resolve(__dirname, "..") : process.cwd();
 
 const RESTART_EXIT_CODE = 75;
 const MAX_BUILD_RETRIES = 5;
@@ -96,8 +100,7 @@ export async function validateRestartSafety(
 }
 
 async function main(): Promise<void> {
-  const serverDir = path.resolve(__dirname, "..");
-  const cliPath = path.join(serverDir, "dist", "cli.js");
+  const cliPath = path.join(SERVER_DIR, "dist", "cli.js");
   const fs = new NodeFileSystem();
   const resolveOptions = {
     appPaths: getAppPaths(),
