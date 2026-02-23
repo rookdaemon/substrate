@@ -122,4 +122,20 @@ describe("LoopWatchdog", () => {
 
     expect(() => watchdog.stop()).not.toThrow();
   });
+
+  it("injects at custom stall threshold", () => {
+    const { watchdog, clock, injected } = createWatchdog({ stallThresholdMs: 5 * 60 * 1000 });
+
+    watchdog.recordActivity();
+
+    // Advance to just under threshold — should not inject
+    clock.setNow(new Date(baseTime.getTime() + 4 * 60 * 1000 + 59 * 1000));
+    watchdog.check();
+    expect(injected).toHaveLength(0);
+
+    // Advance past threshold — should inject
+    clock.setNow(new Date(baseTime.getTime() + 5 * 60 * 1000 + 1000));
+    watchdog.check();
+    expect(injected).toHaveLength(1);
+  });
 });

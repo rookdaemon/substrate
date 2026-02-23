@@ -582,14 +582,17 @@ export async function createLoopLayer(
   orchestrator.setSchedulerCoordinator(new SchedulerCoordinator(schedulers));
 
   // Watchdog — detects stalls and injects gentle reminders
-  const watchdog = new LoopWatchdog({
-    clock,
-    logger,
-    injectMessage: (msg) => orchestrator.injectMessage(msg),
-    stallThresholdMs: 20 * 60 * 1000, // 20 minutes
-  });
-  orchestrator.setWatchdog(watchdog);
-  watchdog.start(5 * 60 * 1000); // Check every 5 minutes
+  const watchdogConfig = config.watchdog ?? {};
+  if (!watchdogConfig.disabled) {
+    const watchdog = new LoopWatchdog({
+      clock,
+      logger,
+      injectMessage: (msg) => orchestrator.injectMessage(msg),
+      stallThresholdMs: watchdogConfig.stallThresholdMs ?? 20 * 60 * 1000, // 20 minutes
+    });
+    orchestrator.setWatchdog(watchdog);
+    watchdog.start(watchdogConfig.checkIntervalMs ?? 5 * 60 * 1000); // Check every 5 minutes
+  }
 
   // Tick mode wiring
   if (config.mode === "tick") {

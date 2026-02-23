@@ -75,4 +75,26 @@ describe("createApplication", () => {
     expect(app).toBeDefined();
     expect(app.orchestrator.getState()).toBe(LoopState.STOPPED);
   });
+
+  it("creates application successfully with watchdog disabled", async () => {
+    const app = await createApplication(baseConfig({
+      httpPort: 0,
+      watchdog: { disabled: true },
+    }));
+    createdApps.push(app);
+
+    expect(app).toBeDefined();
+    expect(app.orchestrator.getState()).toBe(LoopState.STOPPED);
+  });
+
+  it("creates application successfully with custom watchdog timing", async () => {
+    const app = await createApplication(baseConfig({
+      httpPort: 0,
+      watchdog: { stallThresholdMs: 5 * 60 * 1000, checkIntervalMs: 60 * 1000 },
+    }));
+    createdApps.push(app);
+
+    expect(app).toBeDefined();
+    expect(app.orchestrator.getState()).toBe(LoopState.STOPPED);
+  });
 });
