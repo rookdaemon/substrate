@@ -231,13 +231,13 @@ describe("resolveConfig", () => {
     expect(config.superegoAuditInterval).toBe(30);
   });
 
-  it("defaults superegoAuditInterval to 20", async () => {
+  it("defaults superegoAuditInterval to 50", async () => {
     const config = await resolveConfig(fs, {
       appPaths: TEST_PATHS,
       env: {},
     });
 
-    expect(config.superegoAuditInterval).toBe(20);
+    expect(config.superegoAuditInterval).toBe(50);
   });
 
   it("uses cycleDelayMs from config file", async () => {
@@ -303,5 +303,31 @@ describe("resolveConfig", () => {
 
     expect(config.idleSleepConfig?.enabled).toBe(false);
     expect(config.idleSleepConfig?.idleCyclesBeforeSleep).toBe(5);
+  });
+
+  it("evaluateOutcome defaults to disabled with qualityThreshold 70", async () => {
+    const config = await resolveConfig(fs, {
+      appPaths: TEST_PATHS,
+      env: {},
+    });
+
+    expect(config.evaluateOutcome?.enabled).toBe(false);
+    expect(config.evaluateOutcome?.qualityThreshold).toBe(70);
+  });
+
+  it("reads evaluateOutcome from config file", async () => {
+    await fs.mkdir("/project", { recursive: true });
+    await fs.writeFile("/project/config.json", JSON.stringify({
+      evaluateOutcome: { enabled: true, qualityThreshold: 80 },
+    }));
+
+    const config = await resolveConfig(fs, {
+      appPaths: TEST_PATHS,
+      cwd: "/project",
+      env: {},
+    });
+
+    expect(config.evaluateOutcome?.enabled).toBe(true);
+    expect(config.evaluateOutcome?.qualityThreshold).toBe(80);
   });
 });

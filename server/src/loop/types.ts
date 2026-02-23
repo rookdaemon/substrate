@@ -10,14 +10,18 @@ export interface LoopConfig {
   superegoAuditInterval: number;
   maxConsecutiveIdleCycles: number;
   idleSleepEnabled: boolean;
+  evaluateOutcomeEnabled: boolean;
+  evaluateOutcomeQualityThreshold: number;
 }
 
 export function defaultLoopConfig(overrides?: Partial<LoopConfig>): LoopConfig {
   const defaults: LoopConfig = {
     cycleDelayMs: 30000,
-    superegoAuditInterval: 20,
+    superegoAuditInterval: 50,
     maxConsecutiveIdleCycles: 1,
     idleSleepEnabled: false,
+    evaluateOutcomeEnabled: false,
+    evaluateOutcomeQualityThreshold: 70,
   };
   if (!overrides) return defaults;
   return {
@@ -25,6 +29,8 @@ export function defaultLoopConfig(overrides?: Partial<LoopConfig>): LoopConfig {
     superegoAuditInterval: overrides.superegoAuditInterval ?? defaults.superegoAuditInterval,
     maxConsecutiveIdleCycles: overrides.maxConsecutiveIdleCycles ?? defaults.maxConsecutiveIdleCycles,
     idleSleepEnabled: overrides.idleSleepEnabled ?? defaults.idleSleepEnabled,
+    evaluateOutcomeEnabled: overrides.evaluateOutcomeEnabled ?? defaults.evaluateOutcomeEnabled,
+    evaluateOutcomeQualityThreshold: overrides.evaluateOutcomeQualityThreshold ?? defaults.evaluateOutcomeQualityThreshold,
   };
 }
 

@@ -33,8 +33,15 @@ export interface AppConfig {
   autoStartAfterRestart: boolean;
   /** Number of backups to retain (default: 14). */
   backupRetentionCount?: number;
-  /** Number of cycles between SUPEREGO audits (default: 20). Can be overridden by SUPEREGO_AUDIT_INTERVAL env var. */
+  /** Number of cycles between SUPEREGO audits (default: 50). Can be overridden by SUPEREGO_AUDIT_INTERVAL env var. */
   superegoAuditInterval?: number;
+  /** Configuration for post-task outcome evaluation */
+  evaluateOutcome?: {
+    /** When false (default), use computeDriveRating() heuristic; fall back to LLM only when score < qualityThreshold */
+    enabled: boolean;
+    /** Minimum heuristic quality score (0-100) required to skip LLM evaluation (default: 70) */
+    qualityThreshold?: number;
+  };
   /** Delay between loop cycles in ms (default: 30000). For primarily reactive agents, consider 60000 or more. */
   cycleDelayMs?: number;
   /** Configuration for CONVERSATION.md archiving */
@@ -100,8 +107,12 @@ export async function resolveConfig(
     autoStartOnFirstRun: false,
     autoStartAfterRestart: true,
     backupRetentionCount: 14,
-    superegoAuditInterval: 20,
+    superegoAuditInterval: 50,
     cycleDelayMs: 30000,
+    evaluateOutcome: {
+      enabled: false,
+      qualityThreshold: 70,
+    },
     conversationArchive: {
       enabled: false, // Disabled by default to maintain backward compatibility
       linesToKeep: 100,
@@ -165,6 +176,12 @@ export async function resolveConfig(
     backupRetentionCount: fileConfig.backupRetentionCount ?? defaults.backupRetentionCount,
     superegoAuditInterval: fileConfig.superegoAuditInterval ?? defaults.superegoAuditInterval,
     cycleDelayMs: fileConfig.cycleDelayMs ?? defaults.cycleDelayMs,
+    evaluateOutcome: fileConfig.evaluateOutcome
+      ? {
+          enabled: fileConfig.evaluateOutcome.enabled ?? defaults.evaluateOutcome!.enabled,
+          qualityThreshold: fileConfig.evaluateOutcome.qualityThreshold ?? defaults.evaluateOutcome!.qualityThreshold,
+        }
+      : defaults.evaluateOutcome,
     conversationArchive: fileConfig.conversationArchive
       ? {
           enabled: fileConfig.conversationArchive.enabled ?? defaults.conversationArchive!.enabled,

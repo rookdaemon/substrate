@@ -295,3 +295,119 @@ describe("Reconsideration Loop Integration", () => {
     expect(progress).toContain("Feature X implemented successfully");
   });
 });
+
+describe("Reconsideration Loop — heuristic gate (evaluateOutcomeEnabled: false)", () => {
+  let deps: ReturnType<typeof createFullDeps>;
+  let eventSink: InMemoryEventSink;
+
+  beforeEach(async () => {
+    deps = createFullDeps();
+    eventSink = new InMemoryEventSink();
+    await setupSubstrate(deps.fs);
+  });
+
+  function makeOrchestrator(overrides?: Partial<ReturnType<typeof defaultLoopConfig>>) {
+    const timer = new ImmediateTimer();
+    const logger = new InMemoryLogger();
+    const config = defaultLoopConfig(overrides);
+    return new LoopOrchestrator(
+      deps.ego,
+      deps.subconscious,
+      deps.superego,
+      deps.id,
+      deps.appendWriter,
+      deps.clock,
+      timer,
+      eventSink,
+      config,
+      logger
+    );
+  }
+
+  it("uses heuristic evaluation when evaluateOutcomeEnabled is false and score is above threshold", async () => {
+    // Only one LLM session needed — task execution only (no evaluation session)
+    deps.launcher.enqueueSuccess(JSON.stringify({
+      result: "success",
+      summary: "Feature implemented",
+      progressEntry: "Done with memory updates",
+      skillUpdates: null,
+      memoryUpdates: "# Memory\n\nUpdated memory about X",
+      proposals: [],
+    }));
+
+    const orchestrator = makeOrchestrator({ evaluateOutcomeEnabled: false, evaluateOutcomeQualityThreshold: 70 });
+    orchestrator.start();
+    await orchestrator.runOneCycle();
+
+    // Only 1 launch (task execution), NOT 2 (no LLM evaluation session)
+    expect(deps.launcher.getLaunches()).toHaveLength(1);
+
+    // Reconsideration event still emitted with heuristic score
+    const reconsiderationEvents = eventSink.getEvents().filter(e => e.type === "reconsideration_complete");
+    expect(reconsiderationEvents).toHaveLength(1);
+    // computeDriveRating: baseline 5 + memoryUpdates bonus 3 = 8, scaled ×10 → qualityScore 80
+    expect(reconsiderationEvents[0].data.qualityScore).toBe(80);
+    expect(reconsiderationEvents[0].data.outcomeMatchesIntent).toBe(true);
+  });
+
+  it("falls back to LLM when heuristic score is below threshold", async () => {
+    // Partial task, no updates → driveRating = 5 → qualityScore 50 < threshold 70 → LLM fallback
+    deps.launcher.enqueueSuccess(JSON.stringify({
+      result: "partial",
+      summary: "Partially done",
+      progressEntry: "Some progress",
+      skillUpdates: null,
+      memoryUpdates: null,
+      proposals: [],
+    }));
+    // LLM evaluation response (high quality to avoid triggering audit)
+    deps.launcher.enqueueSuccess(JSON.stringify({
+      outcomeMatchesIntent: true,
+      qualityScore: 85,
+      issuesFound: [],
+      recommendedActions: [],
+      needsReassessment: false,
+    }));
+
+    const orchestrator = makeOrchestrator({ evaluateOutcomeEnabled: false, evaluateOutcomeQualityThreshold: 70 });
+    orchestrator.start();
+    await orchestrator.runOneCycle();
+
+    // 2 launches: task execution + LLM evaluation fallback
+    expect(deps.launcher.getLaunches()).toHaveLength(2);
+
+    const reconsiderationEvents = eventSink.getEvents().filter(e => e.type === "reconsideration_complete");
+    expect(reconsiderationEvents).toHaveLength(1);
+    // LLM result used (not heuristic score of 50)
+    expect(reconsiderationEvents[0].data.qualityScore).toBe(85);
+  });
+
+  it("uses LLM evaluation when evaluateOutcomeEnabled is true", async () => {
+    deps.launcher.enqueueSuccess(JSON.stringify({
+      result: "success",
+      summary: "Feature implemented",
+      progressEntry: "Done",
+      skillUpdates: null,
+      memoryUpdates: null,
+      proposals: [],
+    }));
+    deps.launcher.enqueueSuccess(JSON.stringify({
+      outcomeMatchesIntent: true,
+      qualityScore: 90,
+      issuesFound: [],
+      recommendedActions: [],
+      needsReassessment: false,
+    }));
+
+    const orchestrator = makeOrchestrator({ evaluateOutcomeEnabled: true });
+    orchestrator.start();
+    await orchestrator.runOneCycle();
+
+    // 2 launches: task execution + LLM evaluation
+    expect(deps.launcher.getLaunches()).toHaveLength(2);
+
+    const reconsiderationEvents = eventSink.getEvents().filter(e => e.type === "reconsideration_complete");
+    expect(reconsiderationEvents).toHaveLength(1);
+    expect(reconsiderationEvents[0].data.qualityScore).toBe(90);
+  });
+});

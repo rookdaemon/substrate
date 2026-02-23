@@ -1,5 +1,5 @@
 import { Ego } from "../agents/roles/Ego";
-import { Subconscious, TaskResult } from "../agents/roles/Subconscious";
+import { Subconscious, TaskResult, OutcomeEvaluation } from "../agents/roles/Subconscious";
 import { Superego } from "../agents/roles/Superego";
 import { Id } from "../agents/roles/Id";
 import { ProcessLogEntry } from "../agents/claude/ISessionLauncher";
@@ -1190,11 +1190,37 @@ export class LoopOrchestrator implements IMessageInjector {
   ): Promise<void> {
     this.logger.debug(`reconsideration: evaluating outcome for task "${dispatch.taskId}" (cycle ${this.cycleNumber})`);
     try {
-      const evaluation = await this.subconscious.evaluateOutcome(
-        { taskId: dispatch.taskId, description: dispatch.description },
-        taskResult,
-        this.createLogCallback("SUBCONSCIOUS")
-      );
+      let evaluation: OutcomeEvaluation;
+
+      if (!this.config.evaluateOutcomeEnabled) {
+        // Heuristic path: use computeDriveRating() without spawning an LLM session
+        const driveRating = Subconscious.computeDriveRating(taskResult);
+        const qualityScore = driveRating * 10; // scale 0-10 → 0-100
+
+        if (qualityScore >= this.config.evaluateOutcomeQualityThreshold) {
+          // Score is good enough — use heuristic result directly
+          const outcomeMatchesIntent = taskResult.result !== "failure";
+          // needsReassessment: only if quality is catastrophically 0 (threshold can't be ≤0 in practice)
+          const needsReassessment = qualityScore === 0;
+          this.logger.debug(`reconsideration: heuristic score ${qualityScore}/100 — skipping LLM evaluation`);
+          evaluation = { outcomeMatchesIntent, qualityScore, issuesFound: [], recommendedActions: [], needsReassessment };
+        } else {
+          // Score below threshold — fall back to LLM for safety
+          this.logger.debug(`reconsideration: heuristic score ${qualityScore}/100 below threshold — falling back to LLM`);
+          evaluation = await this.subconscious.evaluateOutcome(
+            { taskId: dispatch.taskId, description: dispatch.description },
+            taskResult,
+            this.createLogCallback("SUBCONSCIOUS")
+          );
+        }
+      } else {
+        // LLM evaluation enabled — original behavior
+        evaluation = await this.subconscious.evaluateOutcome(
+          { taskId: dispatch.taskId, description: dispatch.description },
+          taskResult,
+          this.createLogCallback("SUBCONSCIOUS")
+        );
+      }
 
       this.logger.debug(
         `reconsideration: complete — outcome matches intent: ${evaluation.outcomeMatchesIntent}, ` +

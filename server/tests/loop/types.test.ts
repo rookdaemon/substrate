@@ -19,15 +19,17 @@ describe("defaultLoopConfig", () => {
     const config = defaultLoopConfig();
 
     expect(config.cycleDelayMs).toBe(30000);
-    expect(config.superegoAuditInterval).toBe(20);
+    expect(config.superegoAuditInterval).toBe(50);
     expect(config.maxConsecutiveIdleCycles).toBe(1);
+    expect(config.evaluateOutcomeEnabled).toBe(false);
+    expect(config.evaluateOutcomeQualityThreshold).toBe(70);
   });
 
   it("allows overriding individual fields", () => {
     const config = defaultLoopConfig({ cycleDelayMs: 500 });
 
     expect(config.cycleDelayMs).toBe(500);
-    expect(config.superegoAuditInterval).toBe(20);
+    expect(config.superegoAuditInterval).toBe(50);
     expect(config.maxConsecutiveIdleCycles).toBe(1);
   });
 
@@ -39,7 +41,7 @@ describe("defaultLoopConfig", () => {
     });
 
     expect(config.cycleDelayMs).toBe(30000);
-    expect(config.superegoAuditInterval).toBe(20);
+    expect(config.superegoAuditInterval).toBe(50);
     expect(config.maxConsecutiveIdleCycles).toBe(1);
   });
 
@@ -53,6 +55,20 @@ describe("defaultLoopConfig", () => {
     expect(config.cycleDelayMs).toBe(2000);
     expect(config.superegoAuditInterval).toBe(20);
     expect(config.maxConsecutiveIdleCycles).toBe(3);
+  });
+
+  it("allows enabling LLM evaluation via evaluateOutcomeEnabled", () => {
+    const config = defaultLoopConfig({ evaluateOutcomeEnabled: true });
+
+    expect(config.evaluateOutcomeEnabled).toBe(true);
+    expect(config.evaluateOutcomeQualityThreshold).toBe(70);
+  });
+
+  it("allows overriding evaluateOutcomeQualityThreshold", () => {
+    const config = defaultLoopConfig({ evaluateOutcomeQualityThreshold: 80 });
+
+    expect(config.evaluateOutcomeEnabled).toBe(false);
+    expect(config.evaluateOutcomeQualityThreshold).toBe(80);
   });
 });
 
