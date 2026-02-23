@@ -1,0 +1,121 @@
+import * as path from "path";
+import { PermissionChecker } from "../agents/permissions";
+import { PromptBuilder } from "../agents/prompts/PromptBuilder";
+import { AgentSdkLauncher, SdkQueryFn } from "../agents/claude/AgentSdkLauncher";
+import { ProcessTracker, ProcessTrackerConfig } from "../agents/claude/ProcessTracker";
+import { NodeProcessKiller } from "../agents/claude/NodeProcessKiller";
+import { TaskClassifier } from "../agents/TaskClassifier";
+import { ConversationCompactor } from "../conversation/ConversationCompactor";
+import { ConversationArchiver } from "../conversation/ConversationArchiver";
+import { ConversationManager, ConversationArchiveConfig } from "../conversation/ConversationManager";
+import { Ego } from "../agents/roles/Ego";
+import { Subconscious } from "../agents/roles/Subconscious";
+import { Superego } from "../agents/roles/Superego";
+import { Id } from "../agents/roles/Id";
+import { TaskClassificationMetrics } from "../evaluation/TaskClassificationMetrics";
+import { SubstrateSizeTracker } from "../evaluation/SubstrateSizeTracker";
+import { DelegationTracker } from "../evaluation/DelegationTracker";
+import { DriveQualityTracker } from "../evaluation/DriveQualityTracker";
+import type { ApplicationConfig } from "./applicationTypes";
+import type { SubstrateLayerResult } from "./createSubstrateLayer";
+
+export interface AgentLayerResult {
+  checker: PermissionChecker;
+  promptBuilder: PromptBuilder;
+  launcher: AgentSdkLauncher;
+  processTracker: ProcessTracker;
+  taskMetrics: TaskClassificationMetrics;
+  sizeTracker: SubstrateSizeTracker;
+  delegationTracker: DelegationTracker;
+  taskClassifier: TaskClassifier;
+  conversationManager: ConversationManager;
+  driveQualityTracker: DriveQualityTracker;
+  ego: Ego;
+  subconscious: Subconscious;
+  superego: Superego;
+  id: Id;
+}
+
+/**
+ * Creates all agent-layer objects: permission checker, prompt builder,
+ * process tracker, SDK launcher, task classifier, conversation manager,
+ * drive quality tracker, and the four cognitive roles.
+ */
+export async function createAgentLayer(
+  config: ApplicationConfig,
+  sdkQuery: SdkQueryFn,
+  substrate: SubstrateLayerResult,
+): Promise<AgentLayerResult> {
+  const { reader, writer, appendWriter, lock, clock, fs, substrateConfig, logger } = substrate;
+
+  const checker = new PermissionChecker();
+  const promptBuilder = new PromptBuilder(reader, checker, {
+    substratePath: config.substratePath,
+    sourceCodePath: config.sourceCodePath,
+  });
+
+  // Process tracker for zombie cleanup (created before launcher so we can pass it)
+  const processKiller = new NodeProcessKiller();
+  const processTrackerConfig: ProcessTrackerConfig = {
+    gracePeriodMs: config.abandonedProcessGraceMs ?? 600_000, // Default 10 min
+    reaperIntervalMs: 60_000, // Check every minute
+  };
+  const processTracker = new ProcessTracker(clock, processKiller, processTrackerConfig, logger);
+  const mcpServers = {
+    tinybus: { type: "http" as const, url: "http://localhost:3000/mcp" },
+  };
+  const launcher = new AgentSdkLauncher(sdkQuery, clock, config.model, logger, processTracker, mcpServers);
+
+  // Metrics collection components
+  const taskMetrics = new TaskClassificationMetrics(fs, clock, config.substratePath);
+  const sizeTracker = new SubstrateSizeTracker(fs, clock, config.substratePath);
+  const delegationTracker = new DelegationTracker(fs, clock, config.substratePath);
+
+  // Task classifier for model selection (with optional metrics collection)
+  const taskClassifier = new TaskClassifier({
+    strategicModel: config.strategicModel ?? "opus",
+    tacticalModel: config.tacticalModel ?? "sonnet",
+    metricsCollector: config.metrics?.enabled !== false ? taskMetrics : undefined, // Default enabled
+  });
+
+  const cwd = config.workingDirectory;
+
+  // Conversation manager with compaction and optional archiving
+  const compactor = new ConversationCompactor(launcher, cwd);
+
+  let archiver: ConversationArchiver | undefined;
+  let archiveConfig: ConversationArchiveConfig | undefined;
+
+  if (config.conversationArchive?.enabled) {
+    archiver = new ConversationArchiver(fs, clock, config.substratePath);
+    archiveConfig = {
+      enabled: config.conversationArchive.enabled,
+      linesToKeep: config.conversationArchive.linesToKeep,
+      sizeThreshold: config.conversationArchive.sizeThreshold,
+      timeThresholdMs: config.conversationArchive.timeThresholdDays
+        ? config.conversationArchive.timeThresholdDays * 24 * 60 * 60 * 1000
+        : undefined,
+    };
+  }
+
+  const conversationManager = new ConversationManager(
+    reader, fs, substrateConfig, lock, appendWriter, checker, compactor, clock,
+    archiver, archiveConfig,
+  );
+
+  // Drive quality tracker — persists Id drive ratings for learning loop
+  const driveRatingsPath = path.resolve(config.substratePath, "..", "data", "drive-ratings.jsonl");
+  const driveQualityTracker = new DriveQualityTracker(fs, driveRatingsPath);
+
+  const ego = new Ego(reader, writer, conversationManager, checker, promptBuilder, launcher, clock, taskClassifier, cwd);
+  const subconscious = new Subconscious(reader, writer, appendWriter, conversationManager, checker, promptBuilder, launcher, clock, taskClassifier, cwd);
+  const superego = new Superego(reader, appendWriter, checker, promptBuilder, launcher, clock, taskClassifier, writer, cwd);
+  const id = new Id(reader, checker, promptBuilder, launcher, clock, taskClassifier, cwd, driveQualityTracker);
+
+  return {
+    checker, promptBuilder, launcher, processTracker,
+    taskMetrics, sizeTracker, delegationTracker, taskClassifier,
+    conversationManager, driveQualityTracker,
+    ego, subconscious, superego, id,
+  };
+}
