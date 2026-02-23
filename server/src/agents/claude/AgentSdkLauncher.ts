@@ -141,6 +141,12 @@ export class AgentSdkLauncher implements ISessionLauncher {
     const modelToUse = options?.model ?? this.model;
     this.logger.debug(`sdk-launch: model=${modelToUse} cwd=${options?.cwd ?? "(inherit)"}`);
 
+    const mcpEntries = Object.entries(this.mcpServers);
+    if (mcpEntries.length > 0) {
+      for (const [name, cfg] of mcpEntries) {
+        this.logger.debug(`sdk-launch: MCP server registered: ${name} → ${cfg.url}`);
+      }
+    }
     const queryOptions: Record<string, unknown> = {
       systemPrompt: request.systemPrompt,
       model: modelToUse,

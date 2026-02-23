@@ -61,9 +61,12 @@ export async function createAgentLayer(
     reaperIntervalMs: 60_000, // Check every minute
   };
   const processTracker = new ProcessTracker(clock, processKiller, processTrackerConfig, logger);
+  const DEFAULT_HTTP_PORT = 3000;
+  const mcpUrl = `http://localhost:${config.httpPort ?? DEFAULT_HTTP_PORT}/mcp`;
   const mcpServers = {
-    tinybus: { type: "http" as const, url: "http://localhost:3000/mcp" },
+    tinybus: { type: "http" as const, url: mcpUrl },
   };
+  logger.debug(`agent-layer: MCP servers configured: tinybus → ${mcpUrl}`);
   const launcher = new AgentSdkLauncher(sdkQuery, clock, config.model, logger, processTracker, mcpServers);
 
   // Metrics collection components
