@@ -54,7 +54,6 @@ export interface AppConfig {
   /** Configuration for Agora security */
   agora?: {
     security?: {
-      unknownSenderPolicy?: 'allow' | 'quarantine' | 'reject'; // default: 'quarantine'
       perSenderRateLimit?: {
         enabled: boolean; // Whether to enable per-sender rate limiting (default: true)
         maxMessages: number; // Maximum messages per sender in time window (default: 10)
@@ -116,7 +115,6 @@ export async function resolveConfig(
     },
     agora: {
       security: {
-        unknownSenderPolicy: 'quarantine', // Quarantine by default for security
         perSenderRateLimit: {
           enabled: true, // Enabled by default
           maxMessages: 10, // 10 messages per minute
@@ -185,7 +183,6 @@ export async function resolveConfig(
       ? {
           security: fileConfig.agora.security
             ? {
-                unknownSenderPolicy: fileConfig.agora.security.unknownSenderPolicy ?? defaults.agora!.security!.unknownSenderPolicy,
                 perSenderRateLimit: fileConfig.agora.security.perSenderRateLimit
                   ? {
                       enabled: fileConfig.agora.security.perSenderRateLimit.enabled ?? defaults.agora!.security!.perSenderRateLimit!.enabled,

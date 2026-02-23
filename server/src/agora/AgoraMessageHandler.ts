@@ -8,9 +8,6 @@ import { AgentRole } from "../agents/types";
 import { shortKey } from "./utils";
 import type { Envelope } from "@rookdaemon/agora" with { "resolution-mode": "import" };
 import type { ILogger } from "../logging";
-import type { AgoraInboxManager } from "./AgoraInboxManager";
-
-export type UnknownSenderPolicy = 'allow' | 'quarantine' | 'reject';
 
 /**
  * Sliding window state for per-sender rate limiting
@@ -38,7 +35,7 @@ export interface RateLimitConfig {
  * - Inject messages directly into orchestrator (bypasses TinyBus)
  * - Emit WebSocket events for frontend visibility
  * - Deduplicate envelopes to prevent replay attacks
- * - Enforce peer allowlist via unknownSenderPolicy
+ * - Enforce peer allowlist (unknown senders are silently dropped)
  * - Per-sender rate limiting to prevent flooding
  */
 export class AgoraMessageHandler {
@@ -62,8 +59,6 @@ export class AgoraMessageHandler {
     private readonly getState: () => LoopState,
     private readonly isRateLimited: () => boolean = () => false,
     private readonly logger: ILogger,
-    private readonly unknownSenderPolicy: UnknownSenderPolicy = 'quarantine',
-    private readonly inboxManager: AgoraInboxManager | null = null,
     private readonly rateLimitConfig: RateLimitConfig = { enabled: true, maxMessages: 10, windowMs: 60000 },
     private readonly wakeLoop: (() => void) | null = null
   ) {}
@@ -208,16 +203,8 @@ export class AgoraMessageHandler {
     const knownPeer = this.findPeerByPublicKey(senderPublicKey);
 
     if (!knownPeer) {
-      if (this.unknownSenderPolicy === 'quarantine') {
-        // Log to quarantine section but do NOT inject into agent loop
-        this.logger.debug(`[AGORA] Message from unknown sender ${shortKey(senderPublicKey)} — quarantined`);
-        await this.writeQuarantinedMessage(envelope, source);
-        return;
-      } else if (this.unknownSenderPolicy === 'reject') {
-        this.logger.debug(`[AGORA] Rejected message from unknown sender ${shortKey(senderPublicKey)}`);
-        return;
-      }
-      // 'allow' = existing behavior, fall through
+      this.logger.debug(`[AGORA] Filtered message from unknown sender ${shortKey(senderPublicKey)}`);
+      return;
     }
 
     // Check per-sender rate limit
@@ -318,22 +305,4 @@ export class AgoraMessageHandler {
     }
   }
 
-  /**
-   * Write a quarantined message to AGORA_INBOX.md
-   * These messages are not injected into the agent loop
-   */
-  private async writeQuarantinedMessage(envelope: Envelope, source: "webhook" | "relay" = "webhook"): Promise<void> {
-    if (!this.inboxManager) {
-      this.logger.debug(`[AGORA] No inbox manager configured, cannot quarantine message`);
-      return;
-    }
-
-    try {
-      await this.inboxManager.addQuarantinedMessage(envelope, source);
-      this.logger.debug(`[AGORA] Quarantined message written: envelopeId=${envelope.id}`);
-    } catch (err) {
-      this.logger.debug(`[AGORA] Failed to write quarantined message: ${err instanceof Error ? err.message : String(err)}`);
-      throw err;
-    }
-  }
 }

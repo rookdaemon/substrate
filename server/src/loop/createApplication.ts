@@ -50,7 +50,6 @@ import { TinyBus, SessionInjectionProvider, ChatMessageProvider } from "../tinyb
 import { ConversationProvider } from "../tinybus/providers/ConversationProvider";
 import { AgoraMessageHandler } from "../agora/AgoraMessageHandler";
 import { AgoraOutboundProvider } from "../agora/AgoraOutboundProvider";
-import { AgoraInboxManager } from "../agora/AgoraInboxManager";
 import { IAgoraService } from "../agora/IAgoraService";
 import { FileWatcher } from "../substrate/watcher/FileWatcher";
 import { SuperegoFindingTracker } from "../agents/roles/SuperegoFindingTracker";
@@ -100,7 +99,6 @@ export interface ApplicationConfig {
   };
   agora?: {
     security?: {
-      unknownSenderPolicy?: 'allow' | 'quarantine' | 'reject'; // default: 'quarantine'
       perSenderRateLimit?: {
         enabled: boolean;
         maxMessages: number;
@@ -311,14 +309,6 @@ export async function createApplication(config: ApplicationConfig): Promise<Appl
 
   // Create AgoraMessageHandler now that orchestrator exists
   if (agoraService && agoraConfig) {
-    // Create AgoraInboxManager for quarantine support
-    const agoraInboxManager = new AgoraInboxManager(
-      fs,
-      substrateConfig,
-      lock,
-      clock
-    );
-
     const rateLimitConfig = config.agora?.security?.perSenderRateLimit ?? {
       enabled: true,
       maxMessages: 10,
@@ -334,8 +324,6 @@ export async function createApplication(config: ApplicationConfig): Promise<Appl
       () => orchestrator.getState(), // getState callback
       () => orchestrator.getRateLimitUntil() !== null, // isRateLimited callback
       logger,
-      config.agora?.security?.unknownSenderPolicy ?? 'quarantine', // Default to quarantine
-      agoraInboxManager, // for quarantine support
       rateLimitConfig, // Rate limit config
       () => { // wakeLoop callback — wake orchestrator if sleeping on incoming Agora message
         try { orchestrator.wake(); } catch { /* not sleeping */ }
