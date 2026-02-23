@@ -177,8 +177,8 @@ async function main(): Promise<void> {
   }
 }
 
-// Only run when executed directly (not when imported by tests)
-if (require.main === module) {
+// Skip main() in test runners (Jest sets JEST_WORKER_ID)
+if (!process.env.JEST_WORKER_ID) {
   main().catch((err) => {
     console.error("Fatal:", err);
     process.exit(1);

@@ -120,7 +120,7 @@ async function main(): Promise<void> {
     const startArgs = [cliPath, "start"];
     if (useForceStart) startArgs.push("--forceStart");
 
-    const exitCode = await run("node", startArgs, serverDir);
+    const exitCode = await run("node", startArgs, SERVER_DIR);
 
     if (exitCode !== RESTART_EXIT_CODE) {
       process.exit(exitCode);
@@ -129,7 +129,7 @@ async function main(): Promise<void> {
     isFirstTime = false;
     console.log("[supervisor] Restart requested (exit code 75) — rebuilding...");
 
-    const buildCode = await run("npx", ["tsc"], serverDir);
+    const buildCode = await run("npx", ["tsc"], SERVER_DIR);
     if (buildCode !== 0) {
       consecutiveFailures++;
       if (consecutiveFailures >= MAX_BUILD_RETRIES) {
@@ -145,7 +145,7 @@ async function main(): Promise<void> {
       currentRetryDelay = INITIAL_RETRY_DELAY_MS;
       const skipGates = process.argv.includes("--skip-safety-gates");
       if (!skipGates) {
-        const safeToRestart = await validateRestartSafety(serverDir, config.workingDirectory, env.fs);
+        const safeToRestart = await validateRestartSafety(SERVER_DIR, config.workingDirectory, env.fs);
         if (!safeToRestart) {
           console.error("[supervisor] Restart aborted due to failed safety gates");
           process.exit(1);
@@ -157,7 +157,7 @@ async function main(): Promise<void> {
       if (healthy) {
         consecutiveUnhealthyRestarts = 0;
         // Tag current commit as last-known-good
-        await run("git", ["tag", "-f", "last-known-good"], serverDir);
+        await run("git", ["tag", "-f", "last-known-good"], SERVER_DIR);
         console.log("[supervisor] Server is healthy — tagged current commit as last-known-good");
       } else {
         consecutiveUnhealthyRestarts++;
@@ -165,12 +165,12 @@ async function main(): Promise<void> {
 
         if (consecutiveUnhealthyRestarts >= MAX_CONSECUTIVE_UNHEALTHY) {
           console.error("[supervisor] 3 consecutive unhealthy restarts — rolling back to last-known-good");
-          const checkoutCode = await run("git", ["checkout", "last-known-good"], serverDir);
+          const checkoutCode = await run("git", ["checkout", "last-known-good"], SERVER_DIR);
           if (checkoutCode !== 0) {
             console.error("[supervisor] Rollback failed — no last-known-good tag found, giving up");
             process.exit(1);
           }
-          const rollbackBuildCode = await run("npx", ["tsc"], serverDir);
+          const rollbackBuildCode = await run("npx", ["tsc"], SERVER_DIR);
           if (rollbackBuildCode !== 0) {
             console.error("[supervisor] Rollback build failed, giving up");
             process.exit(1);
@@ -183,7 +183,8 @@ async function main(): Promise<void> {
   }
 }
 
-if (require.main === module) {
+// Skip main() in test runners (Jest sets JEST_WORKER_ID)
+if (!process.env.JEST_WORKER_ID) {
   main().catch((err) => {
     console.error("[supervisor] Fatal error:", err);
     process.exit(1);

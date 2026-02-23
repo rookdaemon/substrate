@@ -83,7 +83,7 @@ describe("CL-11: Observability & async audit", () => {
 
   describe("audit fire-and-forget", () => {
     it("audit metric is incremented even when audit runs fire-and-forget", async () => {
-      const { orchestrator, launcher } = createOrchestrator();
+      const { launcher } = createOrchestrator();
       // superegoAuditInterval=1 means every cycle triggers an audit
       const config = defaultLoopConfig({ superegoAuditInterval: 1, maxConsecutiveIdleCycles: 1 });
       const fs = new InMemoryFileSystem();
