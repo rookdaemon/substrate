@@ -53,18 +53,27 @@ export class Subconscious {
     private readonly workingDirectory?: string
   ) {}
 
-  async execute(task: TaskAssignment, onLogEntry?: (entry: ProcessLogEntry) => void): Promise<TaskResult> {
+  async execute(
+    task: TaskAssignment,
+    onLogEntry?: (entry: ProcessLogEntry) => void,
+    pendingMessages?: string[]
+  ): Promise<TaskResult> {
     try {
       const systemPrompt = this.promptBuilder.buildSystemPrompt(AgentRole.SUBCONSCIOUS);
       const eagerRefs = await this.promptBuilder.getEagerReferences(AgentRole.SUBCONSCIOUS);
       const lazyRefs = this.promptBuilder.getLazyReferences(AgentRole.SUBCONSCIOUS);
-      
+
       let message = "";
       if (eagerRefs) {
         message += `=== CONTEXT (auto-loaded) ===\n${eagerRefs}\n\n`;
       }
       if (lazyRefs) {
         message += `=== AVAILABLE FILES (read on demand) ===\nUse the Read tool to access any of these when needed:\n${lazyRefs}\n\n`;
+      }
+      if (pendingMessages && pendingMessages.length > 0) {
+        message += `=== PENDING MESSAGES TO PROCESS FIRST ===\nProcess and respond to these before the task below. Use the TinyBus MCP tool \`mcp__tinybus__send_message\` with type "agora.send" to reply to Agora messages.\n\n`;
+        message += pendingMessages.join("\n\n---\n\n");
+        message += "\n\n=== TASK ===\n";
       }
       message += `Execute this task:\nID: ${task.taskId}\nDescription: ${task.description}`;
       

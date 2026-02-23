@@ -228,7 +228,7 @@ export class LoopOrchestrator implements IMessageInjector {
    * Queue a startup message to be injected at the start of the first active session.
    * Used by the startup scan to recover [UNPROCESSED] messages after a restart.
    * In tick mode: consumed at the start of the next tick.
-   * In cycle mode: serves as a reminder alongside [UNPROCESSED] markers in CONVERSATION.md.
+   * In cycle mode: consumed on the next cycle (with task, or via Ego when idle).
    */
   queueStartupMessage(message: string): void {
     this.pendingMessages.push(message);
@@ -344,6 +344,19 @@ export class LoopOrchestrator implements IMessageInjector {
       this.metrics.idleCycles++;
       this.metrics.consecutiveIdleCycles++;
 
+      // Cycle mode: process pending messages (e.g. Agora) when idle so they get a response
+      if (this.pendingMessages.length > 0) {
+        const toProcess = [...this.pendingMessages];
+        this.pendingMessages = [];
+        this.logger.debug(`cycle ${this.cycleNumber}: processing ${toProcess.length} pending message(s) (no task)`);
+        const combined = toProcess.join("\n\n---\n\n");
+        try {
+          await this.ego.respondToMessage(combined, this.createLogCallback("EGO"));
+        } catch (err) {
+          this.logger.debug(`cycle ${this.cycleNumber}: pending message response failed — ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+
       this.logger.debug(`cycle ${this.cycleNumber}: idle (consecutive: ${this.metrics.consecutiveIdleCycles})`);
 
       result = {
@@ -361,10 +374,20 @@ export class LoopOrchestrator implements IMessageInjector {
     } else {
       this.logger.debug(`cycle ${this.cycleNumber}: dispatching task "${dispatch.taskId}"`);
 
-      const taskResult = await this.subconscious.execute({
-        taskId: dispatch.taskId,
-        description: dispatch.description,
-      }, this.createLogCallback("SUBCONSCIOUS"));
+      const pending = this.pendingMessages.length > 0 ? [...this.pendingMessages] : undefined;
+      if (pending?.length) {
+        this.pendingMessages = [];
+        this.logger.debug(`cycle ${this.cycleNumber}: including ${pending.length} pending message(s) with task`);
+      }
+
+      const taskResult = await this.subconscious.execute(
+        {
+          taskId: dispatch.taskId,
+          description: dispatch.description,
+        },
+        this.createLogCallback("SUBCONSCIOUS"),
+        pending
+      );
 
       const success = taskResult.result === "success";
 
