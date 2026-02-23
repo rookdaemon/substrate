@@ -194,14 +194,65 @@ describe("Agora Message Integration", () => {
     await httpServer.close();
   });
 
-  it("should reject webhook without authorization header", async () => {
+  it("should allow webhook without authorization header when AGORA_WEBHOOK_TOKEN is not set", async () => {
+    delete process.env.AGORA_WEBHOOK_TOKEN;
+    const port = await httpServer.listen(0);
+
+    const agora = await import("@rookdaemon/agora");
+    const testPeerPublicKey = "302a300506032b6570032100cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
+    const testPeerPrivateKey = "302e020100300506032b65700422044444444444444444444444444444444444444444444444444444444444444444444444";
+    const validEnvelope = agora.createEnvelope("request", testPeerPublicKey, testPeerPrivateKey, { q: "hi" }, 1708000000000);
+    const decodeInboundSpy = jest.spyOn(agoraService, "decodeInbound").mockResolvedValue({ ok: true, envelope: validEnvelope });
+
+    const result = await sendWebhookRequest(port, "[AGORA_ENVELOPE]test", false);
+
+    expect(result.statusCode).toBe(200);
+    expect(decodeInboundSpy).toHaveBeenCalledTimes(1);
+
+    await httpServer.close();
+  });
+
+  it("should accept webhook with correct token when AGORA_WEBHOOK_TOKEN is set", async () => {
+    process.env.AGORA_WEBHOOK_TOKEN = "secret-token";
+    const port = await httpServer.listen(0);
+
+    const agora = await import("@rookdaemon/agora");
+    const testPeerPublicKey = "302a300506032b6570032100cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
+    const testPeerPrivateKey = "302e020100300506032b65700422044444444444444444444444444444444444444444444444444444444444444444444444";
+    const validEnvelope = agora.createEnvelope("request", testPeerPublicKey, testPeerPrivateKey, { q: "hi" }, 1708000000000);
+    jest.spyOn(agoraService, "decodeInbound").mockResolvedValue({ ok: true, envelope: validEnvelope });
+
+    const result = await sendWebhookRequest(port, "[AGORA_ENVELOPE]test", true, "secret-token");
+
+    expect(result.statusCode).toBe(200);
+
+    delete process.env.AGORA_WEBHOOK_TOKEN;
+    await httpServer.close();
+  });
+
+  it("should reject webhook with wrong token when AGORA_WEBHOOK_TOKEN is set", async () => {
+    process.env.AGORA_WEBHOOK_TOKEN = "secret-token";
+    const port = await httpServer.listen(0);
+
+    const result = await sendWebhookRequest(port, "[AGORA_ENVELOPE]test", true, "wrong-token");
+
+    expect(result.statusCode).toBe(401);
+    expect(result.body).toMatchObject({ error: "Invalid or missing Authorization header" });
+
+    delete process.env.AGORA_WEBHOOK_TOKEN;
+    await httpServer.close();
+  });
+
+  it("should reject webhook with missing header when AGORA_WEBHOOK_TOKEN is set", async () => {
+    process.env.AGORA_WEBHOOK_TOKEN = "secret-token";
     const port = await httpServer.listen(0);
 
     const result = await sendWebhookRequest(port, "[AGORA_ENVELOPE]test", false);
 
     expect(result.statusCode).toBe(401);
-    expect(result.body).toMatchObject({ error: "Missing or invalid Authorization header" });
+    expect(result.body).toMatchObject({ error: "Invalid or missing Authorization header" });
 
+    delete process.env.AGORA_WEBHOOK_TOKEN;
     await httpServer.close();
   });
 
@@ -347,7 +398,8 @@ describe("Agora Message Integration", () => {
 async function sendWebhookRequest(
   port: number,
   message: string,
-  withAuth = true
+  withAuth = true,
+  token = "test-token"
 ): Promise<{ statusCode: number; body: { success?: boolean; envelopeId?: string; error?: string } }> {
   return new Promise((resolve, reject) => {
     const data = JSON.stringify({ message });
@@ -359,7 +411,7 @@ async function sendWebhookRequest(
       headers: {
         "Content-Type": "application/json",
         "Content-Length": data.length,
-        ...(withAuth && { Authorization: "Bearer test-token" }),
+        ...(withAuth && { Authorization: `Bearer ${token}` }),
       },
     };
 
