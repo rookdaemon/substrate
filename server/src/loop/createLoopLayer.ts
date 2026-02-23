@@ -115,6 +115,7 @@ export async function createLoopLayer(
     config.conversationIdleTimeoutMs,
     substrate.findingTracker,
     substrate.findingTrackerSave,
+    config.conversationSessionMaxDurationMs,
   );
 
   // Wire up sleep/wake infrastructure

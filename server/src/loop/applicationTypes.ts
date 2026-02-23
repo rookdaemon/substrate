@@ -53,6 +53,9 @@ export interface ApplicationConfig {
     };
   };
   conversationIdleTimeoutMs?: number; // Default: 60000 (60s)
+  /** Maximum duration (ms) for a single conversation session. Prevents runaway sessions from blocking cycles.
+   *  Default: 300000 (5 minutes). Set to 0 to disable. */
+  conversationSessionMaxDurationMs?: number;
   abandonedProcessGraceMs?: number; // Default: 600000 (10 min)
   idleSleepConfig?: {
     enabled: boolean; // Whether to enable idle sleep (default: false)

@@ -79,6 +79,7 @@ export class LoopOrchestrator implements IMessageInjector {
   private conversationSessionPromise: Promise<void> | null = null;
   private conversationMessageQueue: string[] = [];
   private readonly conversationIdleTimeoutMs: number;
+  private readonly conversationSessionMaxDurationMs: number;
 
   // Sleep/wake callbacks and loop resume function
   private resumeLoopFn: (() => Promise<void>) | null = null;
@@ -99,9 +100,11 @@ export class LoopOrchestrator implements IMessageInjector {
     private readonly idleHandler?: IdleHandler,
     conversationIdleTimeoutMs?: number,
     findingTracker?: SuperegoFindingTracker,
-    findingTrackerSave?: () => Promise<void>
+    findingTrackerSave?: () => Promise<void>,
+    conversationSessionMaxDurationMs?: number,
   ) {
     this.conversationIdleTimeoutMs = conversationIdleTimeoutMs ?? 20_000; // Default 20s
+    this.conversationSessionMaxDurationMs = conversationSessionMaxDurationMs ?? 300_000; // Default 5 min
     if (findingTracker) {
       this.findingTracker = findingTracker;
     }
@@ -790,17 +793,32 @@ export class LoopOrchestrator implements IMessageInjector {
     this.conversationSessionActive = true;
     
     const sessionPromise = (async () => {
+      let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
       try {
         // Process the current message and any queued messages
         const messagesToProcess = [message, ...this.conversationMessageQueue];
         this.conversationMessageQueue = [];
 
+        const maxDuration = this.conversationSessionMaxDurationMs;
+        const timeoutPromise: Promise<never> | null = maxDuration > 0
+          ? new Promise<never>((_, reject) => {
+              timeoutHandle = setTimeout(
+                () => reject(new Error(`Conversation session exceeded max duration (${maxDuration}ms)`)),
+                maxDuration
+              );
+            })
+          : null;
+
         for (const msg of messagesToProcess) {
-          const response = await this.ego.respondToMessage(
+          const respondPromise = this.ego.respondToMessage(
             msg,
             this.createLogCallback("EGO", "conversation"),
             { idleTimeoutMs: this.conversationIdleTimeoutMs }
           );
+
+          const response = timeoutPromise
+            ? await Promise.race([respondPromise, timeoutPromise])
+            : await respondPromise;
 
           if (response) {
             this.eventSink.emit({
@@ -826,6 +844,7 @@ export class LoopOrchestrator implements IMessageInjector {
           data: { error: errorMsg },
         });
       } finally {
+        if (timeoutHandle) clearTimeout(timeoutHandle);
         // Session closed (completed or errored)
         this.onConversationSessionClosed();
       }

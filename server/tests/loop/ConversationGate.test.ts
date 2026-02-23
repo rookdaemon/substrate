@@ -13,6 +13,7 @@ import { FileLock } from "../../src/substrate/io/FileLock";
 import { PermissionChecker } from "../../src/agents/permissions";
 import { PromptBuilder } from "../../src/agents/prompts/PromptBuilder";
 import { InMemorySessionLauncher } from "../../src/agents/claude/InMemorySessionLauncher";
+import { ISessionLauncher, ClaudeSessionRequest, ClaudeSessionResult, LaunchOptions } from "../../src/agents/claude/ISessionLauncher";
 import { TaskClassifier } from "../../src/agents/TaskClassifier";
 import { ConversationManager } from "../../src/conversation/ConversationManager";
 import { ConversationCompactor } from "../../src/conversation/ConversationCompactor";
@@ -128,6 +129,58 @@ describe("ConversationGate and TickGating", () => {
       const responseEvents = events.filter((e) => e.type === "conversation_response");
       expect(responseEvents.length).toBeGreaterThanOrEqual(1);
     });
+
+    it("terminates session and emits error when max duration exceeded", async () => {
+      // Launcher that resolves after 5 seconds — far longer than maxDuration below
+      class SlowSessionLauncher implements ISessionLauncher {
+        async launch(_req: ClaudeSessionRequest, _opts?: LaunchOptions): Promise<ClaudeSessionResult> {
+          await new Promise(resolve => setTimeout(resolve, 5_000));
+          return { rawOutput: "", exitCode: 0, durationMs: 5_000, success: true };
+        }
+      }
+
+      const fs2 = new InMemoryFileSystem();
+      const clock2 = new FixedClock(new Date("2025-06-15T10:00:00Z"));
+      const substrateConfig2 = new SubstrateConfig("/test/substrate2");
+      const reader2 = new SubstrateFileReader(fs2, substrateConfig2);
+      const writer2 = new SubstrateFileWriter(fs2, substrateConfig2, new FileLock());
+      const appendWriter2 = new AppendOnlyWriter(fs2, substrateConfig2, new FileLock(), clock2);
+      const checker2 = new PermissionChecker();
+      const promptBuilder2 = new PromptBuilder(reader2, checker2, { substratePath: "/test/substrate2" });
+      const slowLauncher = new SlowSessionLauncher();
+      const taskClassifier2 = new TaskClassifier({ strategicModel: "opus", tacticalModel: "sonnet" });
+      const compactor2 = new ConversationCompactor(slowLauncher, "/test/substrate2");
+      const conversationManager2 = new ConversationManager(
+        reader2, fs2, substrateConfig2, new FileLock(), appendWriter2, checker2, compactor2, clock2
+      );
+      const slowEgo = new Ego(reader2, writer2, conversationManager2, checker2, promptBuilder2, slowLauncher, clock2, taskClassifier2);
+      const subconscious2 = new Subconscious(reader2, writer2, appendWriter2, conversationManager2, checker2, promptBuilder2, slowLauncher, clock2, taskClassifier2);
+      const superego2 = new Superego(reader2, appendWriter2, checker2, promptBuilder2, slowLauncher, clock2, taskClassifier2, writer2);
+      const id2 = new Id(reader2, checker2, promptBuilder2, slowLauncher, clock2, taskClassifier2);
+
+      const freshSink = new InMemoryEventSink();
+      const freshTimer = new NodeTimer();
+      const freshLogger = new InMemoryLogger();
+      const freshConfig = defaultLoopConfig();
+
+      const shortOrchestrator = new LoopOrchestrator(
+        slowEgo, subconscious2, superego2, id2,
+        appendWriter2, clock2, freshTimer, freshSink, freshConfig,
+        freshLogger, undefined, 60_000, undefined, undefined, 50 // maxDuration: 50ms
+      );
+
+      await shortOrchestrator.handleUserMessage("Hello");
+
+      // Conversation session should be closed after timeout
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      expect((shortOrchestrator as any).conversationSessionActive).toBe(false);
+
+      // Error event should be emitted with timeout message
+      const events = freshSink.getEvents();
+      const responseEvent = events.find((e) => e.type === "conversation_response");
+      expect(responseEvent).toBeDefined();
+      expect(responseEvent?.data.error).toContain("exceeded max duration");
+    }, 10_000);
   });
 
   describe("tick gating", () => {

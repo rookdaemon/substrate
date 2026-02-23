@@ -129,6 +129,9 @@ export interface AppConfig {
   cycleDelayMs?: number;
   /** How long (ms) a conversation session stays open after the last message before being closed (default: 20000). */
   conversationIdleTimeoutMs?: number;
+  /** Maximum duration (ms) for a single conversation session. Prevents runaway sessions from blocking cycles.
+   *  Default: 300000 (5 minutes). Set to 0 to disable. */
+  conversationSessionMaxDurationMs?: number;
   /** Configuration for CONVERSATION.md archiving */
   conversationArchive?: {
     enabled: boolean;
@@ -204,6 +207,7 @@ export async function resolveConfig(
       qualityThreshold: 70,
     },
     conversationIdleTimeoutMs: 20000,
+    conversationSessionMaxDurationMs: 300_000,
     conversationArchive: {
       enabled: false, // Disabled by default to maintain backward compatibility
       linesToKeep: 100,
@@ -275,6 +279,7 @@ export async function resolveConfig(
         }
       : defaults.evaluateOutcome,
     conversationIdleTimeoutMs: fileConfig.conversationIdleTimeoutMs ?? defaults.conversationIdleTimeoutMs,
+    conversationSessionMaxDurationMs: fileConfig.conversationSessionMaxDurationMs ?? defaults.conversationSessionMaxDurationMs,
     conversationArchive: fileConfig.conversationArchive
       ? {
           enabled: fileConfig.conversationArchive.enabled ?? defaults.conversationArchive!.enabled,
