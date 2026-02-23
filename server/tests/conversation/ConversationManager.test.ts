@@ -271,6 +271,70 @@ describe("ConversationManager size-triggered compaction", () => {
     expect(maintenance).toEqual(new Date("2025-01-01T12:05:00.000Z"));
   });
 
+  it("should read the file at most once per compaction cycle for line counting", async () => {
+    const manager = new ConversationManager(
+      reader, fs, config, lock, appendWriter, checker, compactor, clock,
+      undefined, undefined, 100
+    );
+
+    const readFileSpy = jest.spyOn(fs, "readFile");
+
+    // Multiple appends should only trigger one file read for line counting
+    await manager.append(AgentRole.EGO, "Message 1");
+    await manager.append(AgentRole.EGO, "Message 2");
+    await manager.append(AgentRole.EGO, "Message 3");
+    await manager.append(AgentRole.EGO, "Message 4");
+    await manager.append(AgentRole.EGO, "Message 5");
+
+    // The first append reads the file once (cache miss), subsequent appends use cache
+    // AppendOnlyWriter also reads via stat, so filter to just CONVERSATION.md readFile calls
+    const conversationReads = readFileSpy.mock.calls.filter(
+      ([path]) => (path as string).endsWith("CONVERSATION.md")
+    );
+    expect(conversationReads.length).toBe(1);
+
+    readFileSpy.mockRestore();
+  });
+
+  it("should reset cache to null after compaction and re-read on the next append", async () => {
+    const manager = new ConversationManager(
+      reader, fs, config, lock, appendWriter, checker, compactor, clock,
+      undefined, undefined, 4
+    );
+
+    compactor.setResponse("# Conversation\n\nCompacted\n\n");
+
+    // Appends until threshold: header(1)+msg1=2 → cache=3; cache=3 → 3<4; cache=4; cache=4 → compact
+    await manager.append(AgentRole.EGO, "Message 1");
+    // After msg1: cache null → read → 2 → 2<4 → cache=3
+    await manager.append(AgentRole.EGO, "Message 2");
+    // After msg2: cache=3 → 3<4 → cache=4
+    await manager.append(AgentRole.EGO, "Message 3");
+    // After msg3: cache=4 → 4>=4 → compact! → cache=null
+
+    expect(compactor.compactCalls).toHaveLength(1);
+    compactor.reset();
+
+    // After compaction the file is "# Conversation\n\nCompacted\n\n" (2 non-empty lines).
+    // The cache is null; next append must re-read the file, reestablish the correct count
+    // (2 after read, then 3 after increment), staying below threshold 4 — no compaction.
+    const readFileSpy = jest.spyOn(fs, "readFile");
+
+    await manager.append(AgentRole.EGO, "Post-compaction message");
+
+    // Verify that a file read happened (cache was null after compaction)
+    const conversationReads = readFileSpy.mock.calls.filter(
+      ([path]) => (path as string).endsWith("CONVERSATION.md")
+    );
+    expect(conversationReads.length).toBeGreaterThan(0);
+
+    // The reestablished cache correctly reflects the small post-compaction file (3 lines < 4),
+    // so no second compaction should fire
+    expect(compactor.compactCalls).toHaveLength(0);
+
+    readFileSpy.mockRestore();
+  });
+
   it("should reset time-based compaction timer after size-triggered compaction", async () => {
     // Use a high threshold (10) to avoid repeated size triggers after compaction
     const manager = new ConversationManager(

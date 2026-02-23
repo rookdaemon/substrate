@@ -21,6 +21,7 @@ export interface ConversationArchiveConfig {
 export class ConversationManager implements IConversationManager {
   private lastCompactionTime: Date | null = null;
   private lastArchiveTime: Date | null = null;
+  private cachedLineCount: number | null = null;
   private readonly compactionIntervalMs = 60 * 60 * 1000; // 1 hour
 
   constructor(
@@ -56,12 +57,21 @@ export class ConversationManager implements IConversationManager {
     await this.checkSizeAndCompactIfNeeded(role);
   }
 
+  private async getLineCount(): Promise<number> {
+    if (this.cachedLineCount === null) {
+      const content = await this.reader.read(SubstrateFileType.CONVERSATION);
+      this.cachedLineCount = content.rawMarkdown.split('\n').filter(l => l.trim().length > 0).length;
+    }
+    return this.cachedLineCount;
+  }
+
   private async checkSizeAndCompactIfNeeded(role: AgentRole): Promise<void> {
-    const content = await this.reader.read(SubstrateFileType.CONVERSATION);
-    const lineCount = content.rawMarkdown.split('\n').filter(l => l.trim().length > 0).length;
+    const lineCount = await this.getLineCount();
     if (lineCount >= this.compactionLineThreshold) {
       await this.performCompaction(role);
       this.lastCompactionTime = this.clock.now();
+    } else {
+      this.cachedLineCount = lineCount + 1;
     }
   }
 
@@ -122,6 +132,7 @@ export class ConversationManager implements IConversationManager {
       } finally {
         release();
       }
+      this.cachedLineCount = null; // invalidate cache after archive
     }
   }
 
@@ -165,6 +176,7 @@ export class ConversationManager implements IConversationManager {
     } finally {
       release();
     }
+    this.cachedLineCount = null; // invalidate cache after compaction
   }
 
   /**
