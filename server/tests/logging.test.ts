@@ -28,6 +28,25 @@ describe("InMemoryLogger", () => {
     const logger = new InMemoryLogger();
     expect(logger.getEntries()).toEqual([]);
   });
+
+  it("captures verbose entries separately", () => {
+    const logger = new InMemoryLogger();
+
+    logger.verbose("secret payload");
+
+    expect(logger.getEntries()).toHaveLength(0);
+    expect(logger.getVerboseEntries()).toEqual(["secret payload"]);
+  });
+
+  it("keeps debug and verbose entries independent", () => {
+    const logger = new InMemoryLogger();
+
+    logger.debug("info event");
+    logger.verbose("payload data");
+
+    expect(logger.getEntries()).toEqual(["info event"]);
+    expect(logger.getVerboseEntries()).toEqual(["payload data"]);
+  });
 });
 
 describe("FileLogger", () => {
@@ -175,6 +194,46 @@ describe("FileLogger", () => {
       const content = fs.readFileSync(logPath, "utf-8");
       expect(content).toContain("small");
       expect(content).toContain("=== Session started ===");
+    });
+  });
+
+  describe("log level", () => {
+    it('suppresses verbose() entries at default "info" level', () => {
+      const logger = new FileLogger(logPath);
+
+      logger.verbose("sensitive payload data");
+
+      const content = fs.readFileSync(logPath, "utf-8");
+      expect(content).not.toContain("sensitive payload data");
+    });
+
+    it('writes verbose() entries when logLevel is "debug"', () => {
+      const logger = new FileLogger(logPath, undefined, "debug");
+
+      logger.verbose("full envelope payload");
+
+      const content = fs.readFileSync(logPath, "utf-8");
+      expect(content).toContain("full envelope payload");
+    });
+
+    it('always writes debug() entries regardless of logLevel', () => {
+      const logger = new FileLogger(logPath, undefined, "info");
+
+      logger.debug("operational event");
+
+      const content = fs.readFileSync(logPath, "utf-8");
+      expect(content).toContain("operational event");
+    });
+
+    it('writes both debug() and verbose() entries at "debug" level', () => {
+      const logger = new FileLogger(logPath, undefined, "debug");
+
+      logger.debug("envelope id=abc sender=alice");
+      logger.verbose("payload={secret:true}");
+
+      const content = fs.readFileSync(logPath, "utf-8");
+      expect(content).toContain("envelope id=abc sender=alice");
+      expect(content).toContain("payload={secret:true}");
     });
   });
 });

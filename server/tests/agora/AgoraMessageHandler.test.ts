@@ -50,9 +50,14 @@ class MockClock implements IClock {
 
 class MockLogger implements ILogger {
   public debugMessages: string[] = [];
+  public verboseMessages: string[] = [];
 
   debug(message: string): void {
     this.debugMessages.push(message);
+  }
+
+  verbose(message: string): void {
+    this.verboseMessages.push(message);
   }
 }
 

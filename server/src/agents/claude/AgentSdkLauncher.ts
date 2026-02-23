@@ -61,7 +61,7 @@ export type SdkQueryFn = (params: {
   options?: Record<string, unknown>;
 }) => AsyncIterable<SdkMessage>;
 
-const noopLogger: ILogger = { debug() {} };
+const noopLogger: ILogger = { debug() {}, verbose() {} };
 const DEFAULT_SESSION_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 
 export class AgentSdkLauncher implements ISessionLauncher {
@@ -215,7 +215,7 @@ export class AgentSdkLauncher implements ISessionLauncher {
             });
 
             if (msg.type === "result") {
-              this.logger.debug(`sdk-launch: result message: ${JSON.stringify(msg)}`);
+              this.logger.verbose(`sdk-launch: result message: ${JSON.stringify(msg)}`);
               const resultMsg = msg as SdkResultSuccess | SdkResultError;
               if (resultMsg.subtype === "success") {
                 resultOutput = (resultMsg as SdkResultSuccess).result;
@@ -278,7 +278,7 @@ export class AgentSdkLauncher implements ISessionLauncher {
 
     const rawOutput = resultOutput || accumulatedText;
 
-    this.logger.debug(
+    this.logger.verbose(
       `sdk-launch: done — success=${!isError} duration=${durationMs}ms output="${rawOutput}"`,
     );
 
@@ -306,7 +306,7 @@ export class AgentSdkLauncher implements ISessionLauncher {
             type: "status",
             content: `init: model=${sys.model} v${sys.claude_code_version}`,
           };
-          this.logger.debug(`  [${entry.type}] ${entry.content}`);
+          this.logger.verbose(`  [${entry.type}] ${entry.content}`);
           onLogEntry?.(entry);
           
           // Try to extract PID from system message if available
@@ -328,7 +328,7 @@ export class AgentSdkLauncher implements ISessionLauncher {
           if (entry.type === "text") {
             onText(entry.content);
           }
-          this.logger.debug(`  [${entry.type}] ${entry.content}`);
+          this.logger.verbose(`  [${entry.type}] ${entry.content}`);
           onLogEntry?.(entry);
         }
         break;
@@ -339,7 +339,7 @@ export class AgentSdkLauncher implements ISessionLauncher {
         if (res.total_cost_usd !== undefined) parts.push(`$${res.total_cost_usd.toFixed(4)}`);
         if (res.duration_ms !== undefined) parts.push(`${res.duration_ms}ms`);
         const entry: ProcessLogEntry = { type: "status", content: `result: ${parts.join(", ")}` };
-        this.logger.debug(`  [${entry.type}] ${entry.content}`);
+        this.logger.verbose(`  [${entry.type}] ${entry.content}`);
         onLogEntry?.(entry);
         break;
       }

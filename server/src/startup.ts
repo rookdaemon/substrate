@@ -100,6 +100,7 @@ export async function startServer(config: AppConfig, options?: StartServerOption
     cycleDelayMs: config.cycleDelayMs,
     idleSleepConfig: config.idleSleepConfig,
     shutdownGraceMs: config.shutdownGraceMs,
+    logLevel: config.logLevel,
   });
 
   console.log(`Debug log: ${app.logPath}`);

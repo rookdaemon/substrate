@@ -112,6 +112,9 @@ describe("Agora Message Integration", () => {
       debug: () => {
         /* no-op for testing */
       },
+      verbose: () => {
+        /* no-op for testing */
+      },
     };
 
     // Create AgoraMessageHandler

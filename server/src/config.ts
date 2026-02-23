@@ -77,6 +77,8 @@ export interface AppConfig {
   };
   /** Shutdown grace period in milliseconds (default: 5000). Active sessions receive a shutdown notice before force-kill. */
   shutdownGraceMs?: number;
+  /** Log verbosity level (default: "info"). Use "debug" to log full envelope payloads and session content. */
+  logLevel?: "info" | "debug";
 }
 
 export interface ResolveConfigOptions {
@@ -139,6 +141,7 @@ export async function resolveConfig(
       },
     },
     shutdownGraceMs: 5000,
+    logLevel: "info",
   };
 
   let fileConfig: Partial<AppConfig> = {};
@@ -225,6 +228,7 @@ export async function resolveConfig(
         }
       : undefined,
     shutdownGraceMs: fileConfig.shutdownGraceMs ?? defaults.shutdownGraceMs,
+    logLevel: (fileConfig.logLevel ?? defaults.logLevel) as "info" | "debug",
   };
 
   // Env vars override everything
