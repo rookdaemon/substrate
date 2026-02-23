@@ -158,6 +158,7 @@ export async function createLoopLayer(
       maxMessages: 10,
       windowMs: 60000,
     };
+    const unknownSenderPolicy = config.agora?.security?.unknownSenderPolicy ?? 'quarantine';
 
     agoraMessageHandler = new AgoraMessageHandler(
       agoraService,
@@ -168,6 +169,7 @@ export async function createLoopLayer(
       () => orchestrator.getState(), // getState callback
       () => orchestrator.getRateLimitUntil() !== null, // isRateLimited callback
       logger,
+      unknownSenderPolicy,
       rateLimitConfig,
       () => { // wakeLoop callback — wake orchestrator if sleeping on incoming Agora message
         try { orchestrator.wake(); } catch { /* not sleeping */ }

@@ -144,6 +144,7 @@ describe("AgoraMessageHandler", () => {
       getState,
       isRateLimited,
       logger,
+      'quarantine',
       defaultRateLimitConfig
     );
   });
@@ -183,6 +184,7 @@ describe("AgoraMessageHandler", () => {
         getState,
         isRateLimited,
         logger,
+        'quarantine',
         defaultRateLimitConfig
       );
 
@@ -204,6 +206,7 @@ describe("AgoraMessageHandler", () => {
         getState,
         isRateLimited,
         logger,
+        'quarantine',
         defaultRateLimitConfig
       );
 
@@ -226,6 +229,7 @@ describe("AgoraMessageHandler", () => {
         getState,
         rateLimited,
         logger,
+        'quarantine',
         defaultRateLimitConfig
       );
 
@@ -391,7 +395,7 @@ describe("AgoraMessageHandler", () => {
       expect(messageInjector.injectedMessages).toHaveLength(1);
     });
 
-    it("should silently drop messages from unknown senders", async () => {
+    it("should silently drop messages from unknown senders (policy: reject)", async () => {
       // Use a fresh agoraService with no peers registered
       const emptyAgoraService = new MockAgoraService();
       const filteredHandler = new AgoraMessageHandler(
@@ -403,6 +407,7 @@ describe("AgoraMessageHandler", () => {
         getState,
         isRateLimited,
         logger,
+        'reject',
         defaultRateLimitConfig
       );
 
@@ -412,9 +417,114 @@ describe("AgoraMessageHandler", () => {
       expect(conversationManager.appendedEntries).toHaveLength(0);
       expect(messageInjector.injectedMessages).toHaveLength(0);
 
-      // Should log debug message about filtering
-      const filterLog = logger.debugMessages.find(m => m.includes("Filtered") && m.includes("unknown sender"));
+      // Should log debug message about rejecting
+      const filterLog = logger.debugMessages.find(m => m.includes("Rejected") && m.includes("unknown sender"));
       expect(filterLog).toBeDefined();
+    });
+  });
+
+  describe("Security: unknownSenderPolicy", () => {
+    const unknownEnvelope: Envelope = {
+      id: "unknown-envelope-123",
+      type: "request",
+      sender: "302a300506032b6570032100eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      timestamp: 1708000000000,
+      payload: { message: "Hello from unknown" },
+      signature: "test-signature-unknown",
+    };
+
+    it("should reject and discard messages from unknown senders when policy is 'reject'", async () => {
+      const emptyAgoraService = new MockAgoraService();
+      const rejectHandler = new AgoraMessageHandler(
+        emptyAgoraService,
+        conversationManager,
+        messageInjector,
+        eventSink,
+        clock,
+        getState,
+        isRateLimited,
+        logger,
+        'reject',
+        defaultRateLimitConfig
+      );
+
+      await rejectHandler.processEnvelope(unknownEnvelope, "webhook");
+
+      expect(conversationManager.appendedEntries).toHaveLength(0);
+      expect(messageInjector.injectedMessages).toHaveLength(0);
+      const rejectLog = logger.debugMessages.find(m => m.includes("Rejected") && m.includes("unknown sender"));
+      expect(rejectLog).toBeDefined();
+    });
+
+    it("should quarantine messages from unknown senders when policy is 'quarantine'", async () => {
+      const emptyAgoraService = new MockAgoraService();
+      const quarantineHandler = new AgoraMessageHandler(
+        emptyAgoraService,
+        conversationManager,
+        messageInjector,
+        eventSink,
+        clock,
+        getState,
+        isRateLimited,
+        logger,
+        'quarantine',
+        defaultRateLimitConfig
+      );
+
+      await quarantineHandler.processEnvelope(unknownEnvelope, "webhook");
+
+      // Written to CONVERSATION.md with [UNPROCESSED] badge but NOT injected
+      expect(conversationManager.appendedEntries).toHaveLength(1);
+      expect(conversationManager.appendedEntries[0].entry).toContain("**[UNPROCESSED]**");
+      expect(messageInjector.injectedMessages).toHaveLength(0);
+      const quarantineLog = logger.debugMessages.find(m => m.includes("Quarantining") && m.includes("unknown sender"));
+      expect(quarantineLog).toBeDefined();
+    });
+
+    it("should allow and inject messages from unknown senders when policy is 'allow'", async () => {
+      const emptyAgoraService = new MockAgoraService();
+      const allowHandler = new AgoraMessageHandler(
+        emptyAgoraService,
+        conversationManager,
+        messageInjector,
+        eventSink,
+        clock,
+        getState,
+        isRateLimited,
+        logger,
+        'allow',
+        defaultRateLimitConfig
+      );
+
+      await allowHandler.processEnvelope(unknownEnvelope, "webhook");
+
+      // Processed normally - injected and written to CONVERSATION.md without UNPROCESSED badge
+      expect(messageInjector.injectedMessages).toHaveLength(1);
+      expect(conversationManager.appendedEntries).toHaveLength(1);
+      expect(conversationManager.appendedEntries[0].entry).not.toContain("**[UNPROCESSED]**");
+      const allowLog = logger.debugMessages.find(m => m.includes("Allowing") && m.includes("unknown sender"));
+      expect(allowLog).toBeDefined();
+    });
+
+    it("should use 'quarantine' policy by default (no policy specified)", async () => {
+      const emptyAgoraService = new MockAgoraService();
+      const defaultHandler = new AgoraMessageHandler(
+        emptyAgoraService,
+        conversationManager,
+        messageInjector,
+        eventSink,
+        clock,
+        getState,
+        isRateLimited,
+        logger
+        // no policy specified → defaults to 'quarantine'
+      );
+
+      await defaultHandler.processEnvelope(unknownEnvelope, "webhook");
+
+      expect(conversationManager.appendedEntries).toHaveLength(1);
+      expect(conversationManager.appendedEntries[0].entry).toContain("**[UNPROCESSED]**");
+      expect(messageInjector.injectedMessages).toHaveLength(0);
     });
   });
 
@@ -481,6 +591,7 @@ describe("AgoraMessageHandler", () => {
         getState,
         isRateLimited,
         logger,
+        'quarantine',
         defaultRateLimitConfig
       );
 
@@ -517,6 +628,7 @@ describe("AgoraMessageHandler", () => {
         getState,
         isRateLimited,
         logger,
+        'quarantine',
         disabledConfig
       );
 
@@ -575,6 +687,7 @@ describe("AgoraMessageHandler", () => {
         () => LoopState.SLEEPING,
         isRateLimited,
         logger,
+        'quarantine',
         defaultRateLimitConfig,
         () => { wakeCalled = true; }
       );
@@ -595,6 +708,7 @@ describe("AgoraMessageHandler", () => {
         () => LoopState.RUNNING,
         isRateLimited,
         logger,
+        'quarantine',
         defaultRateLimitConfig,
         () => { wakeCalled = true; }
       );
@@ -619,6 +733,7 @@ describe("AgoraMessageHandler", () => {
         () => LoopState.SLEEPING,
         isRateLimited,
         logger,
+        'quarantine',
         defaultRateLimitConfig,
         () => {}
       );
@@ -682,6 +797,7 @@ describe("AgoraMessageHandler", () => {
         getState,
         isRateLimited,
         logger,
+        'quarantine',
         defaultRateLimitConfig
       );
       handler2.setProcessedEnvelopeIds(snapshot);
