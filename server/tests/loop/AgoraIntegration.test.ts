@@ -128,12 +128,12 @@ describe("Agora Message Integration", () => {
       () => false,
       logger,
       'allow', // Allow all messages for integration tests
-      null, // No inbox manager needed for integration tests
       {
         enabled: true,
         maxMessages: 10,
         windowMs: 60000,
-      }
+      },
+      null // No wakeLoop needed for integration tests
     );
 
     httpServer = new LoopHttpServer(orchestrator);

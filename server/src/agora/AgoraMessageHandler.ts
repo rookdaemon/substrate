@@ -27,6 +27,14 @@ export interface RateLimitConfig {
 }
 
 /**
+ * Policy for handling messages from senders not in PEERS registry
+ * - 'allow': process normally (trust all callers)
+ * - 'quarantine': append to CONVERSATION.md with [UNPROCESSED] but skip injection
+ * - 'reject': log and discard without any processing
+ */
+export type UnknownSenderPolicy = 'allow' | 'quarantine' | 'reject';
+
+/**
  * AgoraMessageHandler - Handles inbound Agora messages
  * 
  * Responsibilities:
@@ -59,6 +67,7 @@ export class AgoraMessageHandler {
     private readonly getState: () => LoopState,
     private readonly isRateLimited: () => boolean = () => false,
     private readonly logger: ILogger,
+    private readonly unknownSenderPolicy: UnknownSenderPolicy = 'quarantine',
     private readonly rateLimitConfig: RateLimitConfig = { enabled: true, maxMessages: 10, windowMs: 60000 },
     private readonly wakeLoop: (() => void) | null = null
   ) {}
@@ -201,6 +210,31 @@ export class AgoraMessageHandler {
     return shortKey(senderPublicKey);
   }
 
+  /**
+   * Format a payload string for display in CONVERSATION.md.
+   * Returns a user-friendly representation of the payload.
+   */
+  private formatPayload(payloadStr: string): string {
+    try {
+      const parsed = JSON.parse(payloadStr);
+      if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
+        const keys = Object.keys(parsed);
+        if (keys.length === 1 && keys[0] === "text" && typeof parsed.text === "string") {
+          return parsed.text;
+        } else if (keys.length <= 5 && keys.every(k => typeof parsed[k] === "string" || typeof parsed[k] === "number" || typeof parsed[k] === "boolean")) {
+          return Object.entries(parsed)
+            .map(([k, v]) => `**${k}**: ${typeof v === "string" ? v : JSON.stringify(v)}`)
+            .join(", ");
+        } else {
+          return JSON.stringify(parsed, null, 2);
+        }
+      }
+    } catch {
+      // fall through
+    }
+    return payloadStr;
+  }
+
   async processEnvelope(envelope: Envelope, source: "webhook" | "relay" = "webhook", relayNameHint?: string): Promise<void> {
     // Check for duplicate envelope ID early - return without processing if duplicate
     if (this.isDuplicate(envelope.id)) {
@@ -219,8 +253,24 @@ export class AgoraMessageHandler {
     const knownPeer = this.findPeerByPublicKey(senderPublicKey);
 
     if (!knownPeer) {
-      this.logger.debug(`[AGORA] Filtered message from unknown sender ${shortKey(senderPublicKey)}`);
-      return;
+      if (this.unknownSenderPolicy === 'reject') {
+        this.logger.debug(`[AGORA] Rejected message from unknown sender ${shortKey(senderPublicKey)} (policy: reject)`);
+        return;
+      } else if (this.unknownSenderPolicy === 'quarantine') {
+        this.logger.debug(`[AGORA] Quarantining message from unknown sender ${shortKey(senderPublicKey)} (policy: quarantine)`);
+        const formattedPayload = this.formatPayload(payloadStr);
+        const conversationEntry = `**${senderDisplayName}** ${envelope.type}: **[UNPROCESSED]** ${formattedPayload}`.replace(/\n+/g, " ").trim();
+        try {
+          await this.conversationManager.append(AgentRole.SUBCONSCIOUS, conversationEntry);
+          this.logger.debug(`[AGORA] Quarantined message written to CONVERSATION.md: envelopeId=${envelope.id}`);
+        } catch (err) {
+          this.logger.debug(`[AGORA] Failed to write quarantined message to CONVERSATION.md: ${err instanceof Error ? err.message : String(err)}`);
+          throw err;
+        }
+        return;
+      }
+      // policy === 'allow': continue processing
+      this.logger.debug(`[AGORA] Allowing message from unknown sender ${shortKey(senderPublicKey)} (policy: allow)`);
     }
 
     // Check per-sender rate limit
@@ -240,8 +290,11 @@ export class AgoraMessageHandler {
     // This determines whether to mark the CONVERSATION.md entry as [UNPROCESSED].
     // Format message as agent prompt similar to old checkAgoraInbox format
     let injected = false;
+    const replyInstruction = knownPeer
+      ? `Respond to this message if appropriate. Use the TinyBus MCP tool ${"`"}mcp__tinybus__send_message${"`"} with type "agora.send" to reply. Example: { type: "agora.send", payload: { peerName: "${knownPeer}", type: "publish", payload: { text: "your response" }, inReplyTo: "${envelope.id}" } }`
+      : `Note: Sender (${senderDisplayName}) is not registered in PEERS.md. Replying via Agora is not possible unless the peer is added first.`;
     try {
-      const agentPrompt = `[AGORA MESSAGE from ${senderDisplayName}]\nType: ${envelope.type}\nEnvelope ID: ${envelope.id}\nTimestamp: ${timestamp}\nPayload: ${payloadStr}\n\nRespond to this message if appropriate. Use the TinyBus MCP tool ${"`"}mcp__tinybus__send_message${"`"} with type "agora.send" to reply. Example: { type: "agora.send", payload: { peerName: "${knownPeer}", type: "publish", payload: { text: "your response" }, inReplyTo: "${envelope.id}" } }`;
+      const agentPrompt = `[AGORA MESSAGE from ${senderDisplayName}]\nType: ${envelope.type}\nEnvelope ID: ${envelope.id}\nTimestamp: ${timestamp}\nPayload: ${payloadStr}\n\n${replyInstruction}`;
       injected = this.messageInjector.injectMessage(agentPrompt);
       this.logger.debug(`[AGORA] Injected message into orchestrator: envelopeId=${envelope.id} delivered=${injected}`);
     } catch (err) {
@@ -263,27 +316,7 @@ export class AgoraMessageHandler {
       this.logger.debug(`[AGORA] Message marked as UNPROCESSED (delivered=${injected}, state=${state}, rateLimited=${this.isRateLimited()})`);
     }
 
-    // Format a user-friendly message (timestamp is added by AppendOnlyWriter, role by ConversationManager)
-    // Try to format payload nicely if it's a simple object or string
-    let formattedPayload = payloadStr;
-    try {
-      const parsed = JSON.parse(payloadStr);
-      if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
-        const keys = Object.keys(parsed);
-        if (keys.length === 1 && keys[0] === "text" && typeof parsed.text === "string") {
-          formattedPayload = parsed.text;
-        } else if (keys.length <= 5 && keys.every(k => typeof parsed[k] === "string" || typeof parsed[k] === "number" || typeof parsed[k] === "boolean")) {
-          formattedPayload = Object.entries(parsed)
-            .map(([k, v]) => `**${k}**: ${typeof v === "string" ? v : JSON.stringify(v)}`)
-            .join(", ");
-        } else {
-          formattedPayload = JSON.stringify(parsed, null, 2);
-        }
-      }
-    } catch {
-      formattedPayload = payloadStr;
-    }
-
+    const formattedPayload = this.formatPayload(payloadStr);
     const unprocessedBadge = isUnprocessed ? " **[UNPROCESSED]**" : "";
     // One line: sender, type, optional badge, payload
     const conversationEntry = `**${senderDisplayName}** ${envelope.type}:${unprocessedBadge} ${formattedPayload}`.replace(/\n+/g, " ").trim();
