@@ -35,7 +35,7 @@ describe("getAppPaths", () => {
     const paths = getAppPaths({
       platform: "linux",
       homedir: "/home/testuser",
-      env: {},
+      env: { XDG_CONFIG_HOME: undefined, XDG_DATA_HOME: undefined },
     });
 
     expect(paths.config).toBe("/home/testuser/.config/substrate");

@@ -35,7 +35,8 @@ export function getAppPaths(options?: GetAppPathsOptions): AppPaths {
     : (options?.homedir ?? os.homedir());
   const envRecord = isEnvironment(options)
     ? (key: string) => options.env.getEnv(key)
-    : (key: string) => options?.env?.[key] ?? process.env[key];
+    : (key: string) =>
+        options?.env && key in options.env ? options.env[key] : process.env[key];
 
   if (platform === "darwin") {
     return {
