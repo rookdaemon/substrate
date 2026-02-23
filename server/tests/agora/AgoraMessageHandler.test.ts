@@ -8,7 +8,6 @@ import { LoopState } from "../../src/loop/types";
 import { AgentRole } from "../../src/agents/types";
 import type { Envelope } from "@rookdaemon/agora" with { "resolution-mode": "import" };
 import type { ILogger } from "../../src/logging";
-import type { AgoraInboxManager } from "../../src/agora/AgoraInboxManager";
 
 // Mock implementations
 class MockConversationManager implements IConversationManager {
@@ -57,14 +56,6 @@ class MockLogger implements ILogger {
   }
 }
 
-class MockInboxManager {
-  public quarantinedMessages: Array<{ envelope: Envelope; source: string }> = [];
-
-  async addQuarantinedMessage(envelope: Envelope, source: "webhook" | "relay" = "webhook"): Promise<void> {
-    this.quarantinedMessages.push({ envelope, source });
-  }
-}
-
 class MockAgoraService implements IAgoraService {
   private peers: Map<string, { publicKey: string; url: string; token: string }> = new Map();
 
@@ -109,7 +100,6 @@ describe("AgoraMessageHandler", () => {
   let clock: MockClock;
   let agoraService: MockAgoraService;
   let logger: MockLogger;
-  let inboxManager: MockInboxManager;
   let getState: () => LoopState;
   let isRateLimited: () => boolean;
 
@@ -135,11 +125,11 @@ describe("AgoraMessageHandler", () => {
     clock = new MockClock(new Date("2026-02-15T12:00:00Z"));
     agoraService = new MockAgoraService();
     logger = new MockLogger();
-    inboxManager = new MockInboxManager();
     getState = () => LoopState.RUNNING;
     isRateLimited = () => false;
 
-    // Default policy 'allow' for backward compatibility tests
+    // Default handler with a known peer registered (so messages pass the allowlist filter)
+    agoraService.addPeer("test-peer", testEnvelope.sender);
     handler = new AgoraMessageHandler(
       agoraService,
       conversationManager,
@@ -149,8 +139,6 @@ describe("AgoraMessageHandler", () => {
       getState,
       isRateLimited,
       logger,
-      'allow', // unknownSenderPolicy
-      inboxManager as unknown as AgoraInboxManager,
       defaultRateLimitConfig
     );
   });
@@ -190,8 +178,6 @@ describe("AgoraMessageHandler", () => {
         getState,
         isRateLimited,
         logger,
-        'allow',
-        inboxManager as unknown as AgoraInboxManager,
         defaultRateLimitConfig
       );
 
@@ -213,8 +199,6 @@ describe("AgoraMessageHandler", () => {
         getState,
         isRateLimited,
         logger,
-        'allow',
-        inboxManager as unknown as AgoraInboxManager,
         defaultRateLimitConfig
       );
 
@@ -237,8 +221,6 @@ describe("AgoraMessageHandler", () => {
         getState,
         rateLimited,
         logger,
-        'allow',
-        inboxManager as unknown as AgoraInboxManager,
         defaultRateLimitConfig
       );
 
@@ -395,37 +377,20 @@ describe("AgoraMessageHandler", () => {
     });
   });
 
-  describe("Security: unknownSenderPolicy", () => {
+  describe("Security: peer allowlist", () => {
     it("should allow messages from known peers", async () => {
-      // Add the sender to peer registry
-      agoraService.addPeer("alice", testEnvelope.sender);
-
-      // Use quarantine policy
-      handler = new AgoraMessageHandler(
-        agoraService,
-        conversationManager,
-        messageInjector,
-        eventSink,
-        clock,
-        getState,
-        isRateLimited,
-        logger,
-        'quarantine',
-        inboxManager as unknown as AgoraInboxManager
-      );
-
+      // testEnvelope.sender is already registered as "test-peer" in beforeEach
       await handler.processEnvelope(testEnvelope, "webhook");
 
-      // Should be processed normally (not quarantined)
       expect(conversationManager.appendedEntries).toHaveLength(1);
       expect(messageInjector.injectedMessages).toHaveLength(1);
-      expect(inboxManager.quarantinedMessages).toHaveLength(0);
     });
 
-    it("should allow messages from unknown senders when policy is 'allow'", async () => {
-      // Unknown sender + allow policy = process normally
-      handler = new AgoraMessageHandler(
-        agoraService,
+    it("should silently drop messages from unknown senders", async () => {
+      // Use a fresh agoraService with no peers registered
+      const emptyAgoraService = new MockAgoraService();
+      const filteredHandler = new AgoraMessageHandler(
+        emptyAgoraService,
         conversationManager,
         messageInjector,
         eventSink,
@@ -433,105 +398,18 @@ describe("AgoraMessageHandler", () => {
         getState,
         isRateLimited,
         logger,
-        'allow',
-        inboxManager as unknown as AgoraInboxManager
+        defaultRateLimitConfig
       );
 
-      await handler.processEnvelope(testEnvelope, "webhook");
-
-      // Should be processed normally
-      expect(conversationManager.appendedEntries).toHaveLength(1);
-      expect(messageInjector.injectedMessages).toHaveLength(1);
-      expect(inboxManager.quarantinedMessages).toHaveLength(0);
-    });
-
-    it("should quarantine messages from unknown senders when policy is 'quarantine'", async () => {
-      // Unknown sender + quarantine policy = quarantine
-      handler = new AgoraMessageHandler(
-        agoraService,
-        conversationManager,
-        messageInjector,
-        eventSink,
-        clock,
-        getState,
-        isRateLimited,
-        logger,
-        'quarantine',
-        inboxManager as unknown as AgoraInboxManager
-      );
-
-      await handler.processEnvelope(testEnvelope, "webhook");
+      await filteredHandler.processEnvelope(testEnvelope, "webhook");
 
       // Should NOT be processed
       expect(conversationManager.appendedEntries).toHaveLength(0);
       expect(messageInjector.injectedMessages).toHaveLength(0);
 
-      // Should be quarantined
-      expect(inboxManager.quarantinedMessages).toHaveLength(1);
-      expect(inboxManager.quarantinedMessages[0].envelope).toEqual(testEnvelope);
-      expect(inboxManager.quarantinedMessages[0].source).toBe("webhook");
-
-      // Should log debug message about quarantine
-      const quarantineLog = logger.debugMessages.find(m => m.includes("quarantined") && m.includes("unknown sender"));
-      expect(quarantineLog).toBeDefined();
-    });
-
-    it("should reject messages from unknown senders when policy is 'reject'", async () => {
-      // Unknown sender + reject policy = silent reject
-      handler = new AgoraMessageHandler(
-        agoraService,
-        conversationManager,
-        messageInjector,
-        eventSink,
-        clock,
-        getState,
-        isRateLimited,
-        logger,
-        'reject',
-        inboxManager as unknown as AgoraInboxManager
-      );
-
-      await handler.processEnvelope(testEnvelope, "webhook");
-
-      // Should NOT be processed
-      expect(conversationManager.appendedEntries).toHaveLength(0);
-      expect(messageInjector.injectedMessages).toHaveLength(0);
-
-      // Should NOT be quarantined
-      expect(inboxManager.quarantinedMessages).toHaveLength(0);
-
-      // Should log debug message about rejection
-      const rejectLog = logger.debugMessages.find(m => m.includes("Rejected") && m.includes("unknown sender"));
-      expect(rejectLog).toBeDefined();
-    });
-
-    it("should default to 'quarantine' when policy is not specified", async () => {
-      // Unknown sender + no policy (undefined) = quarantine by default
-      handler = new AgoraMessageHandler(
-        agoraService,
-        conversationManager,
-        messageInjector,
-        eventSink,
-        clock,
-        getState,
-        isRateLimited,
-        logger,
-        'quarantine',
-        inboxManager as unknown as AgoraInboxManager
-      );
-
-      await handler.processEnvelope(testEnvelope, "webhook");
-
-      // Should NOT be processed
-      expect(conversationManager.appendedEntries).toHaveLength(0);
-      expect(messageInjector.injectedMessages).toHaveLength(0);
-
-      // Should be quarantined (default behavior)
-      expect(inboxManager.quarantinedMessages).toHaveLength(1);
-
-      // Should log debug message about quarantine
-      const quarantineLog = logger.debugMessages.find(m => m.includes("quarantined"));
-      expect(quarantineLog).toBeDefined();
+      // Should log debug message about filtering
+      const filterLog = logger.debugMessages.find(m => m.includes("Filtered") && m.includes("unknown sender"));
+      expect(filterLog).toBeDefined();
     });
   });
 
@@ -544,6 +422,11 @@ describe("AgoraMessageHandler", () => {
       payload: { question: "Different sender" },
       signature: "test-signature-2",
     };
+
+    beforeEach(() => {
+      // Register testEnvelope2's sender as a known peer
+      agoraService.addPeer("test-peer-2", testEnvelope2.sender);
+    });
 
     it("should allow messages under the rate limit", async () => {
       // Send 10 messages (the limit)
@@ -629,8 +512,6 @@ describe("AgoraMessageHandler", () => {
         getState,
         isRateLimited,
         logger,
-        'allow',
-        inboxManager as unknown as AgoraInboxManager,
         disabledConfig
       );
 
@@ -647,6 +528,7 @@ describe("AgoraMessageHandler", () => {
       // Create 500 unique senders and send one message each
       for (let i = 0; i < 500; i++) {
         const sender = `sender-${i.toString().padStart(10, "0")}`;
+        agoraService.addPeer(`peer-${i}`, sender);
         await handler.processEnvelope(
           {
             ...testEnvelope,
@@ -661,6 +543,7 @@ describe("AgoraMessageHandler", () => {
       expect(conversationManager.appendedEntries).toHaveLength(500);
 
       // Now add a 501st sender - this should trigger eviction
+      agoraService.addPeer("peer-new", "sender-new");
       await handler.processEnvelope(
         {
           ...testEnvelope,
@@ -687,8 +570,6 @@ describe("AgoraMessageHandler", () => {
         () => LoopState.SLEEPING,
         isRateLimited,
         logger,
-        'allow',
-        inboxManager as unknown as AgoraInboxManager,
         defaultRateLimitConfig,
         () => { wakeCalled = true; }
       );
@@ -709,8 +590,6 @@ describe("AgoraMessageHandler", () => {
         () => LoopState.RUNNING,
         isRateLimited,
         logger,
-        'allow',
-        inboxManager as unknown as AgoraInboxManager,
         defaultRateLimitConfig,
         () => { wakeCalled = true; }
       );
@@ -735,8 +614,6 @@ describe("AgoraMessageHandler", () => {
         () => LoopState.SLEEPING,
         isRateLimited,
         logger,
-        'allow',
-        inboxManager as unknown as AgoraInboxManager,
         defaultRateLimitConfig,
         () => {}
       );

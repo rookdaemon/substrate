@@ -247,8 +247,6 @@ export class LoopOrchestrator implements IMessageInjector {
     this.watchdog = watchdog;
   }
 
-  // Note: setAgoraInboxManager() removed - messages now go directly to CONVERSATION.md
-
   setRateLimitStateManager(manager: RateLimitStateManager): void {
     this.rateLimitStateManager = manager;
   }

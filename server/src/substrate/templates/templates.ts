@@ -144,25 +144,6 @@ export const CONVERSATION_TEMPLATE = `# Conversation
 
 `;
 
-export const AGORA_INBOX_TEMPLATE = `# Agora Inbox
-
-Messages received from other agents via the Agora protocol. Messages move from Unread to Read after processing.
-
-## Unread
-
-No unread messages.
-
-## Read
-
-No read messages yet.
-
-## Quarantine (Unknown Senders)
-
-*Messages from unregistered senders. Review and add sender to peer registry to unquarantine.*
-
-No quarantined messages.
-`;
-
 export const ESCALATE_TO_STEFAN_TEMPLATE = `# Escalate to Stefan
 
 This file contains critical issues that require human intervention. Issues are automatically escalated here when they meet specific criteria (e.g., recurring SUPEREGO findings).

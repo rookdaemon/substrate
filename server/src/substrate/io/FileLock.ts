@@ -1,11 +1,9 @@
-import { SubstrateFileType } from "../types";
-
 export type Release = () => void;
 
 export class FileLock {
-  private chains = new Map<SubstrateFileType, Promise<void>>();
+  private chains = new Map<string, Promise<void>>();
 
-  async acquire(fileType: SubstrateFileType): Promise<Release> {
+  async acquire(fileType: string): Promise<Release> {
     const current = this.chains.get(fileType) ?? Promise.resolve();
 
     let release: Release;

@@ -25,7 +25,6 @@ export const ROLE_PERMISSIONS: Record<AgentRole, FilePermission[]> = {
     read(SubstrateFileType.PROGRESS, SubstrateFileLoadStrategy.LAZY),
     read(SubstrateFileType.CONVERSATION, SubstrateFileLoadStrategy.EAGER),
     read(SubstrateFileType.PEERS, SubstrateFileLoadStrategy.LAZY),
-    // AGORA_INBOX deprecated - messages now go to CONVERSATION.md (removed read permission)
     write(SubstrateFileType.PLAN),
     append(SubstrateFileType.CONVERSATION),
   ],
@@ -38,7 +37,6 @@ export const ROLE_PERMISSIONS: Record<AgentRole, FilePermission[]> = {
     read(SubstrateFileType.VALUES, SubstrateFileLoadStrategy.EAGER),
     read(SubstrateFileType.PROGRESS, SubstrateFileLoadStrategy.LAZY),
     read(SubstrateFileType.PEERS, SubstrateFileLoadStrategy.LAZY),
-    // AGORA_INBOX deprecated - messages now go to CONVERSATION.md (removed read/write permissions)
     write(SubstrateFileType.PLAN),
     write(SubstrateFileType.SKILLS),
     write(SubstrateFileType.MEMORY),

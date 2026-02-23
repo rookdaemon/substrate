@@ -65,7 +65,6 @@ describe("SUBSTRATE_FILE_SPECS", () => {
   it("marks core files as required and optional files as not required", () => {
     const optionalTypes = [
       SubstrateFileType.PEERS,
-      SubstrateFileType.AGORA_INBOX,
       SubstrateFileType.ESCALATE_TO_STEFAN,
       SubstrateFileType.RESTART_CONTEXT,
     ];
