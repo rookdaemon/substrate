@@ -67,6 +67,8 @@ export interface AppConfig {
     enabled: boolean; // Whether to enable idle sleep (default: false)
     idleCyclesBeforeSleep: number; // Number of consecutive idle cycles before sleeping (default: 5)
   };
+  /** Log verbosity level (default: "info"). Use "debug" to log full envelope payloads and session content. */
+  logLevel?: "info" | "debug";
 }
 
 export interface ResolveConfigOptions {
@@ -124,6 +126,7 @@ export async function resolveConfig(
         },
       },
     },
+    logLevel: "info",
   };
 
   let fileConfig: Partial<AppConfig> = {};
@@ -203,6 +206,7 @@ export async function resolveConfig(
           idleCyclesBeforeSleep: fileConfig.idleSleepConfig.idleCyclesBeforeSleep ?? 5,
         }
       : undefined,
+    logLevel: (fileConfig.logLevel ?? defaults.logLevel) as "info" | "debug",
   };
 
   // Env vars override everything

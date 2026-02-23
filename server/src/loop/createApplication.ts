@@ -114,6 +114,8 @@ export interface ApplicationConfig {
     enabled: boolean; // Whether to enable idle sleep (default: false)
     idleCyclesBeforeSleep: number; // Number of consecutive idle cycles before sleeping (default: 5)
   };
+  /** Log verbosity level (default: "info"). Use "debug" to log full envelope payloads and session content. */
+  logLevel?: "info" | "debug";
 }
 
 export interface Application {
@@ -148,7 +150,7 @@ export async function createApplication(config: ApplicationConfig): Promise<Appl
 
   // Logger — created early so all layers can use it
   const logPath = path.resolve(config.substratePath, "..", "debug.log");
-  const logger = new FileLogger(logPath);
+  const logger = new FileLogger(logPath, undefined, config.logLevel ?? "info");
 
   // Finding tracker — loaded from disk for durable escalation across restarts
   const trackerStatePath = path.resolve(config.substratePath, "..", ".superego-tracker.json");

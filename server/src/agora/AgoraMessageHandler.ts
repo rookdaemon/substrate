@@ -202,6 +202,7 @@ export class AgoraMessageHandler {
     const payloadStr = JSON.stringify(envelope.payload);
 
     this.logger.debug(`[AGORA] Received ${source} message: envelopeId=${envelope.id} type=${envelope.type} from=${senderDisplayName}`);
+    this.logger.verbose(`[AGORA] Envelope payload: envelopeId=${envelope.id} payload=${payloadStr}`);
 
     // Security check: enforce peer allowlist
     const senderPublicKey = envelope.sender;
