@@ -1,4 +1,5 @@
 import * as http from "node:http";
+import * as crypto from "node:crypto";
 import { LoopOrchestrator } from "./LoopOrchestrator";
 import { LoopState } from "./types";
 import { ILoopEventSink } from "./ILoopEventSink";
@@ -606,12 +607,21 @@ export class LoopHttpServer {
       return;
     }
 
-    // Check Authorization header for Bearer token
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      this.logger?.debug("[AGORA] Webhook rejected: Missing or invalid Authorization header");
-      this.json(res, 401, { error: "Missing or invalid Authorization header" });
-      return;
+    // If AGORA_WEBHOOK_TOKEN is configured, validate the Bearer token; otherwise trust Ed25519 alone
+    const webhookToken = process.env.AGORA_WEBHOOK_TOKEN;
+    if (webhookToken) {
+      const authHeader = req.headers.authorization;
+      const expectedBearer = `Bearer ${webhookToken}`;
+      const provided = Buffer.from(authHeader ?? "");
+      const expected = Buffer.from(expectedBearer);
+      const valid =
+        provided.length === expected.length &&
+        crypto.timingSafeEqual(provided, expected);
+      if (!valid) {
+        this.logger?.debug("[AGORA] Webhook rejected: Invalid or missing Authorization header");
+        this.json(res, 401, { error: "Invalid or missing Authorization header" });
+        return;
+      }
     }
 
     let body = "";
