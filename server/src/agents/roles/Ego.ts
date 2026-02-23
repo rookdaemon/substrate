@@ -38,7 +38,7 @@ export class Ego {
   async decide(onLogEntry?: (entry: ProcessLogEntry) => void): Promise<EgoDecision> {
     try {
       const systemPrompt = this.promptBuilder.buildSystemPrompt(AgentRole.EGO);
-      const eagerRefs = this.promptBuilder.getEagerReferences(AgentRole.EGO);
+      const eagerRefs = await this.promptBuilder.getEagerReferences(AgentRole.EGO);
       const lazyRefs = this.promptBuilder.getLazyReferences(AgentRole.EGO);
       
       let message = "";
@@ -88,7 +88,7 @@ export class Ego {
     onLogEntry?: (entry: ProcessLogEntry) => void,
     options?: LaunchOptions
   ): Promise<string | null> {
-    const eagerRefs = this.promptBuilder.getEagerReferences(AgentRole.EGO);
+    const eagerRefs = await this.promptBuilder.getEagerReferences(AgentRole.EGO);
     const lazyRefs = this.promptBuilder.getLazyReferences(AgentRole.EGO);
 
     let contextSection = "";

@@ -56,7 +56,7 @@ export class Subconscious {
   async execute(task: TaskAssignment, onLogEntry?: (entry: ProcessLogEntry) => void): Promise<TaskResult> {
     try {
       const systemPrompt = this.promptBuilder.buildSystemPrompt(AgentRole.SUBCONSCIOUS);
-      const eagerRefs = this.promptBuilder.getEagerReferences(AgentRole.SUBCONSCIOUS);
+      const eagerRefs = await this.promptBuilder.getEagerReferences(AgentRole.SUBCONSCIOUS);
       const lazyRefs = this.promptBuilder.getLazyReferences(AgentRole.SUBCONSCIOUS);
       
       let message = "";
@@ -159,7 +159,7 @@ export class Subconscious {
   ): Promise<OutcomeEvaluation> {
     try {
       const systemPrompt = this.promptBuilder.buildSystemPrompt(AgentRole.SUBCONSCIOUS);
-      const eagerRefs = this.promptBuilder.getEagerReferences(AgentRole.SUBCONSCIOUS);
+      const eagerRefs = await this.promptBuilder.getEagerReferences(AgentRole.SUBCONSCIOUS);
       const lazyRefs = this.promptBuilder.getLazyReferences(AgentRole.SUBCONSCIOUS);
 
       let evaluationPrompt = "";
