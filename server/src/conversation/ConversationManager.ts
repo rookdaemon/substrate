@@ -33,7 +33,8 @@ export class ConversationManager implements IConversationManager {
     private readonly compactor: IConversationCompactor,
     private readonly clock: IClock,
     private readonly archiver?: IConversationArchiver,
-    private readonly archiveConfig?: ConversationArchiveConfig
+    private readonly archiveConfig?: ConversationArchiveConfig,
+    private readonly compactionLineThreshold: number = 500
   ) {}
 
   async append(role: AgentRole, entry: string): Promise<void> {
@@ -50,6 +51,18 @@ export class ConversationManager implements IConversationManager {
 
     // Append the entry with role prefix
     await this.appendWriter.append(SubstrateFileType.CONVERSATION, `[${role}] ${entry}`);
+
+    // Check if size threshold is exceeded after appending
+    await this.checkSizeAndCompactIfNeeded(role);
+  }
+
+  private async checkSizeAndCompactIfNeeded(role: AgentRole): Promise<void> {
+    const content = await this.reader.read(SubstrateFileType.CONVERSATION);
+    const lineCount = content.rawMarkdown.split('\n').filter(l => l.trim().length > 0).length;
+    if (lineCount >= this.compactionLineThreshold) {
+      await this.performCompaction(role);
+      this.lastCompactionTime = this.clock.now();
+    }
   }
 
   private async checkAndArchiveIfNeeded(): Promise<void> {

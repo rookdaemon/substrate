@@ -200,6 +200,113 @@ describe("ConversationManager", () => {
   });
 });
 
+describe("ConversationManager size-triggered compaction", () => {
+  let fs: InMemoryFileSystem;
+  let clock: FixedClock;
+  let config: SubstrateConfig;
+  let reader: SubstrateFileReader;
+  let appendWriter: AppendOnlyWriter;
+  let checker: PermissionChecker;
+  let compactor: MockCompactor;
+  let lock: FileLock;
+
+  beforeEach(async () => {
+    fs = new InMemoryFileSystem();
+    clock = new FixedClock(new Date("2025-01-01T12:00:00.000Z"));
+    config = new SubstrateConfig("/test/substrate");
+    lock = new FileLock();
+    reader = new SubstrateFileReader(fs, config);
+    appendWriter = new AppendOnlyWriter(fs, config, lock, clock);
+    checker = new PermissionChecker();
+    compactor = new MockCompactor();
+
+    await fs.writeFile("/test/substrate/CONVERSATION.md", "# Conversation\n\n");
+  });
+
+  it("should not compact when line count is below threshold", async () => {
+    const manager = new ConversationManager(
+      reader, fs, config, lock, appendWriter, checker, compactor, clock,
+      undefined, undefined, 5
+    );
+
+    await manager.append(AgentRole.EGO, "Message 1");
+    await manager.append(AgentRole.EGO, "Message 2");
+    await manager.append(AgentRole.EGO, "Message 3");
+
+    // 3 content lines (+ 1 header = 4 total non-empty), below threshold of 5
+    expect(compactor.compactCalls).toHaveLength(0);
+  });
+
+  it("should compact when line count reaches threshold", async () => {
+    const manager = new ConversationManager(
+      reader, fs, config, lock, appendWriter, checker, compactor, clock,
+      undefined, undefined, 4
+    );
+
+    compactor.setResponse("# Conversation\n\nSize compacted\n\n");
+
+    await manager.append(AgentRole.EGO, "Message 1");
+    await manager.append(AgentRole.EGO, "Message 2");
+    await manager.append(AgentRole.EGO, "Message 3");
+    // 4th append: header + 3 message lines = 4 non-empty lines → triggers compaction
+    await manager.append(AgentRole.EGO, "Message 4");
+
+    expect(compactor.compactCalls.length).toBeGreaterThan(0);
+  });
+
+  it("should update lastCompactionTime after size-triggered compaction", async () => {
+    const manager = new ConversationManager(
+      reader, fs, config, lock, appendWriter, checker, compactor, clock,
+      undefined, undefined, 3
+    );
+
+    compactor.setResponse("# Conversation\n\nCompacted\n\n");
+    clock.setNow(new Date("2025-01-01T12:05:00.000Z"));
+
+    await manager.append(AgentRole.EGO, "Message 1");
+    // 2nd append: header + 2 message lines = 3 non-empty lines → triggers compaction
+    await manager.append(AgentRole.EGO, "Message 2");
+
+    const maintenance = manager.getLastMaintenanceTime();
+    expect(maintenance).toEqual(new Date("2025-01-01T12:05:00.000Z"));
+  });
+
+  it("should reset time-based compaction timer after size-triggered compaction", async () => {
+    // Use a high threshold (10) to avoid repeated size triggers after compaction
+    const manager = new ConversationManager(
+      reader, fs, config, lock, appendWriter, checker, compactor, clock,
+      undefined, undefined, 10
+    );
+
+    // Pre-populate file with 9 content lines so the next append hits the threshold
+    const preContent = "# Conversation\n\n" + Array.from({ length: 9 }, (_, i) =>
+      `[2025-01-01T12:00:00.000Z] [EGO] Pre-message ${i + 1}`
+    ).join('\n') + '\n';
+    await fs.writeFile("/test/substrate/CONVERSATION.md", preContent);
+    // Set lastCompactionTime so time-based doesn't fire yet
+    await manager.append(AgentRole.EGO, "Init"); // initializes timer
+
+    // Compact to a small response (2 non-empty lines)
+    compactor.setResponse("# Conversation\n\nCompacted summary\n\n");
+    compactor.reset();
+
+    // Now write 9 pre-existing lines back and trigger size compaction
+    await fs.writeFile("/test/substrate/CONVERSATION.md", preContent);
+    clock.setNow(new Date("2025-01-01T12:01:00.000Z"));
+    await manager.append(AgentRole.EGO, "Triggering message");
+    // file now had 10+ lines → size compaction fires
+
+    expect(compactor.compactCalls).toHaveLength(1);
+    compactor.reset();
+
+    // Advance < 1 hour — time-based should NOT fire; size also shouldn't (file is now small)
+    clock.setNow(new Date("2025-01-01T12:30:00.000Z"));
+    await manager.append(AgentRole.EGO, "Post-compaction message");
+
+    expect(compactor.compactCalls).toHaveLength(0);
+  });
+});
+
 describe("ConversationManager with archiving", () => {
   let fs: InMemoryFileSystem;
   let clock: FixedClock;
