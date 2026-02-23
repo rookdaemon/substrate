@@ -529,7 +529,7 @@ export async function createApplication(config: ApplicationConfig): Promise<Appl
   }
 
   // Health check scheduler setup
-  if (config.enableHealthChecks !== false) { // Default enabled
+  if (config.enableHealthChecks === true) { // Opt-in only
     const healthCheck = new HealthCheck(reader, metricsStore);
     const healthCheckScheduler = new HealthCheckScheduler(
       healthCheck,
@@ -543,7 +543,7 @@ export async function createApplication(config: ApplicationConfig): Promise<Appl
   }
 
   // Metrics scheduler setup
-  if (config.metrics?.enabled !== false) { // Default enabled
+  if (config.metrics?.enabled === true) { // Opt-in only
     const appPaths = getAppPaths();
     const stateFilePath = path.join(appPaths.config, "metrics-scheduler-state.txt");
     const metricsScheduler = new MetricsScheduler(
@@ -585,7 +585,7 @@ export async function createApplication(config: ApplicationConfig): Promise<Appl
   }
 
   // Validation scheduler setup
-  if (config.validation?.enabled !== false) { // Default enabled
+  if (config.validation?.enabled === true) { // Opt-in only
     const appPaths = getAppPaths();
     const stateFilePath = path.join(appPaths.config, "validation-scheduler-state.txt");
     const validationScheduler = new ValidationScheduler(
