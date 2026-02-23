@@ -17,6 +17,8 @@ import { HealthCheckScheduler } from "./HealthCheckScheduler";
 import { EmailScheduler } from "./EmailScheduler";
 import { MetricsScheduler } from "./MetricsScheduler";
 import { ValidationScheduler } from "./ValidationScheduler";
+import { IScheduler } from "./IScheduler";
+import { SchedulerCoordinator } from "./SchedulerCoordinator";
 import { SelfImprovementMetricsCollector } from "../evaluation/SelfImprovementMetrics";
 import type { Envelope } from "@rookdaemon/agora" with { "resolution-mode": "import" };
 import type { AgoraService } from "@rookdaemon/agora" with { "resolution-mode": "import" };
@@ -311,6 +313,9 @@ export async function createLoopLayer(
     httpServer.setMode("tick");
   }
 
+  // Collect scheduler adapters; wire as a single SchedulerCoordinator after all are built
+  const schedulers: IScheduler[] = [];
+
   // Backup scheduler setup
   if (config.enableBackups !== false) { // Default enabled
     const backupDir = path.resolve(config.substratePath, "..", "backups");
@@ -331,7 +336,27 @@ export async function createLoopLayer(
         stateFilePath,
       }
     );
-    orchestrator.setBackupScheduler(backupScheduler);
+    schedulers.push({
+      shouldRun: () => backupScheduler.shouldRunBackup(),
+      run: async () => {
+        const cycleNumber = orchestrator.getCycleNumber();
+        logger.debug(`backup: starting scheduled backup (cycle ${cycleNumber})`);
+        try {
+          const result = await backupScheduler.runBackup();
+          if (result.success) {
+            logger.debug(`backup: success — ${result.backupPath} (verified: ${result.verification?.valid ?? false})`);
+            wsServer.emit({ type: "backup_complete", timestamp: clock.now().toISOString(), data: { cycleNumber, success: true, backupPath: result.backupPath, verified: result.verification?.valid ?? false, checksum: result.verification?.checksum, sizeBytes: result.verification?.sizeBytes } });
+          } else {
+            logger.debug(`backup: failed — ${result.error}`);
+            wsServer.emit({ type: "backup_complete", timestamp: clock.now().toISOString(), data: { cycleNumber, success: false, error: result.error } });
+          }
+        } catch (err) {
+          const errorMsg = err instanceof Error ? err.message : String(err);
+          logger.debug(`backup: unexpected error — ${errorMsg}`);
+          wsServer.emit({ type: "backup_complete", timestamp: clock.now().toISOString(), data: { cycleNumber, success: false, error: errorMsg } });
+        }
+      },
+    });
     httpServer.setBackupScheduler(backupScheduler);
   }
 
@@ -358,7 +383,27 @@ export async function createLoopLayer(
         stateFilePath,
       }
     );
-    orchestrator.setEmailScheduler(emailScheduler);
+    schedulers.push({
+      shouldRun: () => emailScheduler.shouldRunEmail(),
+      run: async () => {
+        const cycleNumber = orchestrator.getCycleNumber();
+        logger.debug(`email: starting scheduled email (cycle ${cycleNumber})`);
+        try {
+          const result = await emailScheduler.runEmail();
+          if (result.success && result.content) {
+            logger.debug(`email: success — ${result.content.subject}`);
+            wsServer.emit({ type: "email_sent", timestamp: clock.now().toISOString(), data: { cycleNumber, success: true, subject: result.content.subject, bodyPreview: result.content.body.substring(0, 100) } });
+          } else {
+            logger.debug(`email: failed — ${result.error}`);
+            wsServer.emit({ type: "email_sent", timestamp: clock.now().toISOString(), data: { cycleNumber, success: false, error: result.error } });
+          }
+        } catch (err) {
+          const errorMsg = err instanceof Error ? err.message : String(err);
+          logger.debug(`email: unexpected error — ${errorMsg}`);
+          wsServer.emit({ type: "email_sent", timestamp: clock.now().toISOString(), data: { cycleNumber, success: false, error: errorMsg } });
+        }
+      },
+    });
   }
 
   // Health check scheduler setup
@@ -372,7 +417,27 @@ export async function createLoopLayer(
         checkIntervalMs: config.healthCheckIntervalMs ?? 3600000, // Default: 1 hour
       }
     );
-    orchestrator.setHealthCheckScheduler(healthCheckScheduler);
+    schedulers.push({
+      shouldRun: async () => healthCheckScheduler.shouldRunCheck(),
+      run: async () => {
+        const cycleNumber = orchestrator.getCycleNumber();
+        logger.debug(`health_check: starting scheduled check (cycle ${cycleNumber})`);
+        try {
+          const result = await healthCheckScheduler.runCheck();
+          if (result.success && result.result) {
+            logger.debug(`health_check: complete — overall: ${result.result.overall}`);
+            wsServer.emit({ type: "health_check_complete", timestamp: clock.now().toISOString(), data: { cycleNumber, success: true, overall: result.result.overall, drift: { score: result.result.drift.score, findings: result.result.drift.findings.length }, consistency: { consistent: result.result.consistency.inconsistencies.length === 0, issues: result.result.consistency.inconsistencies.length }, security: { compliant: result.result.security.compliant, issues: result.result.security.issues.length }, planQuality: { score: result.result.planQuality.score, findings: result.result.planQuality.findings.length }, reasoning: { valid: result.result.reasoning.valid, issues: result.result.reasoning.issues.length } } });
+          } else {
+            logger.debug(`health_check: failed — ${result.error}`);
+            wsServer.emit({ type: "health_check_complete", timestamp: clock.now().toISOString(), data: { cycleNumber, success: false, error: result.error } });
+          }
+        } catch (err) {
+          const errorMsg = err instanceof Error ? err.message : String(err);
+          logger.debug(`health_check: unexpected error — ${errorMsg}`);
+          wsServer.emit({ type: "health_check_complete", timestamp: clock.now().toISOString(), data: { cycleNumber, success: false, error: errorMsg } });
+        }
+      },
+    });
   }
 
   // Metrics scheduler setup
@@ -392,7 +457,27 @@ export async function createLoopLayer(
       sizeTracker,
       delegationTracker
     );
-    orchestrator.setMetricsScheduler(metricsScheduler);
+    schedulers.push({
+      shouldRun: () => metricsScheduler.shouldRunMetrics(),
+      run: async () => {
+        const cycleNumber = orchestrator.getCycleNumber();
+        logger.debug(`metrics: starting scheduled metrics collection (cycle ${cycleNumber})`);
+        try {
+          const result = await metricsScheduler.runMetrics();
+          if (result.success) {
+            logger.debug(`metrics: success — collected: ${JSON.stringify(result.collected)}`);
+            wsServer.emit({ type: "metrics_collected", timestamp: clock.now().toISOString(), data: { cycleNumber, success: true, collected: result.collected } });
+          } else {
+            logger.debug(`metrics: failed — ${result.error}`);
+            wsServer.emit({ type: "metrics_collected", timestamp: clock.now().toISOString(), data: { cycleNumber, success: false, error: result.error } });
+          }
+        } catch (err) {
+          const errorMsg = err instanceof Error ? err.message : String(err);
+          logger.debug(`metrics: unexpected error — ${errorMsg}`);
+          wsServer.emit({ type: "metrics_collected", timestamp: clock.now().toISOString(), data: { cycleNumber, success: false, error: errorMsg } });
+        }
+      },
+    });
 
     // Wire up monthly self-improvement metrics collection
     const serverSrcPath = config.sourceCodePath
@@ -431,8 +516,31 @@ export async function createLoopLayer(
         stateFilePath,
       }
     );
-    orchestrator.setValidationScheduler(validationScheduler);
+    schedulers.push({
+      shouldRun: () => validationScheduler.shouldRunValidation(),
+      run: async () => {
+        const cycleNumber = orchestrator.getCycleNumber();
+        logger.debug(`validation: starting scheduled substrate validation (cycle ${cycleNumber})`);
+        try {
+          const result = await validationScheduler.runValidation();
+          if (result.success && result.report) {
+            const { brokenReferences, orphanedFiles, staleFiles } = result.report;
+            logger.debug(`validation: success — ${brokenReferences.length} broken refs, ${orphanedFiles.length} orphaned files, ${staleFiles.length} stale files`);
+            wsServer.emit({ type: "validation_complete", timestamp: clock.now().toISOString(), data: { cycleNumber, success: true, brokenReferences: brokenReferences.length, orphanedFiles: orphanedFiles.length, staleFiles: staleFiles.length } });
+          } else {
+            logger.debug(`validation: failed — ${result.error}`);
+            wsServer.emit({ type: "validation_complete", timestamp: clock.now().toISOString(), data: { cycleNumber, success: false, error: result.error } });
+          }
+        } catch (err) {
+          const errorMsg = err instanceof Error ? err.message : String(err);
+          logger.debug(`validation: unexpected error — ${errorMsg}`);
+          wsServer.emit({ type: "validation_complete", timestamp: clock.now().toISOString(), data: { cycleNumber, success: false, error: errorMsg } });
+        }
+      },
+    });
   }
+
+  orchestrator.setSchedulerCoordinator(new SchedulerCoordinator(schedulers));
 
   // Watchdog — detects stalls and injects gentle reminders
   const watchdog = new LoopWatchdog({
