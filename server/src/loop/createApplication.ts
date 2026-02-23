@@ -108,7 +108,7 @@ export interface ApplicationConfig {
       };
     };
   };
-  conversationIdleTimeoutMs?: number; // Default: 60000 (60s)
+  conversationIdleTimeoutMs?: number; // Default: 20000 (20s)
   abandonedProcessGraceMs?: number; // Default: 600000 (10 min)
   idleSleepConfig?: {
     enabled: boolean; // Whether to enable idle sleep (default: false)

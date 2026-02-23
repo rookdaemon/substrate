@@ -37,6 +37,8 @@ export interface AppConfig {
   superegoAuditInterval?: number;
   /** Delay between loop cycles in ms (default: 30000). For primarily reactive agents, consider 60000 or more. */
   cycleDelayMs?: number;
+  /** How long (ms) a conversation session stays open after the last message before being closed (default: 20000). */
+  conversationIdleTimeoutMs?: number;
   /** Configuration for CONVERSATION.md archiving */
   conversationArchive?: {
     enabled: boolean;
@@ -102,6 +104,7 @@ export async function resolveConfig(
     backupRetentionCount: 14,
     superegoAuditInterval: 20,
     cycleDelayMs: 30000,
+    conversationIdleTimeoutMs: 20000,
     conversationArchive: {
       enabled: false, // Disabled by default to maintain backward compatibility
       linesToKeep: 100,
@@ -165,6 +168,7 @@ export async function resolveConfig(
     backupRetentionCount: fileConfig.backupRetentionCount ?? defaults.backupRetentionCount,
     superegoAuditInterval: fileConfig.superegoAuditInterval ?? defaults.superegoAuditInterval,
     cycleDelayMs: fileConfig.cycleDelayMs ?? defaults.cycleDelayMs,
+    conversationIdleTimeoutMs: fileConfig.conversationIdleTimeoutMs ?? defaults.conversationIdleTimeoutMs,
     conversationArchive: fileConfig.conversationArchive
       ? {
           enabled: fileConfig.conversationArchive.enabled ?? defaults.conversationArchive!.enabled,

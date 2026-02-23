@@ -264,6 +264,30 @@ describe("resolveConfig", () => {
     expect(config.cycleDelayMs).toBe(30000);
   });
 
+  it("defaults conversationIdleTimeoutMs to 20000", async () => {
+    const config = await resolveConfig(fs, {
+      appPaths: TEST_PATHS,
+      env: {},
+    });
+
+    expect(config.conversationIdleTimeoutMs).toBe(20000);
+  });
+
+  it("uses conversationIdleTimeoutMs from config file", async () => {
+    await fs.mkdir("/project", { recursive: true });
+    await fs.writeFile("/project/config.json", JSON.stringify({
+      conversationIdleTimeoutMs: 30000,
+    }));
+
+    const config = await resolveConfig(fs, {
+      appPaths: TEST_PATHS,
+      cwd: "/project",
+      env: {},
+    });
+
+    expect(config.conversationIdleTimeoutMs).toBe(30000);
+  });
+
   it("idleSleepConfig defaults to undefined", async () => {
     const config = await resolveConfig(fs, {
       appPaths: TEST_PATHS,
