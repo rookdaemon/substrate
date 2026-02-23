@@ -7,6 +7,7 @@ const mockOrchestrator = {
   getState: () => LoopState.STOPPED,
   getMetrics: () => ({}),
   getRateLimitUntil: () => null,
+  getPendingMessageCount: () => 0,
 } as unknown as LoopOrchestrator;
 
 function makeRequest(
