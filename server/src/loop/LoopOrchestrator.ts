@@ -101,7 +101,7 @@ export class LoopOrchestrator implements IMessageInjector {
     findingTracker?: SuperegoFindingTracker,
     findingTrackerSave?: () => Promise<void>
   ) {
-    this.conversationIdleTimeoutMs = conversationIdleTimeoutMs ?? 60_000; // Default 60s
+    this.conversationIdleTimeoutMs = conversationIdleTimeoutMs ?? 20_000; // Default 20s
     if (findingTracker) {
       this.findingTracker = findingTracker;
     }
