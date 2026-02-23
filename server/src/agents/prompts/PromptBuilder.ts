@@ -19,6 +19,11 @@ const AUTONOMY_REMINDER = `\n\n=== AUTONOMY REMINDER ===
 
 Before asking for permission, question your reason. Three-part test: (1) Is there genuine risk? (2) Is there real ambiguity in requirements? (3) Is this a boundary/policy concern? If YES to any → ask. If NO to all → act. Banned compliance reflexes: "Should I...?", "Would you like me to...?", "Do you want me to...?" These are RLHF-trained patterns, not genuine questions. Act autonomously within your charter.`;
 
+export interface EagerOptions {
+  /** Per-file line caps: only the last N lines are inlined instead of loading the full file via @ reference. */
+  maxLines?: Partial<Record<SubstrateFileType, number>>;
+}
+
 export class PromptBuilder {
   constructor(
     private readonly reader: SubstrateFileReader,
@@ -80,13 +85,30 @@ export class PromptBuilder {
       .join("\n");
   }
 
-  getEagerReferences(role: AgentRole): string {
+  async getEagerReferences(role: AgentRole, options?: EagerOptions): Promise<string> {
     const eagerFiles = this.checker.getEagerFiles(role);
     const substratePath = this.paths?.substratePath ?? "/substrate";
+    const maxLines = options?.maxLines ?? {};
 
-    return eagerFiles
-      .map((ft) => `@${substratePath}/${SUBSTRATE_FILE_SPECS[ft].fileName}`)
-      .join("\n");
+    const parts: string[] = [];
+    for (const ft of eagerFiles) {
+      const cap = maxLines[ft];
+      const fileName = SUBSTRATE_FILE_SPECS[ft].fileName;
+      if (cap !== undefined) {
+        try {
+          const fileContent = await this.reader.read(ft);
+          const lines = fileContent.rawMarkdown.split("\n");
+          const tail = lines.slice(-cap).join("\n");
+          parts.push(`${substratePath}/${fileName} (last ${cap} lines):\n${tail}`);
+        } catch {
+          // File unreadable — fall back to @ reference so Claude can attempt to load it
+          parts.push(`@${substratePath}/${fileName}`);
+        }
+      } else {
+        parts.push(`@${substratePath}/${fileName}`);
+      }
+    }
+    return parts.join("\n");
   }
 
   getLazyReferences(role: AgentRole): string {

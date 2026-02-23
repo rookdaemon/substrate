@@ -119,16 +119,16 @@ describe("PromptBuilder", () => {
   });
 
   describe("getEagerReferences", () => {
-    it("returns @ references only for eager files", () => {
-      const refs = builder.getEagerReferences(AgentRole.SUBCONSCIOUS);
+    it("returns @ references only for eager files", async () => {
+      const refs = await builder.getEagerReferences(AgentRole.SUBCONSCIOUS);
       expect(refs).toContain("@/substrate/PLAN.md");
       expect(refs).toContain("@/substrate/VALUES.md");
       expect(refs).not.toContain("@/substrate/MEMORY.md");
       expect(refs).not.toContain("@/substrate/PROGRESS.md");
     });
 
-    it("ID has 3 eager files", () => {
-      const refs = builder.getEagerReferences(AgentRole.ID);
+    it("ID has 3 eager files", async () => {
+      const refs = await builder.getEagerReferences(AgentRole.ID);
       const atRefs = refs.split("\n").filter((l) => l.startsWith("@"));
       expect(atRefs).toHaveLength(3); // ID, VALUES, PLAN
       expect(refs).toContain("@/substrate/ID.md");
@@ -136,11 +136,44 @@ describe("PromptBuilder", () => {
       expect(refs).toContain("@/substrate/PLAN.md");
     });
 
-    it("Superego eager loads all files", () => {
-      const refs = builder.getEagerReferences(AgentRole.SUPEREGO);
+    it("Superego eager loads all files", async () => {
+      const refs = await builder.getEagerReferences(AgentRole.SUPEREGO);
       const atRefs = refs.split("\n").filter((l) => l.startsWith("@"));
       const totalFileTypes = Object.values(SubstrateFileType).length;
       expect(atRefs).toHaveLength(totalFileTypes);
+    });
+
+    it("inlines last N lines when maxLines is set for a file", async () => {
+      await fs.writeFile(
+        "/substrate/PROGRESS.md",
+        "# Progress\n\nLine 1\nLine 2\nLine 3\nLine 4\nLine 5"
+      );
+      const refs = await builder.getEagerReferences(AgentRole.SUPEREGO, {
+        maxLines: { [SubstrateFileType.PROGRESS]: 2 },
+      });
+      expect(refs).not.toContain("@/substrate/PROGRESS.md");
+      expect(refs).toContain("/substrate/PROGRESS.md (last 2 lines):");
+      expect(refs).toContain("Line 4");
+      expect(refs).toContain("Line 5");
+      expect(refs).not.toContain("Line 1");
+    });
+
+    it("still uses @ reference for files without a maxLines cap", async () => {
+      const refs = await builder.getEagerReferences(AgentRole.SUPEREGO, {
+        maxLines: { [SubstrateFileType.PROGRESS]: 200 },
+      });
+      expect(refs).toContain("@/substrate/PLAN.md");
+      expect(refs).toContain("@/substrate/MEMORY.md");
+      expect(refs).not.toContain("@/substrate/PROGRESS.md");
+      expect(refs).toContain("/substrate/PROGRESS.md (last 200 lines):");
+    });
+
+    it("falls back to @ reference when maxLines file cannot be read", async () => {
+      // PEERS is an optional file that does not exist
+      const refs = await builder.getEagerReferences(AgentRole.SUPEREGO, {
+        maxLines: { [SubstrateFileType.PEERS]: 50 },
+      });
+      expect(refs).toContain("@/substrate/PEERS.md");
     });
   });
 

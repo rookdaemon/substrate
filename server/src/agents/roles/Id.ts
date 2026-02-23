@@ -53,7 +53,7 @@ export class Id {
   async generateDrives(onLogEntry?: (entry: ProcessLogEntry) => void): Promise<GoalCandidate[]> {
     try {
       const systemPrompt = this.promptBuilder.buildSystemPrompt(AgentRole.ID);
-      const eagerRefs = this.promptBuilder.getEagerReferences(AgentRole.ID);
+      const eagerRefs = await this.promptBuilder.getEagerReferences(AgentRole.ID);
       const lazyRefs = this.promptBuilder.getLazyReferences(AgentRole.ID);
       
       let message = "";

@@ -53,7 +53,12 @@ export class Superego {
   ): Promise<GovernanceReport> {
     try {
       const systemPrompt = this.promptBuilder.buildSystemPrompt(AgentRole.SUPEREGO);
-      const eagerRefs = this.promptBuilder.getEagerReferences(AgentRole.SUPEREGO);
+      const eagerRefs = await this.promptBuilder.getEagerReferences(AgentRole.SUPEREGO, {
+        maxLines: {
+          [SubstrateFileType.PROGRESS]: 200,
+          [SubstrateFileType.CONVERSATION]: 100,
+        },
+      });
       const lazyRefs = this.promptBuilder.getLazyReferences(AgentRole.SUPEREGO);
       
       let message = "";
@@ -106,7 +111,7 @@ export class Superego {
   async evaluateProposals(proposals: Proposal[], onLogEntry?: (entry: ProcessLogEntry) => void): Promise<ProposalEvaluation[]> {
     try {
       const systemPrompt = this.promptBuilder.buildSystemPrompt(AgentRole.SUPEREGO);
-      const eagerRefs = this.promptBuilder.getEagerReferences(AgentRole.SUPEREGO);
+      const eagerRefs = await this.promptBuilder.getEagerReferences(AgentRole.SUPEREGO);
       const lazyRefs = this.promptBuilder.getLazyReferences(AgentRole.SUPEREGO);
       
       let message = "";
