@@ -117,6 +117,16 @@ Config file fields:
   "autoStartOnFirstRun": false,
   "autoStartAfterRestart": true,
   "cycleDelayMs": 30000,
+  "enableBackups": true,
+  "enableHealthChecks": false,
+  "metrics": {
+    "enabled": false,
+    "intervalMs": 604800000
+  },
+  "validation": {
+    "enabled": false,
+    "intervalMs": 604800000
+  },
   "conversationArchive": {
     "enabled": false,
     "linesToKeep": 100,
@@ -129,6 +139,12 @@ Config file fields:
 - **autoStartOnFirstRun** (default: `false`) — When `true`, the agent loop starts automatically on first/cold start. Default is `false` so you can be present when it starts the first time.
 - **autoStartAfterRestart** (default: `true`) — When `true`, the supervisor passes `--forceStart` when respawning after a restart (Restart button or rebuild). If `--forceStart` is present, the server always auto-starts the loop; the supervisor only adds it when this config is true. Other exit codes exit cleanly without restart.
 - **cycleDelayMs** (default: `30000`) — Delay between loop cycles in milliseconds. Minimum recommended: `10000` (10 seconds) to avoid excessive API calls. For primarily reactive agents (e.g., waiting for Agora messages), consider `60000` (1 minute) or more.
+- **enableBackups** (default: `true`) — Periodic substrate backups. The only scheduler enabled by default.
+- **enableHealthChecks** (default: `false`) — Opt-in. Set to `true` to enable the hourly health-check scheduler (~8 evaluation classes). Useful for monitoring deployments; leave off if you don't need it.
+- **metrics.enabled** (default: `false`) — Opt-in. Set to `true` to enable the weekly metrics collection scheduler.
+  - **intervalMs** (default: `604800000`, 7 days) — How often metrics are collected.
+- **validation.enabled** (default: `false`) — Opt-in. Set to `true` to enable the weekly substrate validation scheduler.
+  - **intervalMs** (default: `604800000`, 7 days) — How often validation runs.
 - **conversationArchive** — Configuration for CONVERSATION.md archiving to prevent unbounded growth:
   - **enabled** (default: `false`) — When `true`, old conversation content is archived to `archive/conversation/` with date-stamped filenames
   - **linesToKeep** (default: `100`) — Number of recent conversation lines to keep in the main file
