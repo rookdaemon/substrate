@@ -167,6 +167,15 @@ export interface AppConfig {
   logLevel?: "info" | "debug";
   /** When set, all /api/* and /mcp requests must include Authorization: Bearer <apiToken> */
   apiToken?: string;
+  /** Configuration for the loop watchdog that detects stalls and injects reminders */
+  watchdog?: {
+    /** Disable the watchdog entirely (default: false) */
+    disabled?: boolean;
+    /** Milliseconds without activity before stall reminder is injected (default: 1200000 — 20 min) */
+    stallThresholdMs?: number;
+    /** Milliseconds between watchdog checks (default: 300000 — 5 min) */
+    checkIntervalMs?: number;
+  };
 }
 
 export interface ResolveConfigOptions {
@@ -320,6 +329,13 @@ export async function resolveConfig(
     shutdownGraceMs: fileConfig.shutdownGraceMs ?? defaults.shutdownGraceMs,
     logLevel: (fileConfig.logLevel ?? defaults.logLevel) as "info" | "debug",
     apiToken: fileConfig.apiToken,
+    watchdog: fileConfig.watchdog
+      ? {
+          disabled: fileConfig.watchdog.disabled ?? false,
+          stallThresholdMs: fileConfig.watchdog.stallThresholdMs ?? 20 * 60 * 1000,
+          checkIntervalMs: fileConfig.watchdog.checkIntervalMs ?? 5 * 60 * 1000,
+        }
+      : undefined,
   };
 
   // Env vars override everything

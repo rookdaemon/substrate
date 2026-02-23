@@ -92,6 +92,7 @@ export async function startServer(config: AppConfig, options?: StartServerOption
     shutdownGraceMs: config.shutdownGraceMs,
     logLevel: config.logLevel,
     apiToken: config.apiToken,
+    watchdog: config.watchdog,
   });
 
   console.log(`Debug log: ${app.logPath}`);

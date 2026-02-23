@@ -67,6 +67,15 @@ export interface ApplicationConfig {
   logLevel?: "info" | "debug";
   /** When set, all /api/* and /mcp requests must include Authorization: Bearer <apiToken> */
   apiToken?: string;
+  /** Configuration for the loop watchdog that detects stalls and injects reminders */
+  watchdog?: {
+    /** Disable the watchdog entirely (default: false) */
+    disabled?: boolean;
+    /** Milliseconds without activity before stall reminder is injected (default: 1200000 — 20 min) */
+    stallThresholdMs?: number;
+    /** Milliseconds between watchdog checks (default: 300000 — 5 min) */
+    checkIntervalMs?: number;
+  };
 }
 
 export interface Application {
