@@ -152,7 +152,11 @@ export class LoopHttpServer {
     // API token authentication — enforced on all routes except /hooks/* which have their own auth
     if (this.apiToken && !url.startsWith("/hooks/")) {
       const authHeader = req.headers.authorization;
-      if (!authHeader || authHeader !== `Bearer ${this.apiToken}`) {
+      const expected = `Bearer ${this.apiToken}`;
+      const valid = authHeader !== undefined &&
+        authHeader.length === expected.length &&
+        crypto.timingSafeEqual(Buffer.from(authHeader), Buffer.from(expected));
+      if (!valid) {
         this.json(res, 401, { error: "Unauthorized" });
         return;
       }

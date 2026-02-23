@@ -76,7 +76,6 @@ export async function startServer(config: AppConfig, options?: StartServerOption
     try { nodeFs.unlinkSync(pidPath); } catch { /* ignore */ }
   });
 
-
   await initializeSubstrate(fs, config.substratePath);
 
   const app = await createApplication({
