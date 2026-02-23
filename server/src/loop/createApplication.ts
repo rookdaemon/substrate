@@ -114,6 +114,8 @@ export interface ApplicationConfig {
     enabled: boolean; // Whether to enable idle sleep (default: false)
     idleCyclesBeforeSleep: number; // Number of consecutive idle cycles before sleeping (default: 5)
   };
+  /** Shutdown grace period in milliseconds (default: 5000). Active sessions receive a shutdown notice before force-kill. */
+  shutdownGraceMs?: number;
 }
 
 export interface Application {
@@ -431,12 +433,37 @@ export async function createApplication(config: ApplicationConfig): Promise<Appl
   orchestrator.setReportStore(reportStore);
   orchestrator.setDriveQualityTracker(driveQualityTracker);
 
+  const rateLimitStatePath = path.resolve(config.substratePath, "..", ".rate-limit-state");
+  const dedupStatePath = path.resolve(config.substratePath, "..", ".agora-dedup-state");
+
   orchestrator.setLauncher(launcher);
   // Set shutdown function that closes resources before exiting
   orchestrator.setShutdown((code) => {
+    const graceMs = config.shutdownGraceMs ?? 5000;
     // Close resources before exit to ensure clean shutdown
     // Start async cleanup, then exit after it completes or times out
     const cleanupPromise = (async () => {
+      // Signal active session with a shutdown notice before force-kill
+      if (launcher.isActive()) {
+        try {
+          launcher.inject("[SHUTDOWN] Server is shutting down. Please wrap up your current work.");
+        } catch { /* ignore injection errors during shutdown */ }
+        // Brief pause so the notice reaches the active session
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+
+      // Persist rate-limit timestamp so a restarted server honours the remaining backoff
+      try {
+        await fs.writeFile(rateLimitStatePath, orchestrator.getRateLimitUntil() ?? "");
+      } catch { /* ignore */ }
+
+      // Persist Agora dedup envelope IDs to prevent replay across restarts
+      if (agoraMessageHandler) {
+        try {
+          await fs.writeFile(dedupStatePath, JSON.stringify(agoraMessageHandler.getProcessedEnvelopeIds()));
+        } catch { /* ignore */ }
+      }
+
       try {
         orchestrator.stop(); // Stop orchestrator (stops watchdog, etc.)
       } catch {
@@ -459,10 +486,10 @@ export async function createApplication(config: ApplicationConfig): Promise<Appl
       }
     })();
     
-    // Wait for cleanup with a timeout, then exit
+    // Wait for cleanup with a configurable grace timeout, then exit
     Promise.race([
       cleanupPromise,
-      new Promise(resolve => setTimeout(resolve, 1000)) // 1 second timeout
+      new Promise(resolve => setTimeout(resolve, graceMs))
     ]).finally(() => {
       process.exit(code);
     });
@@ -635,6 +662,28 @@ export async function createApplication(config: ApplicationConfig): Promise<Appl
   } catch {
     // CONVERSATION.md may not exist yet (first run) — skip startup scan
     logger.debug("createApplication: startup scan skipped (CONVERSATION.md not readable)");
+  }
+
+  // Restore rate-limit state from before the last shutdown (prevents hammering the API on restart).
+  try {
+    const stored = (await fs.readFile(rateLimitStatePath)).trim();
+    if (stored) {
+      const rateLimitDate = new Date(stored);
+      if (rateLimitDate > clock.now()) {
+        orchestrator.setRateLimitUntil(stored);
+        logger.debug(`createApplication: restored rateLimitUntil from disk: ${stored}`);
+      }
+    }
+  } catch { /* file absent — no rate-limit state to restore */ }
+
+  // Restore Agora dedup envelope IDs from before the last shutdown (prevents replay across restarts).
+  if (agoraMessageHandler) {
+    try {
+      const stored = await fs.readFile(dedupStatePath);
+      const ids = JSON.parse(stored) as string[];
+      agoraMessageHandler.setProcessedEnvelopeIds(ids);
+      logger.debug(`createApplication: restored ${ids.length} Agora dedup envelope IDs from disk`);
+    } catch { /* file absent — no dedup state to restore */ }
   }
 
   return {

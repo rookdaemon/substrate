@@ -215,3 +215,60 @@ describe("Integration: Rate Limit State Preservation", () => {
     expect(planContent).toContain("[RATE LIMITED - resuming at 2026-02-16T15:00:00.000Z]");
   });
 });
+
+describe("LoopOrchestrator: setRateLimitUntil (disk restore)", () => {
+  let orchestrator: LoopOrchestrator | null = null;
+
+  afterEach(() => {
+    if (orchestrator) {
+      try { orchestrator.stop(); } catch { /* ignore */ }
+      orchestrator = null;
+    }
+  });
+
+  it("setRateLimitUntil sets the persisted rate-limit timestamp", () => {
+    const deps = createFullDeps();
+    const eventSink = new InMemoryEventSink();
+    orchestrator = new LoopOrchestrator(
+      deps.ego, deps.subconscious, deps.superego, deps.id,
+      deps.appendWriter, deps.clock, new ImmediateTimer(), eventSink,
+      defaultLoopConfig(), new InMemoryLogger()
+    );
+
+    expect(orchestrator.getRateLimitUntil()).toBeNull();
+
+    const future = "2099-01-01T00:00:00.000Z";
+    orchestrator.setRateLimitUntil(future);
+    expect(orchestrator.getRateLimitUntil()).toBe(future);
+  });
+
+  it("setRateLimitUntil(null) clears the rate-limit marker", () => {
+    const deps = createFullDeps();
+    const eventSink = new InMemoryEventSink();
+    orchestrator = new LoopOrchestrator(
+      deps.ego, deps.subconscious, deps.superego, deps.id,
+      deps.appendWriter, deps.clock, new ImmediateTimer(), eventSink,
+      defaultLoopConfig(), new InMemoryLogger()
+    );
+
+    orchestrator.setRateLimitUntil("2099-01-01T00:00:00.000Z");
+    orchestrator.setRateLimitUntil(null);
+    expect(orchestrator.getRateLimitUntil()).toBeNull();
+  });
+
+  it("isEffectivelyPaused returns true while setRateLimitUntil is non-null", () => {
+    const deps = createFullDeps();
+    const eventSink = new InMemoryEventSink();
+    orchestrator = new LoopOrchestrator(
+      deps.ego, deps.subconscious, deps.superego, deps.id,
+      deps.appendWriter, deps.clock, new ImmediateTimer(), eventSink,
+      defaultLoopConfig(), new InMemoryLogger()
+    );
+
+    expect(orchestrator.isEffectivelyPaused()).toBe(false);
+    orchestrator.setRateLimitUntil("2099-01-01T00:00:00.000Z");
+    expect(orchestrator.isEffectivelyPaused()).toBe(true);
+    orchestrator.setRateLimitUntil(null);
+    expect(orchestrator.isEffectivelyPaused()).toBe(false);
+  });
+});

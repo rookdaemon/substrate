@@ -99,6 +99,7 @@ export async function startServer(config: AppConfig, options?: StartServerOption
     superegoAuditInterval: config.superegoAuditInterval,
     cycleDelayMs: config.cycleDelayMs,
     idleSleepConfig: config.idleSleepConfig,
+    shutdownGraceMs: config.shutdownGraceMs,
   });
 
   console.log(`Debug log: ${app.logPath}`);

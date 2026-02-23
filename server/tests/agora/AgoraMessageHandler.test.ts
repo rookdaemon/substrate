@@ -747,4 +747,70 @@ describe("AgoraMessageHandler", () => {
       expect(conversationManager.appendedEntries).toHaveLength(1);
     });
   });
+
+  describe("Dedup persistence: getProcessedEnvelopeIds / setProcessedEnvelopeIds", () => {
+    it("getProcessedEnvelopeIds returns empty array when no envelopes processed", () => {
+      expect(handler.getProcessedEnvelopeIds()).toEqual([]);
+    });
+
+    it("getProcessedEnvelopeIds returns IDs of processed envelopes", async () => {
+      await handler.processEnvelope(testEnvelope, "webhook");
+
+      const ids = handler.getProcessedEnvelopeIds();
+      expect(ids).toContain(testEnvelope.id);
+      expect(ids).toHaveLength(1);
+    });
+
+    it("setProcessedEnvelopeIds restores known IDs so duplicates are rejected", async () => {
+      // Pre-load the dedup set with the test envelope ID
+      handler.setProcessedEnvelopeIds([testEnvelope.id]);
+
+      // Now try to process the same envelope — should be skipped as a duplicate
+      await handler.processEnvelope(testEnvelope, "webhook");
+
+      expect(conversationManager.appendedEntries).toHaveLength(0);
+    });
+
+    it("setProcessedEnvelopeIds trims to MAX_DEDUP_SIZE keeping the tail", () => {
+      // Create more than MAX_DEDUP_SIZE (1000) IDs
+      const many = Array.from({ length: 1100 }, (_, i) => `id-${i}`);
+      handler.setProcessedEnvelopeIds(many);
+
+      const stored = handler.getProcessedEnvelopeIds();
+      expect(stored).toHaveLength(1000);
+      // The tail (most-recent) IDs should be retained
+      expect(stored).toContain("id-1099");
+      expect(stored).not.toContain("id-0");
+    });
+
+    it("getProcessedEnvelopeIds round-trips through setProcessedEnvelopeIds", async () => {
+      const env2: Envelope = { ...testEnvelope, id: "envelope-456" };
+      await handler.processEnvelope(testEnvelope, "webhook");
+      await handler.processEnvelope(env2, "webhook");
+
+      const snapshot = handler.getProcessedEnvelopeIds();
+
+      // Create a fresh handler and restore the snapshot
+      const handler2 = new AgoraMessageHandler(
+        agoraService,
+        conversationManager,
+        messageInjector,
+        eventSink,
+        clock,
+        getState,
+        isRateLimited,
+        logger,
+        'allow',
+        inboxManager as unknown as AgoraInboxManager,
+        defaultRateLimitConfig
+      );
+      handler2.setProcessedEnvelopeIds(snapshot);
+
+      // Both IDs should be treated as duplicates on the restored handler
+      const before = conversationManager.appendedEntries.length;
+      await handler2.processEnvelope(testEnvelope, "webhook");
+      await handler2.processEnvelope(env2, "webhook");
+      expect(conversationManager.appendedEntries.length).toBe(before);
+    });
+  });
 });

@@ -69,6 +69,21 @@ export class AgoraMessageHandler {
   ) {}
 
   /**
+   * Return all currently tracked processed envelope IDs (for persistence on shutdown).
+   */
+  getProcessedEnvelopeIds(): string[] {
+    return Array.from(this.processedEnvelopeIds);
+  }
+
+  /**
+   * Restore processed envelope IDs from persistent storage (called on startup).
+   * Silently discards entries exceeding MAX_DEDUP_SIZE (keeps the most-recent tail).
+   */
+  setProcessedEnvelopeIds(ids: string[]): void {
+    this.processedEnvelopeIds = new Set(ids.slice(-this.MAX_DEDUP_SIZE));
+  }
+
+  /**
    * Check if an envelope ID has already been processed.
    * Returns true if duplicate, false if new.
    * Maintains a bounded set with oldest-first eviction when MAX_DEDUP_SIZE is exceeded.

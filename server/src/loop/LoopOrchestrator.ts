@@ -281,6 +281,14 @@ export class LoopOrchestrator implements IMessageInjector {
     this.rateLimitStateManager = manager;
   }
 
+  /**
+   * Set the rateLimitUntil timestamp directly (e.g. restored from disk on startup).
+   * A null value clears any active rate-limit marker.
+   */
+  setRateLimitUntil(value: string | null): void {
+    this.rateLimitUntil = value;
+  }
+
   setReportStore(store: GovernanceReportStore): void {
     this.reportStore = store;
   }
@@ -488,6 +496,22 @@ export class LoopOrchestrator implements IMessageInjector {
 
   async runLoop(): Promise<void> {
     this.logger.debug("runLoop() entered");
+
+    // Honor rate limit restored from disk before the previous shutdown.
+    if (this.rateLimitUntil !== null) {
+      const waitMs = Math.max(0, new Date(this.rateLimitUntil).getTime() - this.clock.now().getTime());
+      if (waitMs > 0) {
+        this.logger.debug(`runLoop: honoring restored rate limit — waiting ${waitMs}ms until ${this.rateLimitUntil}`);
+        this.eventSink.emit({
+          type: "idle",
+          timestamp: this.clock.now().toISOString(),
+          data: { rateLimitUntil: this.rateLimitUntil, waitMs },
+        });
+        await this.timer.delay(waitMs);
+      }
+      this.rateLimitUntil = null;
+    }
+
     while (this.state === LoopState.RUNNING) {
       const cycleResult = await this.runOneCycle();
 
