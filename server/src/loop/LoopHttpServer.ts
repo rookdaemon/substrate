@@ -24,6 +24,9 @@ import type { ILogger } from "../logging";
 import { getVersionInfo } from "../version";
 import { SubstrateMeta } from "../substrate/MetaManager";
 
+/** Maximum allowed HTTP request body size (1 MiB). Requests exceeding this limit receive HTTP 413. */
+const MAX_BODY_BYTES = 1 * 1024 * 1024;
+
 // Lazy singleton for the ESM-only @rookdaemon/agora module.
 // Imported once on first use and cached for all subsequent calls.
 let _agoraModule: typeof import("@rookdaemon/agora") | null = null;
@@ -360,8 +363,20 @@ export class LoopHttpServer {
     }
 
     let body = "";
-    req.on("data", (chunk: Buffer) => { body += chunk.toString(); });
+    let bodyBytes = 0;
+    let aborted = false;
+    req.on("data", (chunk: Buffer) => {
+      bodyBytes += chunk.byteLength;
+      if (bodyBytes > MAX_BODY_BYTES) {
+        aborted = true;
+        this.json(res, 413, { error: "Request body too large" });
+        req.destroy();
+        return;
+      }
+      body += chunk.toString();
+    });
     req.on("end", () => {
+      if (aborted) return;
       let parsed: { message?: string };
       try {
         parsed = JSON.parse(body);
@@ -694,8 +709,20 @@ export class LoopHttpServer {
     }
 
     let body = "";
-    req.on("data", (chunk: Buffer) => { body += chunk.toString(); });
+    let bodyBytes = 0;
+    let aborted = false;
+    req.on("data", (chunk: Buffer) => {
+      bodyBytes += chunk.byteLength;
+      if (bodyBytes > MAX_BODY_BYTES) {
+        aborted = true;
+        this.json(res, 413, { error: "Request body too large" });
+        req.destroy();
+        return;
+      }
+      body += chunk.toString();
+    });
     req.on("end", async () => {
+      if (aborted) return;
       this.logger?.debug(`[AGORA] Webhook received: bodyLength=${body.length}`);
       
       let parsed: { message?: string };
