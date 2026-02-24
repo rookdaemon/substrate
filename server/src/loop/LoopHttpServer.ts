@@ -138,6 +138,11 @@ export class LoopHttpServer {
   }
 
   listen(port: number): Promise<number> {
+    if (this.agoraMessageHandler && !this.agoraWebhookToken) {
+      this.logger?.warn(
+        "[AGORA] AGORA_WEBHOOK_TOKEN not configured — webhook endpoint relies on Ed25519 signature verification only"
+      );
+    }
     return new Promise((resolve) => {
       this.server.listen(port, "127.0.0.1", () => {
         const addr = this.server.address();
