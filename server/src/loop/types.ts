@@ -49,6 +49,7 @@ export interface LoopMetrics {
   idleCycles: number;
   consecutiveIdleCycles: number;
   superegoAudits: number;
+  consecutiveAuditFailures: number;
 }
 
 export function createInitialMetrics(): LoopMetrics {
@@ -59,6 +60,7 @@ export function createInitialMetrics(): LoopMetrics {
     idleCycles: 0,
     consecutiveIdleCycles: 0,
     superegoAudits: 0,
+    consecutiveAuditFailures: 0,
   };
 }
 

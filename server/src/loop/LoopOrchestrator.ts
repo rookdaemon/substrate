@@ -458,7 +458,7 @@ export class LoopOrchestrator implements IMessageInjector {
     // Superego audit scheduling — fire-and-forget to avoid blocking next cycle
     if (this.cycleNumber % this.config.superegoAuditInterval === 0 || this.auditOnNextCycle) {
       this.auditOnNextCycle = false;
-      this.runAudit().catch(err => this.logger.debug(`audit: unhandled error — ${err instanceof Error ? err.message : String(err)}`));
+      this.runAudit().catch(err => this.logger.warn(`audit: unhandled error — ${err instanceof Error ? err.message : String(err)}`));
     }
 
 
@@ -924,8 +924,15 @@ export class LoopOrchestrator implements IMessageInjector {
       // No need to log to PROGRESS.md as it would pollute the high-level summary file
       this.logger.debug(`audit: complete — ${report.summary}`);
       await this.reportStore?.save(report as Record<string, unknown>);
+      this.metrics.consecutiveAuditFailures = 0;
     } catch (err) {
-      this.logger.debug(`audit: failed — ${err instanceof Error ? err.message : String(err)}`);
+      this.metrics.consecutiveAuditFailures++;
+      const msg = `audit failed (${this.metrics.consecutiveAuditFailures} consecutive): ${err instanceof Error ? err.message : String(err)}`;
+      if (this.metrics.consecutiveAuditFailures >= 3) {
+        this.logger.error(`[orchestrator] ${msg} — check logs, Superego may need attention`);
+      } else {
+        this.logger.warn(`[orchestrator] ${msg}`);
+      }
     } finally {
       if (this.findingTrackerSave) {
         try {

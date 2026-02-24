@@ -38,6 +38,24 @@ describe("InMemoryLogger", () => {
     expect(logger.getVerboseEntries()).toEqual(["secret payload"]);
   });
 
+  it("captures warn entries separately", () => {
+    const logger = new InMemoryLogger();
+
+    logger.warn("something may be wrong");
+
+    expect(logger.getEntries()).toHaveLength(0);
+    expect(logger.getWarnEntries()).toEqual(["something may be wrong"]);
+  });
+
+  it("captures error entries separately", () => {
+    const logger = new InMemoryLogger();
+
+    logger.error("something went wrong");
+
+    expect(logger.getEntries()).toHaveLength(0);
+    expect(logger.getErrorEntries()).toEqual(["something went wrong"]);
+  });
+
   it("keeps debug and verbose entries independent", () => {
     const logger = new InMemoryLogger();
 
@@ -79,7 +97,7 @@ describe("FileLogger", () => {
     const content = fs.readFileSync(logPath, "utf-8");
     const lines = content.trim().split("\n");
     const entryLine = lines.find(l => l.includes("timestamped"));
-    expect(entryLine).toMatch(/^\[.+T.+Z\] timestamped$/);
+    expect(entryLine).toMatch(/^\[.+T.+Z\] \[DEBUG\] timestamped$/);
   });
 
   it("appends multiple entries", () => {
@@ -223,6 +241,24 @@ describe("FileLogger", () => {
 
       const content = fs.readFileSync(logPath, "utf-8");
       expect(content).toContain("operational event");
+    });
+
+    it('always writes warn() entries regardless of logLevel', () => {
+      const logger = new FileLogger(logPath, undefined, "info");
+
+      logger.warn("warning event");
+
+      const content = fs.readFileSync(logPath, "utf-8");
+      expect(content).toContain("[WARN] warning event");
+    });
+
+    it('always writes error() entries regardless of logLevel', () => {
+      const logger = new FileLogger(logPath, undefined, "info");
+
+      logger.error("error event");
+
+      const content = fs.readFileSync(logPath, "utf-8");
+      expect(content).toContain("[ERROR] error event");
     });
 
     it('writes both debug() and verbose() entries at "debug" level', () => {
