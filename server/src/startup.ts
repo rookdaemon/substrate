@@ -111,6 +111,7 @@ export async function startServer(config: AppConfig, options?: StartServerOption
     shutdownGraceMs: config.shutdownGraceMs,
     logLevel: config.logLevel,
     apiToken: config.apiToken,
+    progressMaxBytes: config.progressMaxBytes,
     watchdog: config.watchdog,
   });
   appForCleanup = app;
