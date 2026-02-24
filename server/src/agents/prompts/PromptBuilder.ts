@@ -111,6 +111,18 @@ export class PromptBuilder {
     return parts.join("\n");
   }
 
+  buildAgentMessage(eagerRefs: string, lazyRefs: string, instruction: string): string {
+    let message = "";
+    if (eagerRefs) {
+      message += `[CONTEXT]\n${eagerRefs}\n\n`;
+    }
+    if (lazyRefs) {
+      message += `[FILES — read on demand]\n${lazyRefs}\n\n`;
+    }
+    message += instruction;
+    return message;
+  }
+
   getLazyReferences(role: AgentRole): string {
     const lazyFiles = this.checker.getLazyFiles(role);
     const substratePath = this.paths?.substratePath ?? "/substrate";

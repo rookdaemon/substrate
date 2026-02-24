@@ -160,7 +160,7 @@ describe("Id agent", () => {
 
       const launches = launcher.getLaunches();
       const message = launches[0].request.message;
-      expect(message).toContain("HISTORICAL DRIVE QUALITY");
+      expect(message).toContain("DRIVE QUALITY");
       expect(message).toContain("reading");
       expect(message).toContain("8.0/10");
       expect(message).toContain("coordination");

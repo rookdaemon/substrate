@@ -199,4 +199,36 @@ describe("PromptBuilder", () => {
       expect(refs).toBe("");
     });
   });
+
+  describe("buildAgentMessage", () => {
+    it("prefixes eager refs with [CONTEXT] header", () => {
+      const msg = builder.buildAgentMessage("@/substrate/PLAN.md", "", "Do the thing.");
+      expect(msg).toContain("[CONTEXT]\n@/substrate/PLAN.md");
+      expect(msg).toContain("Do the thing.");
+    });
+
+    it("prefixes lazy refs with [FILES — read on demand] header", () => {
+      const msg = builder.buildAgentMessage("", "- /substrate/MEMORY.md — notes", "Do the thing.");
+      expect(msg).toContain("[FILES — read on demand]\n- /substrate/MEMORY.md — notes");
+      expect(msg).not.toContain("[CONTEXT]");
+    });
+
+    it("includes both sections when both refs are provided", () => {
+      const msg = builder.buildAgentMessage("@/substrate/PLAN.md", "- /substrate/MEMORY.md — notes", "Execute.");
+      expect(msg).toContain("[CONTEXT]\n@/substrate/PLAN.md");
+      expect(msg).toContain("[FILES — read on demand]\n- /substrate/MEMORY.md — notes");
+      expect(msg.endsWith("Execute.")).toBe(true);
+    });
+
+    it("omits context section when eagerRefs is empty", () => {
+      const msg = builder.buildAgentMessage("", "- /substrate/MEMORY.md — notes", "Go.");
+      expect(msg).not.toContain("[CONTEXT]");
+      expect(msg).toContain("[FILES — read on demand]");
+    });
+
+    it("returns only instruction when both refs are empty", () => {
+      const msg = builder.buildAgentMessage("", "", "Just do it.");
+      expect(msg).toBe("Just do it.");
+    });
+  });
 });
