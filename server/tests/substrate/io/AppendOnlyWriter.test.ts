@@ -129,7 +129,7 @@ describe("AppendOnlyWriter", () => {
 
     beforeEach(() => {
       // threshold of 10 bytes — triggers rotation after first non-trivial append
-      smallWriter = new AppendOnlyWriter(fs, config, lock, clock, 10);
+      smallWriter = new AppendOnlyWriter(fs, config, lock, clock, undefined, 10);
     });
 
     it("rotates PROGRESS.md when size exceeds threshold", async () => {
@@ -169,7 +169,7 @@ describe("AppendOnlyWriter", () => {
     });
 
     it("does NOT rotate when size is below threshold", async () => {
-      const largeWriter = new AppendOnlyWriter(fs, config, lock, clock, 1024 * 1024);
+      const largeWriter = new AppendOnlyWriter(fs, config, lock, clock, undefined, 1024 * 1024);
       await largeWriter.append(SubstrateFileType.PROGRESS, "Small entry");
 
       const content = await fs.readFile("/substrate/PROGRESS.md");
