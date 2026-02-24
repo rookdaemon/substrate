@@ -69,6 +69,8 @@ export interface ApplicationConfig {
   apiToken?: string;
   /** When false, disables the mtime-based file read cache (default: true — cache enabled). */
   enableFileReadCache?: boolean;
+  /** Maximum size of PROGRESS.md in bytes before rotation (default: 512 * 1024 = 512 KB). */
+  progressMaxBytes?: number;
   /** Configuration for the loop watchdog that detects stalls and injects reminders */
   watchdog?: {
     /** Disable the watchdog entirely (default: false) */

@@ -123,4 +123,84 @@ describe("AppendOnlyWriter", () => {
       expect(content).toContain(entry);
     });
   });
+
+  describe("PROGRESS rotation", () => {
+    let smallWriter: AppendOnlyWriter;
+
+    beforeEach(() => {
+      // threshold of 10 bytes — triggers rotation after first non-trivial append
+      smallWriter = new AppendOnlyWriter(fs, config, lock, clock, 10);
+    });
+
+    it("rotates PROGRESS.md when size exceeds threshold", async () => {
+      await smallWriter.append(SubstrateFileType.PROGRESS, "This entry is definitely longer than ten bytes");
+
+      const content = await fs.readFile("/substrate/PROGRESS.md");
+      expect(content).toContain("# Progress Log");
+      expect(content).toContain("# Rotated:");
+    });
+
+    it("archive file contains the original content", async () => {
+      await fs.writeFile("/substrate/PROGRESS.md", "# Progress\n\nOriginal content\n");
+      await smallWriter.append(SubstrateFileType.PROGRESS, "New entry to trigger rotation");
+
+      const archiveDir = "/substrate/progress";
+      const entries = await fs.readdir(archiveDir);
+      expect(entries.length).toBe(1);
+
+      const archiveContent = await fs.readFile(`${archiveDir}/${entries[0]}`);
+      expect(archiveContent).toContain("Original content");
+    });
+
+    it("archive file name contains the ISO timestamp with colons replaced by hyphens", async () => {
+      await smallWriter.append(SubstrateFileType.PROGRESS, "Entry to trigger rotation");
+
+      const archiveDir = "/substrate/progress";
+      const entries = await fs.readdir(archiveDir);
+      expect(entries.length).toBe(1);
+      expect(entries[0]).toBe("PROGRESS-2025-06-15T10-30-00Z.md");
+    });
+
+    it("fresh PROGRESS.md contains archive reference header", async () => {
+      await smallWriter.append(SubstrateFileType.PROGRESS, "Entry to trigger rotation");
+
+      const content = await fs.readFile("/substrate/PROGRESS.md");
+      expect(content).toContain("progress/PROGRESS-2025-06-15T10-30-00Z.md");
+    });
+
+    it("does NOT rotate when size is below threshold", async () => {
+      const largeWriter = new AppendOnlyWriter(fs, config, lock, clock, 1024 * 1024);
+      await largeWriter.append(SubstrateFileType.PROGRESS, "Small entry");
+
+      const content = await fs.readFile("/substrate/PROGRESS.md");
+      expect(content).not.toContain("# Rotated:");
+      expect(content).toContain("Small entry");
+    });
+
+    it("does NOT rotate CONVERSATION even when it exceeds threshold", async () => {
+      await smallWriter.append(SubstrateFileType.CONVERSATION, "This is also longer than ten bytes and should not rotate");
+
+      const exists = await fs.exists("/substrate/progress");
+      expect(exists).toBe(false);
+
+      const content = await fs.readFile("/substrate/CONVERSATION.md");
+      expect(content).not.toContain("# Rotated:");
+      expect(content).toContain("This is also longer than ten bytes");
+    });
+
+    it("two consecutive over-threshold appends create only one archive per append", async () => {
+      // First append — creates first archive
+      await smallWriter.append(SubstrateFileType.PROGRESS, "First over-threshold entry");
+      clock.setNow(new Date("2025-06-15T10:31:00Z"));
+      // Second append — fresh file is small, then grows and creates second archive
+      await smallWriter.append(SubstrateFileType.PROGRESS, "Second over-threshold entry");
+
+      const archiveDir = "/substrate/progress";
+      const entries = await fs.readdir(archiveDir);
+      // Each append that triggers rotation creates exactly one archive
+      expect(entries.length).toBe(2);
+      expect(entries).toContain("PROGRESS-2025-06-15T10-30-00Z.md");
+      expect(entries).toContain("PROGRESS-2025-06-15T10-31-00Z.md");
+    });
+  });
 });

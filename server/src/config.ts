@@ -75,6 +75,7 @@ const AppConfigSchema = z
     logLevel: z.enum(["info", "debug"]).optional(),
     apiToken: z.string().optional(),
     enableFileReadCache: z.boolean().optional(),
+    progressMaxBytes: z.number().int().min(1).optional(),
   })
   .refine(
     (data) =>
@@ -172,6 +173,8 @@ export interface AppConfig {
   apiToken?: string;
   /** When false, disables the mtime-based file read cache (default: true — cache enabled). */
   enableFileReadCache?: boolean;
+  /** Maximum size of PROGRESS.md in bytes before rotation (default: 512 * 1024 = 512 KB). */
+  progressMaxBytes?: number;
   /** Configuration for the loop watchdog that detects stalls and injects reminders */
   watchdog?: {
     /** Disable the watchdog entirely (default: false) */
@@ -245,6 +248,7 @@ export async function resolveConfig(
     },
     shutdownGraceMs: 5000,
     logLevel: "info",
+    progressMaxBytes: 512 * 1024,
   };
 
   let fileConfig: Partial<AppConfig> = {};
@@ -336,6 +340,7 @@ export async function resolveConfig(
     logLevel: (fileConfig.logLevel ?? defaults.logLevel) as "info" | "debug",
     apiToken: fileConfig.apiToken,
     enableFileReadCache: fileConfig.enableFileReadCache,
+    progressMaxBytes: fileConfig.progressMaxBytes ?? defaults.progressMaxBytes,
     watchdog: fileConfig.watchdog
       ? {
           disabled: fileConfig.watchdog.disabled ?? false,
