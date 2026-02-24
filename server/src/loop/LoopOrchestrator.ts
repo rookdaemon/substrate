@@ -28,6 +28,7 @@ import { SuperegoFindingTracker } from "../agents/roles/SuperegoFindingTracker";
 import { IMessageInjector } from "./IMessageInjector";
 import { GovernanceReportStore } from "../evaluation/GovernanceReportStore";
 import { DriveQualityTracker } from "../evaluation/DriveQualityTracker";
+import { msgPreview } from "./utils";
 
 export class LoopOrchestrator implements IMessageInjector {
   private state: LoopState = LoopState.STOPPED;
@@ -647,7 +648,7 @@ export class LoopOrchestrator implements IMessageInjector {
         data: { count: this.pendingMessages.length },
       });
       for (const msg of this.pendingMessages) {
-        this.logger.debug(`tick ${this.tickNumber}: injecting queued message (${msg.length} chars): ${msg}`);
+        this.logger.debug(`tick ${this.tickNumber}: injecting queued message (${msg.length} chars): ${msgPreview(msg)}`);
         sessionManager.inject(msg);
       }
       this.pendingMessages = [];
@@ -745,7 +746,7 @@ export class LoopOrchestrator implements IMessageInjector {
   }
 
   async handleUserMessage(message: string): Promise<void> {
-    this.logger.debug(`handleUserMessage: "${message}"`);
+    this.logger.debug(`handleUserMessage: ${message.length} chars — ${msgPreview(message)}`);
     this.watchdog?.recordActivity();
 
     // Wake loop if sleeping — incoming chat message should restart cycles
@@ -867,7 +868,7 @@ export class LoopOrchestrator implements IMessageInjector {
   }
 
   injectMessage(message: string): boolean {
-    this.logger.debug(`injectMessage: "${message}"`);
+    this.logger.debug(`injectMessage: ${message.length} chars — ${msgPreview(message)}`);
 
     this.eventSink.emit({
       type: "message_injected",
