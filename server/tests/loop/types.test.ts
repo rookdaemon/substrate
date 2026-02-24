@@ -82,6 +82,7 @@ describe("createInitialMetrics", () => {
     expect(metrics.idleCycles).toBe(0);
     expect(metrics.consecutiveIdleCycles).toBe(0);
     expect(metrics.superegoAudits).toBe(0);
+    expect(metrics.consecutiveAuditFailures).toBe(0);
   });
 });
 

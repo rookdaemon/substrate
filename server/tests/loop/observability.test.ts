@@ -141,4 +141,114 @@ describe("CL-11: Observability & async audit", () => {
       expect(orc.getMetrics().superegoAudits).toBeGreaterThanOrEqual(1);
     });
   });
+
+  describe("audit failure escalation", () => {
+    async function createOrcWithMockAudit(
+      auditImpl: () => Promise<{ findings: unknown[]; proposalEvaluations: unknown[]; summary: string }>,
+      maxConsecutiveIdleCycles: number
+    ) {
+      const fs = new InMemoryFileSystem();
+      await fs.mkdir("/substrate", { recursive: true });
+      await fs.writeFile("/substrate/PLAN.md", "# Plan\n\n## Current Goal\nDone\n\n## Tasks\n- [x] Done");
+
+      const clock = new FixedClock(new Date("2025-06-15T10:00:00.000Z"));
+      const launcher = new InMemorySessionLauncher();
+      const substrateConfig = new SubstrateConfig("/substrate");
+      const reader = new SubstrateFileReader(fs, substrateConfig);
+      const lock = new FileLock();
+      const writer = new SubstrateFileWriter(fs, substrateConfig, lock);
+      const appendWriter = new AppendOnlyWriter(fs, substrateConfig, lock, clock);
+      const checker = new PermissionChecker();
+      const promptBuilder = new PromptBuilder(reader, checker);
+      const taskClassifier = new TaskClassifier({ strategicModel: "opus", tacticalModel: "sonnet" });
+      const compactor = new MockCompactor();
+      const conversationManager = new ConversationManager(
+        reader, fs, substrateConfig, lock, appendWriter, checker, compactor, clock
+      );
+
+      const ego = new Ego(reader, writer, conversationManager, checker, promptBuilder, launcher, clock, taskClassifier);
+      const subconscious = new Subconscious(reader, writer, appendWriter, conversationManager, checker, promptBuilder, launcher, clock, taskClassifier);
+      const id = new Id(reader, checker, promptBuilder, launcher, clock, taskClassifier);
+
+      const mockSuperego = { audit: auditImpl } as unknown as Superego;
+
+      const logger = new InMemoryLogger();
+      const eventSink = new InMemoryEventSink();
+      const config = defaultLoopConfig({ superegoAuditInterval: 1, maxConsecutiveIdleCycles });
+
+      const orc = new LoopOrchestrator(
+        ego, subconscious, mockSuperego, id,
+        appendWriter, clock, new ImmediateTimer(), eventSink,
+        config, logger
+      );
+
+      return { orc, logger };
+    }
+
+    it("single audit failure logs at warn (not debug)", async () => {
+      const { orc, logger } = await createOrcWithMockAudit(
+        async () => { throw new Error("simulated audit failure"); },
+        1
+      );
+
+      orc.start();
+      await orc.runLoop();
+      await Promise.resolve(); // flush remaining microtasks
+
+      expect(logger.getWarnEntries().some(e => e.includes("audit failed (1 consecutive)"))).toBe(true);
+      expect(logger.getErrorEntries()).toHaveLength(0);
+    });
+
+    it("third consecutive failure logs at error level", async () => {
+      const { orc, logger } = await createOrcWithMockAudit(
+        async () => { throw new Error("simulated audit failure"); },
+        3
+      );
+
+      orc.start();
+      await orc.runLoop();
+      await Promise.resolve(); // flush remaining microtasks
+
+      expect(orc.getMetrics().consecutiveAuditFailures).toBe(3);
+      const errorEntries = logger.getErrorEntries();
+      expect(errorEntries.some(e => e.includes("audit failed (3 consecutive)"))).toBe(true);
+      expect(errorEntries.some(e => e.includes("check logs, Superego may need attention"))).toBe(true);
+    });
+
+    it("counter resets to 0 on successful audit after failures", async () => {
+      let callCount = 0;
+      const { orc, logger } = await createOrcWithMockAudit(
+        async () => {
+          callCount++;
+          if (callCount < 3) {
+            throw new Error("simulated audit failure");
+          }
+          return { findings: [], proposalEvaluations: [], summary: "All good" };
+        },
+        3
+      );
+
+      orc.start();
+      await orc.runLoop();
+      await Promise.resolve(); // flush remaining microtasks
+
+      expect(orc.getMetrics().consecutiveAuditFailures).toBe(0);
+      expect(logger.getWarnEntries().length).toBeGreaterThanOrEqual(1);
+    });
+
+    it("consecutiveAuditFailures appears in metrics response", async () => {
+      const { orc } = await createOrcWithMockAudit(
+        async () => { throw new Error("simulated audit failure"); },
+        1
+      );
+
+      orc.start();
+      await orc.runLoop();
+      await Promise.resolve(); // flush remaining microtasks
+
+      const metrics = orc.getMetrics();
+      expect(metrics).toHaveProperty("consecutiveAuditFailures");
+      expect(metrics.consecutiveAuditFailures).toBe(1);
+    });
+  });
 });

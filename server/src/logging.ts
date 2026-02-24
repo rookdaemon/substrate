@@ -9,16 +9,30 @@ export type LogLevel = "info" | "debug";
 export interface ILogger {
   /** Always written. Use for operational events: envelope ID, sender, lifecycle. */
   debug(message: string): void;
+  /** Always written. Use for warnings that should be visible in production. */
+  warn(message: string): void;
+  /** Always written. Use for errors that require operator attention. */
+  error(message: string): void;
   /** Only written when logLevel is "debug". Use for payloads and session content. */
   verbose(message: string): void;
 }
 
 export class InMemoryLogger implements ILogger {
   private entries: string[] = [];
+  private warnEntries: string[] = [];
+  private errorEntries: string[] = [];
   private verboseEntries: string[] = [];
 
   debug(message: string): void {
     this.entries.push(message);
+  }
+
+  warn(message: string): void {
+    this.warnEntries.push(message);
+  }
+
+  error(message: string): void {
+    this.errorEntries.push(message);
   }
 
   verbose(message: string): void {
@@ -27,6 +41,14 @@ export class InMemoryLogger implements ILogger {
 
   getEntries(): string[] {
     return [...this.entries];
+  }
+
+  getWarnEntries(): string[] {
+    return [...this.warnEntries];
+  }
+
+  getErrorEntries(): string[] {
+    return [...this.errorEntries];
   }
 
   getVerboseEntries(): string[] {
@@ -48,19 +70,27 @@ export class FileLogger implements ILogger {
   }
 
   debug(message: string): void {
-    this.writeLog(message);
+    this.writeLog("DEBUG", message);
+  }
+
+  warn(message: string): void {
+    this.writeLog("WARN", message);
+  }
+
+  error(message: string): void {
+    this.writeLog("ERROR", message);
   }
 
   verbose(message: string): void {
     if (this.logLevel !== "debug") {
       return;
     }
-    this.writeLog(message);
+    this.writeLog("VERBOSE", message);
   }
 
-  private writeLog(message: string): void {
+  private writeLog(level: string, message: string): void {
     const timestamp = new Date().toISOString();
-    appendFileSync(this.resolvedPath, `[${timestamp}] ${message}\n`);
+    appendFileSync(this.resolvedPath, `[${timestamp}] [${level}] ${message}\n`);
   }
 
   getFilePath(): string {
