@@ -6,6 +6,7 @@
  * This loop uses isFirstTime and config to decide whether to add --forceStart:
  * - First run: add --forceStart iff autoStartOnFirstRun is true (default false).
  * - After restart (exit 75): add --forceStart iff autoStartAfterRestart is true (default true).
+ * - After user stop (exit 76): restart without --forceStart (auto-start suppressed).
  * - Any other exit code: propagate (clean exit; no restart).
  *
  * Safety gates (pre-restart):
@@ -32,6 +33,7 @@ const SERVER_DIR =
   typeof __dirname !== "undefined" ? path.resolve(__dirname, "..") : process.cwd();
 
 const RESTART_EXIT_CODE = 75;
+const STOP_EXIT_CODE = 76;
 const MAX_BUILD_RETRIES = 5;
 const INITIAL_RETRY_DELAY_MS = 5_000;
 const MAX_RETRY_DELAY_MS = 60_000;
@@ -110,19 +112,31 @@ async function main(): Promise<void> {
     cwd: process.cwd(),
   };
   let isFirstTime = true;
+  let suppressAutoStart = false;
   let consecutiveFailures = 0;
   let currentRetryDelay = INITIAL_RETRY_DELAY_MS;
   let consecutiveUnhealthyRestarts = 0;
 
   for (;;) {
     const config = await resolveConfig(env, resolveOptions);
-    const useForceStart = isFirstTime
-      ? config.autoStartOnFirstRun === true
-      : config.autoStartAfterRestart !== false;
+    const useForceStart = suppressAutoStart
+      ? false
+      : isFirstTime
+        ? config.autoStartOnFirstRun === true
+        : config.autoStartAfterRestart !== false;
+    suppressAutoStart = false;
     const startArgs = [cliPath, "start"];
     if (useForceStart) startArgs.push("--forceStart");
 
     const exitCode = await run("node", startArgs, SERVER_DIR);
+
+    if (exitCode === STOP_EXIT_CODE) {
+      // User-initiated stop: restart without auto-start, skip rebuild
+      console.log("[supervisor] User stop (exit code 76) — restarting without auto-start");
+      suppressAutoStart = true;
+      isFirstTime = false;
+      continue;
+    }
 
     if (exitCode !== RESTART_EXIT_CODE) {
       process.exit(exitCode);

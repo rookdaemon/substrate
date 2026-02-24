@@ -108,6 +108,50 @@ describe("supervisor circuit breaker", () => {
   });
 });
 
+describe("supervisor stop exit code", () => {
+  const STOP_EXIT_CODE = 76;
+  const RESTART_EXIT_CODE = 75;
+
+  it("should treat exit code 76 as user-initiated stop (no rebuild, suppress auto-start)", () => {
+    let suppressAutoStart = false;
+    let isFirstTime = true;
+    let rebuilt = false;
+
+    const exitCode = STOP_EXIT_CODE;
+
+    if (exitCode === STOP_EXIT_CODE) {
+      suppressAutoStart = true;
+      isFirstTime = false;
+      // No rebuild
+    } else if (exitCode === RESTART_EXIT_CODE) {
+      rebuilt = true;
+    }
+
+    expect(suppressAutoStart).toBe(true);
+    expect(rebuilt).toBe(false);
+
+    // Next iteration: suppressAutoStart overrides config
+    const autoStartAfterRestart = true; // config says auto-start
+    const useForceStart = suppressAutoStart
+      ? false
+      : !isFirstTime && autoStartAfterRestart;
+
+    expect(useForceStart).toBe(false);
+  });
+
+  it("should not suppress auto-start for exit code 75 (restart)", () => {
+    let suppressAutoStart = false;
+
+    const exitCode = RESTART_EXIT_CODE;
+
+    if (exitCode === STOP_EXIT_CODE) {
+      suppressAutoStart = true;
+    }
+
+    expect(suppressAutoStart).toBe(false);
+  });
+});
+
 describe("supervisor rollback logic", () => {
   const MAX_CONSECUTIVE_UNHEALTHY = 3;
 
