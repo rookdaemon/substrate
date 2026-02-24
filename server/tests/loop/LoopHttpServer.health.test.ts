@@ -14,6 +14,8 @@ import { AgentRole } from "../../src/agents/types";
 import { TaskClassificationMetrics } from "../../src/evaluation/TaskClassificationMetrics";
 import { SubstrateSizeTracker } from "../../src/evaluation/SubstrateSizeTracker";
 import { DelegationTracker } from "../../src/evaluation/DelegationTracker";
+import { HealthCheck, CriticalChecksResult } from "../../src/evaluation/HealthCheck";
+import { LoopState } from "../../src/loop/types";
 import * as http from "http";
 
 // Mock compactor
@@ -202,6 +204,166 @@ describe("LoopHttpServer health endpoint", () => {
     expect(body.lastCompaction).toBeNull();
 
     await freshServer.close();
+  });
+});
+
+// Mock HealthCheck for critical endpoint tests
+class MockHealthCheck extends HealthCheck {
+  private result: CriticalChecksResult;
+
+  constructor(result: CriticalChecksResult) {
+    // Provide a minimal reader — will not be called since we override runCriticalChecks
+    const fs = new InMemoryFileSystem();
+    const config = new SubstrateConfig("/mock");
+    const reader = new SubstrateFileReader(fs, config);
+    super(reader);
+    this.result = result;
+  }
+
+  override async runCriticalChecks(): Promise<CriticalChecksResult> {
+    return this.result;
+  }
+}
+
+describe("LoopHttpServer /api/health/critical endpoint", () => {
+  let clock: FixedClock;
+
+  const NOW = new Date("2026-02-24T00:00:00.000Z");
+
+  function buildServer(opts: {
+    state?: LoopState;
+    lastCycleAt?: Date | null;
+    lastCycleResult?: "success" | "failure" | "idle" | "none";
+    criticalResult?: CriticalChecksResult;
+  }): LoopHttpServer {
+    clock = new FixedClock(NOW);
+
+    const mockOrchestrator = {
+      getState: () => opts.state ?? LoopState.RUNNING,
+      getMetrics: () => ({}),
+      getPendingMessageCount: () => 0,
+      getRateLimitUntil: () => null,
+      getLastCycleDiagnostics: () => ({
+        lastCycleAt: opts.lastCycleAt !== undefined ? opts.lastCycleAt : null,
+        lastCycleResult: opts.lastCycleResult ?? "none",
+      }),
+    } as unknown as LoopOrchestrator;
+
+    const criticalResult: CriticalChecksResult = opts.criticalResult ?? {
+      healthy: true,
+      substrateFsWritable: "healthy",
+    };
+
+    const server = new LoopHttpServer();
+    server.setOrchestrator(mockOrchestrator);
+    server.setEventSink({ emit: () => {} }, clock);
+    server.setHealthCheck(new MockHealthCheck(criticalResult));
+    return server;
+  }
+
+  afterEach(async () => {
+    // servers are closed individually in each test
+  });
+
+  it("returns healthy response shape when orchestrator is RUNNING and no cycles have run", async () => {
+    const server = buildServer({ state: LoopState.RUNNING });
+    const port = await server.listen(0);
+
+    try {
+      const response = await makeRequest(port, "/api/health/critical");
+      expect(response.statusCode).toBe(200);
+
+      const body = JSON.parse(response.body);
+      expect(body.status).toBe("healthy");
+      expect(body.checks).toBeDefined();
+      expect(body.checks.orchestrator).toBe("healthy");
+      expect(body.checks.substrateFsWritable).toBe("healthy");
+      expect(body.checks.lastCycleAgeMs).toBeNull();
+      expect(body.checks.lastCycleResult).toBe("none");
+      expect(body.checks.consecutiveAuditFailures).toBe(0);
+      expect(body.version).toBeDefined();
+      expect(body.timestamp).toBe(NOW.toISOString());
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("returns unhealthy response when orchestrator is STOPPED", async () => {
+    const server = buildServer({ state: LoopState.STOPPED });
+    const port = await server.listen(0);
+
+    try {
+      const response = await makeRequest(port, "/api/health/critical");
+      expect(response.statusCode).toBe(503);
+
+      const body = JSON.parse(response.body);
+      expect(body.status).toBe("unhealthy");
+      expect(body.checks.orchestrator).toBe("unhealthy");
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("returns unhealthy when lastCycleAgeMs exceeds 5-minute threshold", async () => {
+    const staleTime = new Date(NOW.getTime() - 6 * 60 * 1000); // 6 minutes ago
+    const server = buildServer({
+      state: LoopState.RUNNING,
+      lastCycleAt: staleTime,
+      lastCycleResult: "success",
+    });
+    const port = await server.listen(0);
+
+    try {
+      const response = await makeRequest(port, "/api/health/critical");
+      expect(response.statusCode).toBe(503);
+
+      const body = JSON.parse(response.body);
+      expect(body.status).toBe("unhealthy");
+      expect(body.checks.lastCycleAgeMs).toBeGreaterThan(5 * 60 * 1000);
+      expect(body.checks.lastCycleResult).toBe("success");
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("includes lastCycleAgeMs and lastCycleResult when a recent cycle has run", async () => {
+    const recentTime = new Date(NOW.getTime() - 30_000); // 30 seconds ago
+    const server = buildServer({
+      state: LoopState.RUNNING,
+      lastCycleAt: recentTime,
+      lastCycleResult: "idle",
+    });
+    const port = await server.listen(0);
+
+    try {
+      const response = await makeRequest(port, "/api/health/critical");
+      expect(response.statusCode).toBe(200);
+
+      const body = JSON.parse(response.body);
+      expect(body.checks.lastCycleAgeMs).toBe(30_000);
+      expect(body.checks.lastCycleResult).toBe("idle");
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("returns unhealthy when substrateFsWritable is unhealthy", async () => {
+    const server = buildServer({
+      state: LoopState.RUNNING,
+      criticalResult: { healthy: false, substrateFsWritable: "unhealthy" },
+    });
+    const port = await server.listen(0);
+
+    try {
+      const response = await makeRequest(port, "/api/health/critical");
+      expect(response.statusCode).toBe(503);
+
+      const body = JSON.parse(response.body);
+      expect(body.status).toBe("unhealthy");
+      expect(body.checks.substrateFsWritable).toBe("unhealthy");
+    } finally {
+      await server.close();
+    }
   });
 });
 

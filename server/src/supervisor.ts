@@ -48,20 +48,22 @@ function run(cmd: string, args: string[], cwd: string): Promise<number> {
   });
 }
 
-async function waitForHealthy(port: number, maxAttempts = HEALTH_CHECK_ATTEMPTS): Promise<boolean> {
+async function waitForHealthy(port: number, maxAttempts = HEALTH_CHECK_ATTEMPTS): Promise<{ healthy: boolean; body?: unknown }> {
   const url = `http://127.0.0.1:${port}/api/health/critical`;
+  let lastBody: unknown;
   for (let i = 0; i < maxAttempts; i++) {
     if (i > 0) {
       await new Promise((r) => setTimeout(r, HEALTH_CHECK_INTERVAL_MS));
     }
     try {
       const res = await fetch(url);
-      if (res.ok) return true;
+      try { lastBody = await res.json(); } catch { /* not JSON */ }
+      if (res.ok) return { healthy: true, body: lastBody };
     } catch {
       // Server not yet up — continue polling
     }
   }
-  return false;
+  return { healthy: false, body: lastBody };
 }
 
 export async function validateRestartSafety(
@@ -153,7 +155,7 @@ async function main(): Promise<void> {
       }
       console.log("[supervisor] Build succeeded — restarting server");
 
-      const healthy = await waitForHealthy(config.port);
+      const { healthy, body: healthBody } = await waitForHealthy(config.port);
       if (healthy) {
         consecutiveUnhealthyRestarts = 0;
         // Tag current commit as last-known-good
@@ -161,9 +163,22 @@ async function main(): Promise<void> {
         console.log("[supervisor] Server is healthy — tagged current commit as last-known-good");
       } else {
         consecutiveUnhealthyRestarts++;
-        console.error(`[supervisor] Health check failed after restart (${consecutiveUnhealthyRestarts}/${MAX_CONSECUTIVE_UNHEALTHY})`);
+        console.error(`[supervisor] Health check failed after restart (${consecutiveUnhealthyRestarts}/${MAX_CONSECUTIVE_UNHEALTHY}):`, JSON.stringify(healthBody, null, 2));
 
         if (consecutiveUnhealthyRestarts >= MAX_CONSECUTIVE_UNHEALTHY) {
+          // Save health diagnostics to restart-context.md before rollback
+          const restartContextPath = path.posix.join(
+            config.workingDirectory.replace(/\\/g, "/"),
+            "memory",
+            "restart-context.md"
+          );
+          const healthSection = `\n## Health Check at Rollback Trigger\n\`\`\`json\n${JSON.stringify(healthBody, null, 2)}\n\`\`\`\n`;
+          try {
+            await env.fs.mkdir(path.posix.join(config.workingDirectory.replace(/\\/g, "/"), "memory"), { recursive: true });
+            const existing = await env.fs.exists(restartContextPath) ? await env.fs.readFile(restartContextPath) : "";
+            await env.fs.writeFile(restartContextPath, existing + healthSection);
+          } catch { /* best effort — don't block rollback */ }
+
           console.error("[supervisor] 3 consecutive unhealthy restarts — rolling back to last-known-good");
           const checkoutCode = await run("git", ["checkout", "last-known-good"], SERVER_DIR);
           if (checkoutCode !== 0) {

@@ -461,15 +461,47 @@ export class LoopHttpServer {
     );
   }
 
-  private handleCriticalHealthCheck(res: http.ServerResponse): void {
-    if (!this.healthCheck) {
-      this.json(res, 503, { healthy: false, error: "Health check not configured" });
+  private async handleCriticalHealthCheck(res: http.ServerResponse): Promise<void> {
+    if (!this.healthCheck || !this.orchestrator || !this.clock) {
+      this.json(res, 503, { status: "unhealthy", error: "Not configured" });
       return;
     }
-    this.healthCheck.runCriticalChecks().then(
-      (healthy) => this.json(res, healthy ? 200 : 503, { healthy }),
-      () => this.json(res, 503, { healthy: false })
-    );
+
+    try {
+      const criticalResult = await this.healthCheck.runCriticalChecks();
+      const state = this.orchestrator.getState();
+      const { lastCycleAt, lastCycleResult } = this.orchestrator.getLastCycleDiagnostics();
+
+      const now = this.clock.now();
+      const lastCycleAgeMs = lastCycleAt !== null ? now.getTime() - lastCycleAt.getTime() : null;
+      const STALE_CYCLE_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
+
+      const orchestratorHealthy = state === LoopState.RUNNING;
+      const cycleAgeHealthy = lastCycleAgeMs === null || lastCycleAgeMs < STALE_CYCLE_THRESHOLD_MS;
+
+      const healthy =
+        criticalResult.healthy &&
+        orchestratorHealthy &&
+        cycleAgeHealthy &&
+        criticalResult.substrateFsWritable === "healthy";
+
+      const body = {
+        status: healthy ? "healthy" : "unhealthy",
+        checks: {
+          orchestrator: orchestratorHealthy ? "healthy" : "unhealthy",
+          substrateFsWritable: criticalResult.substrateFsWritable,
+          lastCycleAgeMs,
+          lastCycleResult,
+          consecutiveAuditFailures: 0,
+        },
+        version: getVersionInfo().version,
+        timestamp: now.toISOString(),
+      };
+
+      this.json(res, healthy ? 200 : 503, body);
+    } catch {
+      this.json(res, 503, { status: "unhealthy", error: "Health check failed" });
+    }
   }
 
   /**

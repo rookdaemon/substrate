@@ -271,7 +271,7 @@ export async function createLoopLayer(
 
   // Create metrics store for quantitative drift monitoring
   const metricsStore = new MetricsStore(fs, clock, config.substratePath);
-  httpServer.setHealthCheck(new HealthCheck(reader, metricsStore));
+  httpServer.setHealthCheck(new HealthCheck(reader, metricsStore, fs, config.substratePath));
   httpServer.setMetricsComponents(taskMetrics, sizeTracker, delegationTracker);
 
   // Create governance report store and wire into both httpServer and orchestrator

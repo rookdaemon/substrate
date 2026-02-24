@@ -63,6 +63,10 @@ export class LoopOrchestrator implements IMessageInjector {
   // Optional callback to persist finding tracker state after each audit
   private findingTrackerSave: (() => Promise<void>) | null = null;
 
+  // Last cycle diagnostics for health reporting
+  private lastCycleAt: Date | null = null;
+  private lastCycleResult: "success" | "failure" | "idle" | "none" = "none";
+
   // Tick mode
   private tickPromptBuilder: TickPromptBuilder | null = null;
   private sdkSessionFactory: SdkSessionFactory | null = null;
@@ -248,6 +252,10 @@ export class LoopOrchestrator implements IMessageInjector {
 
   getCycleNumber(): number {
     return this.cycleNumber;
+  }
+
+  getLastCycleDiagnostics(): { lastCycleAt: Date | null; lastCycleResult: "success" | "failure" | "idle" | "none" } {
+    return { lastCycleAt: this.lastCycleAt, lastCycleResult: this.lastCycleResult };
   }
 
   setWatchdog(watchdog: LoopWatchdog): void {
@@ -454,6 +462,10 @@ export class LoopOrchestrator implements IMessageInjector {
       data: { cycleNumber: this.cycleNumber, action: result.action },
     });
     this.watchdog?.recordActivity();
+
+    // Record last cycle diagnostics for health reporting
+    this.lastCycleAt = this.clock.now();
+    this.lastCycleResult = result.action === "idle" ? "idle" : (result.success ? "success" : "failure");
 
     // Superego audit scheduling — fire-and-forget to avoid blocking next cycle
     if (this.cycleNumber % this.config.superegoAuditInterval === 0 || this.auditOnNextCycle) {
