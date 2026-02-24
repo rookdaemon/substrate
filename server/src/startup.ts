@@ -76,6 +76,25 @@ export async function startServer(config: AppConfig, options?: StartServerOption
     try { nodeFs.unlinkSync(pidPath); } catch { /* ignore */ }
   });
 
+  // Capture app reference so handlers registered below can call app.stop()
+  let appForCleanup: Awaited<ReturnType<typeof createApplication>> | null = null;
+
+  const gracefulShutdown = (label: string, err: unknown): void => {
+    console.error(`[startup] ${label} — triggering graceful shutdown`, err);
+    const graceMs = config.shutdownGraceMs ?? 5000;
+    const stop = appForCleanup?.stop() ?? Promise.resolve();
+    const timeout = new Promise<void>((resolve) => setTimeout(resolve, graceMs));
+    Promise.race([stop, timeout]).finally(() => process.exit(1));
+  };
+
+  process.on("unhandledRejection", (reason) => {
+    gracefulShutdown("Unhandled promise rejection", reason);
+  });
+
+  process.on("uncaughtException", (err) => {
+    gracefulShutdown("Uncaught exception", err);
+  });
+
   await initializeSubstrate(fs, config.substratePath);
 
   const app = await createApplication({
@@ -94,6 +113,7 @@ export async function startServer(config: AppConfig, options?: StartServerOption
     apiToken: config.apiToken,
     watchdog: config.watchdog,
   });
+  appForCleanup = app;
 
   console.log(`Debug log: ${app.logPath}`);
 
