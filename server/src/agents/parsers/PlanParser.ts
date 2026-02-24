@@ -1,6 +1,7 @@
 export enum TaskStatus {
   PENDING = "PENDING",
   COMPLETE = "COMPLETE",
+  DEFERRED = "DEFERRED",
 }
 
 export interface PlanTask {
@@ -8,11 +9,17 @@ export interface PlanTask {
   title: string;
   status: TaskStatus;
   children: PlanTask[];
+  triggerCondition?: string;
+}
+
+export interface TriggerEvaluator {
+  evaluate(condition: string): boolean;
 }
 
 interface RawTaskLine {
   indent: number;
   checked: boolean;
+  deferred: boolean;
   title: string;
 }
 
@@ -29,11 +36,15 @@ export class PlanParser {
     return this.buildTree(taskLines, null, 0, taskLines.length, -1);
   }
 
-  static findNextActionable(tasks: PlanTask[]): PlanTask | null {
+  static findNextActionable(tasks: PlanTask[], evaluator?: TriggerEvaluator): PlanTask | null {
     for (const task of tasks) {
       if (task.status === TaskStatus.COMPLETE) continue;
+      if (task.status === TaskStatus.DEFERRED) {
+        if (!evaluator || !task.triggerCondition) continue;
+        if (!evaluator.evaluate(task.triggerCondition)) continue;
+      }
       if (task.children.length > 0) {
-        const child = this.findNextActionable(task.children);
+        const child = this.findNextActionable(task.children, evaluator);
         if (child) return child;
       } else {
         return task;
@@ -65,9 +76,9 @@ export class PlanParser {
 
     let taskLineCount = 0;
     for (let i = tasksSection; i < lines.length; i++) {
-      if (/^\s*- \[[ x]\] /.test(lines[i])) {
+      if (/^\s*- \[[ x~]\] /.test(lines[i])) {
         if (taskLineCount === taskIndex) {
-          lines[i] = lines[i].replace("- [ ] ", "- [x] ");
+          lines[i] = lines[i].replace(/- \[[ ~]\] /, "- [x] ");
           break;
         }
         taskLineCount++;
@@ -98,11 +109,12 @@ export class PlanParser {
     for (let i = tasksStart; i < lines.length; i++) {
       const line = lines[i];
       if (line.startsWith("#")) break;
-      const match = line.match(/^(\s*)- \[([ x])\] (.+)$/);
+      const match = line.match(/^(\s*)- \[([ x~])\] (.+)$/);
       if (match) {
         result.push({
           indent: match[1].length,
           checked: match[2] === "x",
+          deferred: match[2] === "~",
           title: match[3],
         });
       }
@@ -118,7 +130,7 @@ export class PlanParser {
         inTasks = true;
         continue;
       }
-      if (inTasks && /^\s*- \[[ x]\] /.test(lines[i])) {
+      if (inTasks && /^\s*- \[[ x~]\] /.test(lines[i])) {
         return i;
       }
       if (inTasks && lines[i].startsWith("#")) break;
@@ -159,11 +171,21 @@ export class PlanParser {
 
       const children = this.buildTree(lines, id, childStart, childEnd, line.indent);
 
+      const triggerMatch = line.title.match(/WHEN\s+`([^`]+)`/);
+      const triggerCondition = triggerMatch ? triggerMatch[1] : undefined;
+
+      const status = line.checked
+        ? TaskStatus.COMPLETE
+        : line.deferred
+          ? TaskStatus.DEFERRED
+          : TaskStatus.PENDING;
+
       tasks.push({
         id,
         title: line.title,
-        status: line.checked ? TaskStatus.COMPLETE : TaskStatus.PENDING,
+        status,
         children,
+        triggerCondition,
       });
 
       counter++;
