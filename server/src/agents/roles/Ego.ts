@@ -41,14 +41,11 @@ export class Ego {
       const eagerRefs = await this.promptBuilder.getEagerReferences(AgentRole.EGO);
       const lazyRefs = this.promptBuilder.getLazyReferences(AgentRole.EGO);
       
-      let message = "";
-      if (eagerRefs) {
-        message += `=== CONTEXT (auto-loaded) ===\n${eagerRefs}\n\n`;
-      }
-      if (lazyRefs) {
-        message += `=== AVAILABLE FILES (read on demand) ===\nUse the Read tool to access any of these when needed:\n${lazyRefs}\n\n`;
-      }
-      message += `Analyze the current context. What should we do next?`;
+      const message = this.promptBuilder.buildAgentMessage(
+        eagerRefs,
+        lazyRefs,
+        `Analyze the current context. What should we do next?`
+      );
       
       const model = this.taskClassifier.getModel({ role: AgentRole.EGO, operation: "decide" });
       const result = await this.sessionLauncher.launch({
@@ -96,7 +93,7 @@ export class Ego {
       contextSection += `${eagerRefs}\n\n`;
     }
     if (lazyRefs) {
-      contextSection += `=== AVAILABLE FILES (read on demand) ===\nUse the Read tool to access any of these when needed:\n${lazyRefs}\n\n`;
+      contextSection += `[FILES — read on demand]\n${lazyRefs}\n\n`;
     }
 
     const systemPrompt =

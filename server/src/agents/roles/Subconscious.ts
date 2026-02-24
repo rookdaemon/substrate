@@ -63,17 +63,11 @@ export class Subconscious {
       const eagerRefs = await this.promptBuilder.getEagerReferences(AgentRole.SUBCONSCIOUS);
       const lazyRefs = this.promptBuilder.getLazyReferences(AgentRole.SUBCONSCIOUS);
 
-      let message = "";
-      if (eagerRefs) {
-        message += `=== CONTEXT (auto-loaded) ===\n${eagerRefs}\n\n`;
-      }
-      if (lazyRefs) {
-        message += `=== AVAILABLE FILES (read on demand) ===\nUse the Read tool to access any of these when needed:\n${lazyRefs}\n\n`;
-      }
+      let message = this.promptBuilder.buildAgentMessage(eagerRefs, lazyRefs, "");
       if (pendingMessages && pendingMessages.length > 0) {
-        message += `=== PENDING MESSAGES TO PROCESS FIRST ===\nProcess and respond to these before the task below. Use the TinyBus MCP tool \`mcp__tinybus__send_message\` with type "agora.send" to reply to Agora messages.\n\n`;
+        message += `[PENDING MESSAGES — process first]\nProcess and respond to these before the task below. Use the TinyBus MCP tool \`mcp__tinybus__send_message\` with type "agora.send" to reply to Agora messages.\n\n`;
         message += pendingMessages.join("\n\n---\n\n");
-        message += "\n\n=== TASK ===\n";
+        message += "\n\n[TASK]\n";
       }
       message += `Execute this task:\nID: ${task.taskId}\nDescription: ${task.description}`;
       
@@ -171,15 +165,10 @@ export class Subconscious {
       const eagerRefs = await this.promptBuilder.getEagerReferences(AgentRole.SUBCONSCIOUS);
       const lazyRefs = this.promptBuilder.getLazyReferences(AgentRole.SUBCONSCIOUS);
 
-      let evaluationPrompt = "";
-      if (eagerRefs) {
-        evaluationPrompt += `=== CONTEXT (auto-loaded) ===\n${eagerRefs}\n\n`;
-      }
-      if (lazyRefs) {
-        evaluationPrompt += `=== AVAILABLE FILES (read on demand) ===\nUse the Read tool to access any of these when needed:\n${lazyRefs}\n\n`;
-      }
-
-      evaluationPrompt += `You just completed this task:
+      const evaluationPrompt = this.promptBuilder.buildAgentMessage(
+        eagerRefs,
+        lazyRefs,
+        `You just completed this task:
 ID: ${task.taskId}
 Description: ${task.description}
 
@@ -202,7 +191,8 @@ Respond with ONLY a JSON object:
   "issuesFound": string[],
   "recommendedActions": string[],
   "needsReassessment": boolean
-}`;
+}`
+      );
 
       const model = this.taskClassifier.getModel({ role: AgentRole.SUBCONSCIOUS, operation: "evaluateOutcome" });
       const evalResult = await this.sessionLauncher.launch({

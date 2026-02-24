@@ -56,13 +56,7 @@ export class Id {
       const eagerRefs = await this.promptBuilder.getEagerReferences(AgentRole.ID);
       const lazyRefs = this.promptBuilder.getLazyReferences(AgentRole.ID);
       
-      let message = "";
-      if (eagerRefs) {
-        message += `=== CONTEXT (auto-loaded) ===\n${eagerRefs}\n\n`;
-      }
-      if (lazyRefs) {
-        message += `=== AVAILABLE FILES (read on demand) ===\nUse the Read tool to access any of these when needed:\n${lazyRefs}\n\n`;
-      }
+      let message = this.promptBuilder.buildAgentMessage(eagerRefs, lazyRefs, "");
 
       if (this.driveQualityTracker) {
         const categoryStats = await this.driveQualityTracker.getCategoryStats();
@@ -71,7 +65,7 @@ export class Id {
           const statsText = statEntries
             .map(([cat, s]) => `  ${cat}: ${s.avgRating.toFixed(1)}/10 avg (${s.count} task${s.count === 1 ? "" : "s"})`)
             .join("\n");
-          message += `=== HISTORICAL DRIVE QUALITY ===\nAverage ratings by category (higher is better):\n${statsText}\n\nPrioritize categories with higher historical ratings. Avoid repeatedly suggesting drives in consistently low-performing categories unless there is clear strategic reason.\n\n`;
+          message += `[DRIVE QUALITY]\nAverage ratings by category (higher is better):\n${statsText}\n\nPrioritize categories with higher historical ratings. Avoid repeatedly suggesting drives in consistently low-performing categories unless there is clear strategic reason.\n\n`;
         }
       }
 

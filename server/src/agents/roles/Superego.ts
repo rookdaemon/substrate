@@ -61,14 +61,11 @@ export class Superego {
       });
       const lazyRefs = this.promptBuilder.getLazyReferences(AgentRole.SUPEREGO);
       
-      let message = "";
-      if (eagerRefs) {
-        message += `=== CONTEXT (auto-loaded) ===\n${eagerRefs}\n\n`;
-      }
-      if (lazyRefs) {
-        message += `=== AVAILABLE FILES (read on demand) ===\nUse the Read tool to access any of these when needed:\n${lazyRefs}\n\n`;
-      }
-      message += `Perform a full audit of all substrate files. Report findings.`;
+      let message = this.promptBuilder.buildAgentMessage(
+        eagerRefs,
+        lazyRefs,
+        `Perform a full audit of all substrate files. Report findings.`
+      );
       
       const model = this.taskClassifier.getModel({ role: AgentRole.SUPEREGO, operation: "audit" });
       const result = await this.sessionLauncher.launch({
@@ -114,14 +111,11 @@ export class Superego {
       const eagerRefs = await this.promptBuilder.getEagerReferences(AgentRole.SUPEREGO);
       const lazyRefs = this.promptBuilder.getLazyReferences(AgentRole.SUPEREGO);
       
-      let message = "";
-      if (eagerRefs) {
-        message += `=== CONTEXT (auto-loaded) ===\n${eagerRefs}\n\n`;
-      }
-      if (lazyRefs) {
-        message += `=== AVAILABLE FILES (read on demand) ===\nUse the Read tool to access any of these when needed:\n${lazyRefs}\n\n`;
-      }
-      message += `Evaluate these proposals:\n${JSON.stringify(proposals, null, 2)}`;
+      let message = this.promptBuilder.buildAgentMessage(
+        eagerRefs,
+        lazyRefs,
+        `Evaluate these proposals:\n${JSON.stringify(proposals, null, 2)}`
+      );
       
       const model = this.taskClassifier.getModel({ role: AgentRole.SUPEREGO, operation: "evaluateProposals" });
       const result = await this.sessionLauncher.launch({
