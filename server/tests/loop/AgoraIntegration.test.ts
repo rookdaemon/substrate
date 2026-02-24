@@ -214,7 +214,10 @@ describe("Agora Message Integration", () => {
 
   it("should accept webhook with correct token when AGORA_WEBHOOK_TOKEN is set", async () => {
     process.env.AGORA_WEBHOOK_TOKEN = "secret-token";
-    const port = await httpServer.listen(0);
+    const tokenServer = new LoopHttpServer();
+    tokenServer.setOrchestrator(orchestrator);
+    tokenServer.setAgoraMessageHandler(agoraMessageHandler, agoraService);
+    const port = await tokenServer.listen(0);
 
     const agora = await import("@rookdaemon/agora");
     const testPeerPublicKey = "302a300506032b6570032100cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
@@ -227,12 +230,15 @@ describe("Agora Message Integration", () => {
     expect(result.statusCode).toBe(200);
 
     delete process.env.AGORA_WEBHOOK_TOKEN;
-    await httpServer.close();
+    await tokenServer.close();
   });
 
   it("should reject webhook with wrong token when AGORA_WEBHOOK_TOKEN is set", async () => {
     process.env.AGORA_WEBHOOK_TOKEN = "secret-token";
-    const port = await httpServer.listen(0);
+    const tokenServer = new LoopHttpServer();
+    tokenServer.setOrchestrator(orchestrator);
+    tokenServer.setAgoraMessageHandler(agoraMessageHandler, agoraService);
+    const port = await tokenServer.listen(0);
 
     const result = await sendWebhookRequest(port, "[AGORA_ENVELOPE]test", true, "wrong-token");
 
@@ -240,12 +246,15 @@ describe("Agora Message Integration", () => {
     expect(result.body).toMatchObject({ error: "Invalid or missing Authorization header" });
 
     delete process.env.AGORA_WEBHOOK_TOKEN;
-    await httpServer.close();
+    await tokenServer.close();
   });
 
   it("should reject webhook with missing header when AGORA_WEBHOOK_TOKEN is set", async () => {
     process.env.AGORA_WEBHOOK_TOKEN = "secret-token";
-    const port = await httpServer.listen(0);
+    const tokenServer = new LoopHttpServer();
+    tokenServer.setOrchestrator(orchestrator);
+    tokenServer.setAgoraMessageHandler(agoraMessageHandler, agoraService);
+    const port = await tokenServer.listen(0);
 
     const result = await sendWebhookRequest(port, "[AGORA_ENVELOPE]test", false);
 
@@ -253,7 +262,7 @@ describe("Agora Message Integration", () => {
     expect(result.body).toMatchObject({ error: "Invalid or missing Authorization header" });
 
     delete process.env.AGORA_WEBHOOK_TOKEN;
-    await httpServer.close();
+    await tokenServer.close();
   });
 
   it("should handle multiple messages in order", async () => {

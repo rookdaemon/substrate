@@ -60,9 +60,11 @@ export class LoopHttpServer {
   private tinyBus: TinyBus | null = null;
   private meta: SubstrateMeta | null = null;
   private apiToken: string | null = null;
+  private readonly agoraWebhookToken: string | undefined;
 
   constructor() {
     this.server = http.createServer((req, res) => this.handleRequest(req, res));
+    this.agoraWebhookToken = process.env.AGORA_WEBHOOK_TOKEN;
   }
 
   setOrchestrator(orchestrator: LoopOrchestrator): void {
@@ -675,7 +677,7 @@ export class LoopHttpServer {
     }
 
     // If AGORA_WEBHOOK_TOKEN is configured, validate the Bearer token; otherwise trust Ed25519 alone
-    const webhookToken = process.env.AGORA_WEBHOOK_TOKEN;
+    const webhookToken = this.agoraWebhookToken;
     if (webhookToken) {
       const authHeader = req.headers.authorization;
       const expectedBearer = `Bearer ${webhookToken}`;
