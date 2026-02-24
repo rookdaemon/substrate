@@ -216,6 +216,84 @@ describe("Integration: Rate Limit State Preservation", () => {
   });
 });
 
+describe("Rate limit backoff is not bypassed by timer.wake()", () => {
+  let orchestrator: LoopOrchestrator | null = null;
+
+  afterEach(() => {
+    if (orchestrator) {
+      try { orchestrator.stop(); } catch { /* ignore */ }
+      orchestrator = null;
+    }
+  });
+
+  it("re-sleeps when rate limited and timer is woken early", async () => {
+    const deps = createFullDeps();
+    await setupSubstrate(deps.fs);
+
+    // Cycle 1: task hits rate limit
+    deps.launcher.enqueueFailure("You've hit your limit · resets 12pm (UTC)");
+
+    // Responses for cycle after rate limit clears
+    deps.launcher.enqueueSuccess(JSON.stringify({
+      result: "success", summary: "Done", progressEntry: "Completed",
+      skillUpdates: null, memoryUpdates: null, proposals: [],
+    }));
+    deps.launcher.enqueueSuccess(JSON.stringify({
+      outcomeMatchesIntent: true, qualityScore: 90,
+      issuesFound: [], recommendedActions: [], needsReassessment: false,
+    }));
+
+    const delayLog: number[] = [];
+    let cycleCount = 0;
+
+    // Timer that simulates early wake on first rate-limit delay,
+    // then stops orchestrator after enough cycles to prevent infinite loop
+    const timer = {
+      delay: async (ms: number) => {
+        delayLog.push(ms);
+        // Rate-limit delays are large (>60s); inter-cycle delays are small
+        if (ms > 60000) {
+          // First rate-limit delay: advance only 30s (simulate watchdog wake)
+          if (delayLog.filter(d => d > 60000).length === 1) {
+            deps.clock.advance(30_000);
+            return;
+          }
+          // Subsequent rate-limit delays: advance past the rate limit
+          deps.clock.advance(ms);
+          return;
+        }
+        // Inter-cycle delay: advance clock, stop after a few cycles
+        deps.clock.advance(ms);
+        cycleCount++;
+        if (cycleCount > 3) {
+          orchestrator!.stop();
+        }
+      },
+      wake: () => {},
+    };
+
+    const eventSink = new InMemoryEventSink();
+    const config = defaultLoopConfig({ maxConsecutiveIdleCycles: 3 });
+    orchestrator = new LoopOrchestrator(
+      deps.ego, deps.subconscious, deps.superego, deps.id,
+      deps.appendWriter, deps.clock, timer, eventSink,
+      config, new InMemoryLogger()
+    );
+
+    orchestrator.start();
+    await orchestrator.runLoop();
+
+    // The rate limit backoff should produce TWO large delays:
+    // 1. Initial backoff (woken early after 30s)
+    // 2. Re-sleep for remaining time
+    const rateLimitDelays = delayLog.filter(d => d > 60000);
+    expect(rateLimitDelays.length).toBeGreaterThanOrEqual(2);
+
+    // Second delay should be less than the first (remaining time after 30s advance)
+    expect(rateLimitDelays[1]).toBeLessThan(rateLimitDelays[0]);
+  });
+});
+
 describe("LoopOrchestrator: setRateLimitUntil (disk restore)", () => {
   let orchestrator: LoopOrchestrator | null = null;
 

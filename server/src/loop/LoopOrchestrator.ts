@@ -510,10 +510,26 @@ export class LoopOrchestrator implements IMessageInjector {
         });
         await this.timer.delay(waitMs);
       }
-      this.rateLimitUntil = null;
+      if (this.rateLimitUntil && new Date(this.rateLimitUntil).getTime() <= this.clock.now().getTime()) {
+        this.rateLimitUntil = null;
+      }
     }
 
     while (this.state === LoopState.RUNNING) {
+      // Guard: if still rate limited (timer was woken early), re-sleep for remaining duration
+      if (this.rateLimitUntil) {
+        const remaining = new Date(this.rateLimitUntil).getTime() - this.clock.now().getTime();
+        if (remaining > 0) {
+          this.logger.debug(`runLoop: still rate limited — re-sleeping ${remaining}ms until ${this.rateLimitUntil}`);
+          await this.timer.delay(remaining);
+          if (this.rateLimitUntil && new Date(this.rateLimitUntil).getTime() <= this.clock.now().getTime()) {
+            this.rateLimitUntil = null;
+          }
+          continue;
+        }
+        this.rateLimitUntil = null;
+      }
+
       const cycleResult = await this.runOneCycle();
 
       if (this.metrics.consecutiveIdleCycles >= this.config.maxConsecutiveIdleCycles) {
@@ -565,7 +581,12 @@ export class LoopOrchestrator implements IMessageInjector {
           data: { rateLimitUntil: this.rateLimitUntil, waitMs },
         });
         await this.timer.delay(waitMs);
-        this.rateLimitUntil = null;
+        // Only clear rate limit if the backoff period has actually elapsed.
+        // timer.wake() can resolve early (e.g. from Agora messages or watchdog),
+        // and we must NOT clear the rate limit prematurely or we'll waste API calls.
+        if (this.rateLimitUntil && new Date(this.rateLimitUntil).getTime() <= this.clock.now().getTime()) {
+          this.rateLimitUntil = null;
+        }
       } else {
         // Skip the inter-cycle delay when messages are already waiting — process them immediately.
         if (this.pendingMessages.length > 0) {

@@ -14,4 +14,8 @@ export class FixedClock implements IClock {
   setNow(date: Date): void {
     this.date = date;
   }
+
+  advance(ms: number): void {
+    this.date = new Date(this.date.getTime() + ms);
+  }
 }
