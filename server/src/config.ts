@@ -74,6 +74,7 @@ const AppConfigSchema = z
     shutdownGraceMs: z.number().min(0).optional(),
     logLevel: z.enum(["info", "debug"]).optional(),
     apiToken: z.string().optional(),
+    enableFileReadCache: z.boolean().optional(),
   })
   .refine(
     (data) =>
@@ -169,6 +170,8 @@ export interface AppConfig {
   logLevel?: "info" | "debug";
   /** When set, all /api/* and /mcp requests must include Authorization: Bearer <apiToken> */
   apiToken?: string;
+  /** When false, disables the mtime-based file read cache (default: true — cache enabled). */
+  enableFileReadCache?: boolean;
   /** Configuration for the loop watchdog that detects stalls and injects reminders */
   watchdog?: {
     /** Disable the watchdog entirely (default: false) */
@@ -332,6 +335,7 @@ export async function resolveConfig(
     shutdownGraceMs: fileConfig.shutdownGraceMs ?? defaults.shutdownGraceMs,
     logLevel: (fileConfig.logLevel ?? defaults.logLevel) as "info" | "debug",
     apiToken: fileConfig.apiToken,
+    enableFileReadCache: fileConfig.enableFileReadCache,
     watchdog: fileConfig.watchdog
       ? {
           disabled: fileConfig.watchdog.disabled ?? false,

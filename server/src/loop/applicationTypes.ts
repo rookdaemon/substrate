@@ -67,6 +67,8 @@ export interface ApplicationConfig {
   logLevel?: "info" | "debug";
   /** When set, all /api/* and /mcp requests must include Authorization: Bearer <apiToken> */
   apiToken?: string;
+  /** When false, disables the mtime-based file read cache (default: true — cache enabled). */
+  enableFileReadCache?: boolean;
   /** Configuration for the loop watchdog that detects stalls and injects reminders */
   watchdog?: {
     /** Disable the watchdog entirely (default: false) */

@@ -13,10 +13,11 @@ export class InMemoryFileSystem implements IFileSystem {
   private files = new Map<string, FileEntry>();
   private dirs = new Set<string>();
   private dirMeta = new Map<string, DirEntry>();
+  private nextMtime = Date.now();
 
   constructor() {
     this.dirs.add("/");
-    this.dirMeta.set("/", { mtimeMs: Date.now() });
+    this.dirMeta.set("/", { mtimeMs: this.nextMtime++ });
   }
 
   async readFile(path: string): Promise<string> {
@@ -28,16 +29,16 @@ export class InMemoryFileSystem implements IFileSystem {
   }
 
   async writeFile(path: string, content: string): Promise<void> {
-    this.files.set(path, { content, mtimeMs: Date.now() });
+    this.files.set(path, { content, mtimeMs: this.nextMtime++ });
   }
 
   async appendFile(path: string, content: string): Promise<void> {
     const existing = this.files.get(path);
     if (existing) {
       existing.content += content;
-      existing.mtimeMs = Date.now();
+      existing.mtimeMs = this.nextMtime++;
     } else {
-      this.files.set(path, { content, mtimeMs: Date.now() });
+      this.files.set(path, { content, mtimeMs: this.nextMtime++ });
     }
   }
 
@@ -53,7 +54,7 @@ export class InMemoryFileSystem implements IFileSystem {
         current += "/" + part;
         if (!this.dirs.has(current)) {
           this.dirs.add(current);
-          this.dirMeta.set(current, { mtimeMs: Date.now() });
+          this.dirMeta.set(current, { mtimeMs: this.nextMtime++ });
         }
       }
     } else {
@@ -62,7 +63,7 @@ export class InMemoryFileSystem implements IFileSystem {
         throw new Error(`ENOENT: no such directory '${parent}'`);
       }
       this.dirs.add(path);
-      this.dirMeta.set(path, { mtimeMs: Date.now() });
+      this.dirMeta.set(path, { mtimeMs: this.nextMtime++ });
     }
   }
 
@@ -113,7 +114,7 @@ export class InMemoryFileSystem implements IFileSystem {
     if (!entry) {
       throw new Error(`ENOENT: no such file '${src}'`);
     }
-    this.files.set(dest, { content: entry.content, mtimeMs: Date.now() });
+    this.files.set(dest, { content: entry.content, mtimeMs: this.nextMtime++ });
   }
 
   async unlink(path: string): Promise<void> {

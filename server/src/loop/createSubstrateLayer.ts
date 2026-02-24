@@ -32,15 +32,16 @@ export interface SubstrateLayerResult {
  */
 export async function createSubstrateLayer(
   substratePath: string,
-  logLevel?: LogLevel
+  logLevel?: LogLevel,
+  enableFileReadCache = true
 ): Promise<SubstrateLayerResult> {
   const fs = new NodeFileSystem();
   const clock = new SystemClock();
   const substrateConfig = new SubstrateConfig(substratePath);
-  const reader = new SubstrateFileReader(fs, substrateConfig);
+  const reader = new SubstrateFileReader(fs, substrateConfig, enableFileReadCache);
   const lock = new FileLock();
-  const writer = new SubstrateFileWriter(fs, substrateConfig, lock);
-  const appendWriter = new AppendOnlyWriter(fs, substrateConfig, lock, clock);
+  const writer = new SubstrateFileWriter(fs, substrateConfig, lock, reader);
+  const appendWriter = new AppendOnlyWriter(fs, substrateConfig, lock, clock, reader);
 
   // Meta — session identity (name, fullName, birthdate) stored in meta.json
   const metaManager = new MetaManager(fs, clock, substratePath);

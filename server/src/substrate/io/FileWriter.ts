@@ -3,12 +3,14 @@ import { SubstrateConfig } from "../config";
 import { SubstrateFileType, SUBSTRATE_FILE_SPECS, WriteMode } from "../types";
 import { validateSubstrateContent } from "../validation/validators";
 import { FileLock } from "./FileLock";
+import { SubstrateFileReader } from "./FileReader";
 
 export class SubstrateFileWriter {
   constructor(
     private readonly fs: IFileSystem,
     private readonly config: SubstrateConfig,
-    private readonly lock: FileLock
+    private readonly lock: FileLock,
+    private readonly reader?: SubstrateFileReader
   ) {}
 
   async write(fileType: SubstrateFileType, content: string): Promise<void> {
@@ -37,6 +39,7 @@ export class SubstrateFileWriter {
     try {
       const filePath = this.config.getFilePath(fileType);
       await this.fs.writeFile(filePath, contentToWrite);
+      this.reader?.invalidate(filePath);
     } finally {
       release();
     }

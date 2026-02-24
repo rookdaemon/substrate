@@ -196,6 +196,11 @@ export class LoopHttpServer {
         this.json(res, 200, this.orc.getMetrics());
         break;
 
+      case "GET /api/metrics":
+        this.json(res, 200, {
+          fileCache: this.reader ? this.reader.getMetrics() : { cacheHits: 0, cacheMisses: 0 },
+        });
+        break;
       case "POST /api/loop/start":
         this.tryStateTransition(res, () => {
           const previousState = this.orc.getState();
