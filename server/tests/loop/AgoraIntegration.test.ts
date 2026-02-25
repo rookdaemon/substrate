@@ -212,7 +212,7 @@ describe("Agora Message Integration", () => {
     warnServer.setOrchestrator(orchestrator);
     warnServer.setAgoraMessageHandler(agoraMessageHandler, agoraService);
     warnServer.setLogger(logger);
-    const port = await warnServer.listen(0);
+    await warnServer.listen(0);
 
     const warnings = logger.getWarnEntries();
     expect(warnings).toHaveLength(1);
@@ -244,7 +244,7 @@ describe("Agora Message Integration", () => {
     noAgoraServer.setOrchestrator(orchestrator);
     noAgoraServer.setLogger(logger);
     // NOTE: setAgoraMessageHandler is NOT called
-    const port = await noAgoraServer.listen(0);
+    await noAgoraServer.listen(0);
 
     expect(logger.getWarnEntries()).toHaveLength(0);
 
