@@ -684,7 +684,7 @@ export class LoopOrchestrator implements IMessageInjector {
   async runTickLoop(): Promise<void> {
     this.logger.debug("runTickLoop() entered");
     while (this.state === LoopState.RUNNING) {
-      const result = await this.runOneTick();
+      await this.runOneTick();
 
       if (this.state !== LoopState.RUNNING) {
         this.logger.debug(`runTickLoop: exiting — state is ${this.state}`);
