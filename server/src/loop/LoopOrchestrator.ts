@@ -184,7 +184,7 @@ export class LoopOrchestrator implements IMessageInjector {
     this.transition(LoopState.RUNNING);
   }
 
-  stop(): void {
+  stop(userInitiated = false): void {
     if (this.state === LoopState.STOPPED) {
       return;
     }
@@ -195,7 +195,7 @@ export class LoopOrchestrator implements IMessageInjector {
       this.onSleepExit?.().catch(() => {});
     }
     this.transition(LoopState.STOPPED);
-    if (this.shutdownFn) {
+    if (this.shutdownFn && userInitiated) {
       this.shutdownFn(76); // Exit with code 76 (user-initiated stop — supervisor restarts without auto-start)
     }
   }
@@ -547,12 +547,8 @@ export class LoopOrchestrator implements IMessageInjector {
             continue;
           }
         }
-        this.logger.debug("runLoop: stopping — idle threshold exceeded with no plan created");
-        if (this.config.idleSleepEnabled) {
-          this.enterSleep();
-        } else {
-          this.stop();
-        }
+        this.logger.debug("runLoop: idle threshold exceeded with no plan created — sleeping");
+        this.enterSleep();
         break;
       }
 
@@ -684,7 +680,7 @@ export class LoopOrchestrator implements IMessageInjector {
   async runTickLoop(): Promise<void> {
     this.logger.debug("runTickLoop() entered");
     while (this.state === LoopState.RUNNING) {
-      const result = await this.runOneTick();
+      await this.runOneTick();
 
       if (this.state !== LoopState.RUNNING) {
         this.logger.debug(`runTickLoop: exiting — state is ${this.state}`);

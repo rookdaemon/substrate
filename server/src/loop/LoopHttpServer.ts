@@ -17,12 +17,17 @@ import { DelegationTracker } from "../evaluation/DelegationTracker";
 import { TinyBus } from "../tinybus/core/TinyBus";
 import { createMessage } from "../tinybus/core/Message";
 import { createTinyBusMcpServer } from "../mcp/TinyBusMcpServer";
+import { addCodeDispatchTools } from "../mcp/CodeDispatchMcpServer";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import type { CodeDispatcher } from "../code-dispatch/CodeDispatcher";
 import { AgoraMessageHandler } from "../agora/AgoraMessageHandler";
 import { IAgoraService } from "../agora/IAgoraService";
 import type { ILogger } from "../logging";
 import { getVersionInfo } from "../version";
 import { SubstrateMeta } from "../substrate/MetaManager";
+
+/** Maximum allowed HTTP request body size (1 MiB). Requests exceeding this limit receive HTTP 413. */
+const MAX_BODY_BYTES = 1 * 1024 * 1024;
 
 // Lazy singleton for the ESM-only @rookdaemon/agora module.
 // Imported once on first use and cached for all subsequent calls.
@@ -58,6 +63,7 @@ export class LoopHttpServer {
   private sizeTracker: SubstrateSizeTracker | null = null;
   private delegationTracker: DelegationTracker | null = null;
   private tinyBus: TinyBus | null = null;
+  private codeDispatcher: CodeDispatcher | null = null;
   private meta: SubstrateMeta | null = null;
   private apiToken: string | null = null;
   private readonly agoraWebhookToken: string | undefined;
@@ -129,6 +135,10 @@ export class LoopHttpServer {
     this.tinyBus = tinyBus;
   }
 
+  setCodeDispatcher(dispatcher: CodeDispatcher): void {
+    this.codeDispatcher = dispatcher;
+  }
+
   setMeta(meta: SubstrateMeta | null): void {
     this.meta = meta;
   }
@@ -138,6 +148,11 @@ export class LoopHttpServer {
   }
 
   listen(port: number): Promise<number> {
+    if (this.agoraMessageHandler && !this.agoraWebhookToken) {
+      this.logger?.warn(
+        "[AGORA] AGORA_WEBHOOK_TOKEN not configured — webhook endpoint relies on Ed25519 signature verification only"
+      );
+    }
     return new Promise((resolve) => {
       this.server.listen(port, "127.0.0.1", () => {
         const addr = this.server.address();
@@ -248,7 +263,7 @@ export class LoopHttpServer {
           this.json(res, 200, { state: LoopState.STOPPED, message: "Stopping gracefully" });
           // Use setImmediate to ensure response is sent before process exits
           setImmediate(() => {
-            this.orc.stop();
+            this.orc.stop(true); // user-initiated: suppress auto-start on restart
           });
         } catch (err) {
           const message = err instanceof Error ? err.message : "Unknown error";
@@ -314,6 +329,9 @@ export class LoopHttpServer {
   private async handleMcpRequest(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
     try {
       const mcpServer = createTinyBusMcpServer({ tinyBus: this.tinyBus!, agoraService: this.agoraService });
+      if (this.codeDispatcher) {
+        addCodeDispatchTools(mcpServer, this.codeDispatcher);
+      }
       const transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: undefined, // Stateless mode
       });
@@ -360,8 +378,20 @@ export class LoopHttpServer {
     }
 
     let body = "";
-    req.on("data", (chunk: Buffer) => { body += chunk.toString(); });
+    let bodyBytes = 0;
+    let aborted = false;
+    req.on("data", (chunk: Buffer) => {
+      bodyBytes += chunk.byteLength;
+      if (bodyBytes > MAX_BODY_BYTES) {
+        aborted = true;
+        this.json(res, 413, { error: "Request body too large" });
+        req.destroy();
+        return;
+      }
+      body += chunk.toString();
+    });
     req.on("end", () => {
+      if (aborted) return;
       let parsed: { message?: string };
       try {
         parsed = JSON.parse(body);
@@ -694,8 +724,20 @@ export class LoopHttpServer {
     }
 
     let body = "";
-    req.on("data", (chunk: Buffer) => { body += chunk.toString(); });
+    let bodyBytes = 0;
+    let aborted = false;
+    req.on("data", (chunk: Buffer) => {
+      bodyBytes += chunk.byteLength;
+      if (bodyBytes > MAX_BODY_BYTES) {
+        aborted = true;
+        this.json(res, 413, { error: "Request body too large" });
+        req.destroy();
+        return;
+      }
+      body += chunk.toString();
+    });
     req.on("end", async () => {
+      if (aborted) return;
       this.logger?.debug(`[AGORA] Webhook received: bodyLength=${body.length}`);
       
       let parsed: { message?: string };

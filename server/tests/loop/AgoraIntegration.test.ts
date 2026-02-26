@@ -15,7 +15,7 @@ import { PermissionChecker } from "../../src/agents/permissions";
 import { ConversationCompactor } from "../../src/conversation/ConversationCompactor";
 import { ISessionLauncher } from "../../src/agents/claude/ISessionLauncher";
 import { LoopState } from "../../src/loop/types";
-import type { ILogger } from "../../src/logging";
+import { InMemoryLogger } from "../../src/logging";
 import * as http from "http";
 
 describe("Agora Message Integration", () => {
@@ -30,6 +30,7 @@ describe("Agora Message Integration", () => {
   let appendWriter: AppendOnlyWriter;
   let conversationManager: ConversationManager;
   let injectedMessages: string[];
+  let logger: InMemoryLogger;
 
   const testAgoraConfig: AgoraServiceConfig = {
     identity: {
@@ -108,14 +109,7 @@ describe("Agora Message Integration", () => {
     };
 
     // Create logger mock
-    const logger: ILogger = {
-      debug: () => {
-        /* no-op for testing */
-      },
-      verbose: () => {
-        /* no-op for testing */
-      },
-    };
+    logger = new InMemoryLogger();
 
     // Create AgoraMessageHandler
     agoraMessageHandler = new AgoraMessageHandler(
@@ -210,6 +204,51 @@ describe("Agora Message Integration", () => {
     expect(decodeInboundSpy).toHaveBeenCalledTimes(1);
 
     await httpServer.close();
+  });
+
+  it("should emit warn log on listen when Agora configured but AGORA_WEBHOOK_TOKEN is not set", async () => {
+    delete process.env.AGORA_WEBHOOK_TOKEN;
+    const warnServer = new LoopHttpServer();
+    warnServer.setOrchestrator(orchestrator);
+    warnServer.setAgoraMessageHandler(agoraMessageHandler, agoraService);
+    warnServer.setLogger(logger);
+    await warnServer.listen(0);
+
+    const warnings = logger.getWarnEntries();
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("[AGORA]");
+    expect(warnings[0]).toContain("AGORA_WEBHOOK_TOKEN not configured");
+    expect(warnings[0]).toContain("Ed25519");
+
+    await warnServer.close();
+  });
+
+  it("should not emit warn log on listen when AGORA_WEBHOOK_TOKEN is set", async () => {
+    process.env.AGORA_WEBHOOK_TOKEN = "secret-token";
+    const warnServer = new LoopHttpServer();
+    warnServer.setOrchestrator(orchestrator);
+    warnServer.setAgoraMessageHandler(agoraMessageHandler, agoraService);
+    warnServer.setLogger(logger);
+    try {
+      await warnServer.listen(0);
+      expect(logger.getWarnEntries()).toHaveLength(0);
+    } finally {
+      delete process.env.AGORA_WEBHOOK_TOKEN;
+      await warnServer.close();
+    }
+  });
+
+  it("should not emit warn log on listen when Agora is not configured", async () => {
+    delete process.env.AGORA_WEBHOOK_TOKEN;
+    const noAgoraServer = new LoopHttpServer();
+    noAgoraServer.setOrchestrator(orchestrator);
+    noAgoraServer.setLogger(logger);
+    // NOTE: setAgoraMessageHandler is NOT called
+    await noAgoraServer.listen(0);
+
+    expect(logger.getWarnEntries()).toHaveLength(0);
+
+    await noAgoraServer.close();
   });
 
   it("should accept webhook with correct token when AGORA_WEBHOOK_TOKEN is set", async () => {

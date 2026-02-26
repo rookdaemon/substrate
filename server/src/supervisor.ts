@@ -4,7 +4,7 @@
  * Spawns `node dist/cli.js start` (optionally with --forceStart). The server only honors the flag:
  * when --forceStart is present it always auto-starts the loop; it does not read config for that.
  * This loop uses isFirstTime and config to decide whether to add --forceStart:
- * - First run: add --forceStart iff autoStartOnFirstRun is true (default false).
+ * - First run: add --forceStart iff autoStartOnFirstRun is true (default true).
  * - After restart (exit 75): add --forceStart iff autoStartAfterRestart is true (default true).
  * - After user stop (exit 76): restart without --forceStart (auto-start suppressed).
  * - Any other exit code: propagate (clean exit; no restart).
@@ -47,6 +47,38 @@ function run(cmd: string, args: string[], cwd: string): Promise<number> {
     const child = spawn(cmd, args, { stdio: "inherit", cwd });
     child.on("exit", (code) => resolve(code ?? 1));
     child.on("error", () => resolve(1));
+  });
+}
+
+/**
+ * Spawn a process and concurrently poll its health endpoint.
+ * The health check runs while the server is alive — not after it exits.
+ * If unhealthy, the server process is killed so the caller can handle rollback.
+ */
+async function runWithHealthCheck(
+  cmd: string,
+  args: string[],
+  cwd: string,
+  port: number,
+): Promise<{ exitCode: number; healthy: boolean; healthBody: unknown }> {
+  return new Promise((resolve) => {
+    const child = spawn(cmd, args, { stdio: "inherit", cwd });
+    let healthy = false;
+    let healthBody: unknown;
+
+    // Health check runs concurrently while the server starts up
+    waitForHealthy(port).then(({ healthy: h, body }) => {
+      healthy = h;
+      healthBody = body;
+      if (!h) {
+        child.kill(); // Kill unhealthy server — caller handles rollback
+      }
+    }).catch(() => {
+      child.kill();
+    });
+
+    child.on("exit", (code) => resolve({ exitCode: code ?? 1, healthy, healthBody }));
+    child.on("error", () => resolve({ exitCode: 1, healthy: false, healthBody }));
   });
 }
 
@@ -116,6 +148,8 @@ async function main(): Promise<void> {
   let consecutiveFailures = 0;
   let currentRetryDelay = INITIAL_RETRY_DELAY_MS;
   let consecutiveUnhealthyRestarts = 0;
+  // Set after a successful build: health-check the next server start concurrently
+  let pendingHealthCheck = false;
 
   for (;;) {
     const config = await resolveConfig(env, resolveOptions);
@@ -128,51 +162,18 @@ async function main(): Promise<void> {
     const startArgs = [cliPath, "start"];
     if (useForceStart) startArgs.push("--forceStart");
 
-    const exitCode = await run("node", startArgs, SERVER_DIR);
+    let exitCode: number;
 
-    if (exitCode === STOP_EXIT_CODE) {
-      // User-initiated stop: restart without auto-start, skip rebuild
-      console.log("[supervisor] User stop (exit code 76) — restarting without auto-start");
-      suppressAutoStart = true;
-      isFirstTime = false;
-      continue;
-    }
+    if (pendingHealthCheck) {
+      // Spawn the new server and health-check it concurrently while it's running.
+      // This is the correct place for the health check — not after the server has already exited.
+      pendingHealthCheck = false;
+      const { exitCode: ec, healthy, healthBody } = await runWithHealthCheck(
+        "node", startArgs, SERVER_DIR, config.port ?? 3000
+      );
 
-    if (exitCode !== RESTART_EXIT_CODE) {
-      process.exit(exitCode);
-    }
-
-    isFirstTime = false;
-    console.log("[supervisor] Restart requested (exit code 75) — rebuilding...");
-
-    const buildCode = await run("npx", ["tsc"], SERVER_DIR);
-    if (buildCode !== 0) {
-      consecutiveFailures++;
-      if (consecutiveFailures >= MAX_BUILD_RETRIES) {
-        console.error(`[supervisor] Build failed ${consecutiveFailures} times, giving up`);
-        process.exit(1);
-      }
-      // Log with current delay, then wait and update for next iteration
-      console.error(`[supervisor] Build failed (attempt ${consecutiveFailures}/${MAX_BUILD_RETRIES}), retrying in ${currentRetryDelay / 1000}s...`);
-      await new Promise((r) => setTimeout(r, currentRetryDelay));
-      currentRetryDelay = Math.min(currentRetryDelay * BACKOFF_MULTIPLIER, MAX_RETRY_DELAY_MS);
-    } else {
-      consecutiveFailures = 0;
-      currentRetryDelay = INITIAL_RETRY_DELAY_MS;
-      const skipGates = process.argv.includes("--skip-safety-gates");
-      if (!skipGates) {
-        const safeToRestart = await validateRestartSafety(SERVER_DIR, config.workingDirectory, env.fs);
-        if (!safeToRestart) {
-          console.error("[supervisor] Restart aborted due to failed safety gates");
-          process.exit(1);
-        }
-      }
-      console.log("[supervisor] Build succeeded — restarting server");
-
-      const { healthy, body: healthBody } = await waitForHealthy(config.port);
       if (healthy) {
         consecutiveUnhealthyRestarts = 0;
-        // Tag current commit as last-known-good
         await run("git", ["tag", "-f", "last-known-good"], SERVER_DIR);
         console.log("[supervisor] Server is healthy — tagged current commit as last-known-good");
       } else {
@@ -209,7 +210,59 @@ async function main(): Promise<void> {
           consecutiveUnhealthyRestarts = 0;
           console.log("[supervisor] Rollback build succeeded — restarting with last-known-good version");
         }
+
+        // Server was killed (unhealthy) — don't propagate its exit code; restart cleanly
+        pendingHealthCheck = true;
+        continue;
       }
+
+      exitCode = ec;
+    } else {
+      exitCode = await run("node", startArgs, SERVER_DIR);
+    }
+
+    if (exitCode === STOP_EXIT_CODE) {
+      // User-initiated stop: restart without auto-start, skip rebuild
+      console.log("[supervisor] User stop (exit code 76) — restarting without auto-start");
+      suppressAutoStart = true;
+      isFirstTime = false;
+      continue;
+    }
+
+    if (exitCode !== RESTART_EXIT_CODE) {
+      process.exit(exitCode);
+    }
+
+    isFirstTime = false;
+    console.log("[supervisor] Restart requested (exit code 75) — rebuilding...");
+
+    // IMPORTANT: Use npm run build (tsup), not npx tsc directly.
+    // Raw tsc fails with TS2835 (missing .js extensions) and produces different output than tsup.
+    const buildCode = await run("npm", ["run", "build"], SERVER_DIR);
+    if (buildCode !== 0) {
+      consecutiveFailures++;
+      if (consecutiveFailures >= MAX_BUILD_RETRIES) {
+        console.error(`[supervisor] Build failed ${consecutiveFailures} times, giving up`);
+        process.exit(1);
+      }
+      // Log with current delay, then wait and update for next iteration
+      console.error(`[supervisor] Build failed (attempt ${consecutiveFailures}/${MAX_BUILD_RETRIES}), retrying in ${currentRetryDelay / 1000}s...`);
+      await new Promise((r) => setTimeout(r, currentRetryDelay));
+      currentRetryDelay = Math.min(currentRetryDelay * BACKOFF_MULTIPLIER, MAX_RETRY_DELAY_MS);
+    } else {
+      consecutiveFailures = 0;
+      currentRetryDelay = INITIAL_RETRY_DELAY_MS;
+      const skipGates = process.argv.includes("--skip-safety-gates");
+      if (!skipGates) {
+        const safeToRestart = await validateRestartSafety(SERVER_DIR, config.workingDirectory, env.fs);
+        if (!safeToRestart) {
+          console.error("[supervisor] Restart aborted due to failed safety gates");
+          process.exit(1);
+        }
+      }
+      console.log("[supervisor] Build succeeded — restarting server");
+      // Health check deferred: will run concurrently on the next server spawn
+      pendingHealthCheck = true;
     }
   }
 }

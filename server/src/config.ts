@@ -76,6 +76,8 @@ const AppConfigSchema = z
     apiToken: z.string().optional(),
     enableFileReadCache: z.boolean().optional(),
     progressMaxBytes: z.number().int().min(1).optional(),
+    sessionLauncher: z.enum(["claude", "gemini"]).optional(),
+    defaultCodeBackend: z.enum(["claude", "copilot", "gemini", "auto"]).optional(),
   })
   .refine(
     (data) =>
@@ -175,6 +177,10 @@ export interface AppConfig {
   enableFileReadCache?: boolean;
   /** Maximum size of PROGRESS.md in bytes before rotation (default: 512 * 1024 = 512 KB). */
   progressMaxBytes?: number;
+  /** Which session launcher to use for agent reasoning sessions (default: "claude"). */
+  sessionLauncher?: "claude" | "gemini";
+  /** Default code backend to use for code dispatch tasks (default: "claude"). */
+  defaultCodeBackend?: "claude" | "copilot" | "gemini" | "auto";
   /** Configuration for the loop watchdog that detects stalls and injects reminders */
   watchdog?: {
     /** Disable the watchdog entirely (default: false) */
@@ -216,7 +222,7 @@ export async function resolveConfig(
     strategicModel: "opus",
     tacticalModel: "sonnet",
     mode: "cycle",
-    autoStartOnFirstRun: false,
+    autoStartOnFirstRun: true,
     autoStartAfterRestart: true,
     backupRetentionCount: 14,
     superegoAuditInterval: 50,
@@ -251,6 +257,8 @@ export async function resolveConfig(
     shutdownGraceMs: 5000,
     logLevel: "info",
     progressMaxBytes: 512 * 1024,
+    sessionLauncher: "claude",
+    defaultCodeBackend: "auto",
   };
 
   let fileConfig: Partial<AppConfig> = {};
@@ -343,6 +351,8 @@ export async function resolveConfig(
     apiToken: fileConfig.apiToken,
     enableFileReadCache: fileConfig.enableFileReadCache,
     progressMaxBytes: fileConfig.progressMaxBytes ?? defaults.progressMaxBytes,
+    sessionLauncher: fileConfig.sessionLauncher ?? defaults.sessionLauncher,
+    defaultCodeBackend: fileConfig.defaultCodeBackend ?? defaults.defaultCodeBackend,
     watchdog: fileConfig.watchdog
       ? {
           disabled: fileConfig.watchdog.disabled ?? false,

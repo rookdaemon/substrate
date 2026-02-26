@@ -2,8 +2,10 @@ import * as path from "path";
 import { PermissionChecker } from "../agents/permissions";
 import { PromptBuilder } from "../agents/prompts/PromptBuilder";
 import { AgentSdkLauncher, SdkQueryFn } from "../agents/claude/AgentSdkLauncher";
+import { GeminiSessionLauncher } from "../agents/gemini/GeminiSessionLauncher";
 import { ProcessTracker, ProcessTrackerConfig } from "../agents/claude/ProcessTracker";
 import { NodeProcessKiller } from "../agents/claude/NodeProcessKiller";
+import { NodeProcessRunner } from "../agents/claude/NodeProcessRunner";
 import { ApiSemaphore } from "../agents/claude/ApiSemaphore";
 import { SemaphoreSessionLauncher } from "../agents/claude/SemaphoreSessionLauncher";
 import { ISessionLauncher } from "../agents/claude/ISessionLauncher";
@@ -72,13 +74,23 @@ export async function createAgentLayer(
   const mcpUrl = `http://localhost:${config.httpPort ?? DEFAULT_HTTP_PORT}/mcp`;
   const mcpServers = {
     tinybus: { type: "http" as const, url: mcpUrl },
+    code_dispatch: { type: "http" as const, url: mcpUrl },
   };
-  logger.debug(`agent-layer: MCP servers configured: tinybus → ${mcpUrl}`);
+  logger.debug(`agent-layer: MCP servers configured: tinybus → ${mcpUrl}, code_dispatch → ${mcpUrl}`);
   const launcher = new AgentSdkLauncher(sdkQuery, clock, config.model, logger, processTracker, mcpServers);
 
   // API semaphore — caps concurrent Claude sessions for rate-limit safety
   const apiSemaphore = new ApiSemaphore(config.maxConcurrentSessions ?? 2);
-  const gatedLauncher: ISessionLauncher = new SemaphoreSessionLauncher(launcher, apiSemaphore);
+
+  // Cognitive role launcher — switch to Gemini if configured
+  let gatedLauncher: ISessionLauncher;
+  if (config.sessionLauncher === "gemini") {
+    logger.debug("agent-layer: using GeminiSessionLauncher for cognitive roles");
+    const geminiLauncher = new GeminiSessionLauncher(new NodeProcessRunner(), clock, config.model);
+    gatedLauncher = new SemaphoreSessionLauncher(geminiLauncher, apiSemaphore);
+  } else {
+    gatedLauncher = new SemaphoreSessionLauncher(launcher, apiSemaphore);
+  }
 
   // Metrics collection components
   const taskMetrics = new TaskClassificationMetrics(fs, clock, config.substratePath);

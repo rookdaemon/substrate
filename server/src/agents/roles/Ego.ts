@@ -7,6 +7,7 @@ import { PermissionChecker } from "../permissions";
 import { PromptBuilder } from "../prompts/PromptBuilder";
 import { ISessionLauncher, ProcessLogEntry, LaunchOptions } from "../claude/ISessionLauncher";
 import { PlanParser } from "../parsers/PlanParser";
+import { ShellTriggerEvaluator } from "../parsers/ShellTriggerEvaluator";
 import { extractJson } from "../parsers/extractJson";
 import { AgentRole } from "../types";
 import { TaskClassifier } from "../TaskClassifier";
@@ -23,6 +24,8 @@ export interface DispatchResult {
 }
 
 export class Ego {
+  private readonly triggerEvaluator = new ShellTriggerEvaluator();
+
   constructor(
     private readonly reader: SubstrateFileReader,
     private readonly writer: SubstrateFileWriter,
@@ -133,7 +136,7 @@ export class Ego {
     this.checker.assertCanRead(AgentRole.EGO, SubstrateFileType.PLAN);
     const planContent = await this.reader.read(SubstrateFileType.PLAN);
     const tasks = PlanParser.parseTasks(planContent.rawMarkdown);
-    const next = PlanParser.findNextActionable(tasks);
+    const next = await PlanParser.findNextActionable(tasks, this.triggerEvaluator);
 
     if (!next) return null;
 

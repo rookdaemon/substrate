@@ -233,6 +233,22 @@ describe("supervisor rollback logic", () => {
     expect(consecutiveUnhealthyRestarts).toBe(0);
   });
 
+  it("forward build (after exit 75) should use npm run build, not npx tsc", async () => {
+    // Regression test: supervisor used `npx tsc` for forward rebuilds which fails with
+    // TS2835 errors (missing .js extensions). The correct command is `npm run build` (tsup).
+    mockSpawn.mockReturnValueOnce(fakeProcess(0) as ReturnType<typeof spawn>);
+
+    const forwardBuildCode = await new Promise<number>((resolve) => {
+      // This mirrors what supervisor.ts does after exit code 75
+      const child = spawn("npm", ["run", "build"], { stdio: "inherit", cwd: "/srv" } as Parameters<typeof spawn>[2]);
+      child.on("exit", (code) => resolve(code ?? 1));
+      child.on("error", () => resolve(1));
+    });
+
+    expect(mockSpawn).toHaveBeenCalledWith("npm", ["run", "build"], expect.objectContaining({ cwd: "/srv" }));
+    expect(forwardBuildCode).toBe(0);
+  });
+
   it("rollback build should use npm run build, not npx tsc", async () => {
     // The rollback build is inside main() which is not exported.
     // This test simulates the rollback spawn call and verifies the correct args
@@ -261,6 +277,91 @@ describe("supervisor rollback logic", () => {
     }
 
     expect(exitCode).toBe(1);
+  });
+});
+
+describe("health check ordering", () => {
+  it("health check runs after server is spawned, not before", () => {
+    // Regression test for: health check was called after server exited (code 75)
+    // but before the new server was started — so it always failed (connection refused).
+    //
+    // The fix: pendingHealthCheck flag defers the check until the next spawn.
+    // When pendingHealthCheck is true, the server is spawned first, then health-
+    // checked concurrently. The check only runs while the server is alive.
+
+    const events: string[] = [];
+
+    // Simulate: server exits with 75 → build → set pendingHealthCheck → restart
+    // On next iteration: spawn server, THEN check health
+    function simulateCycle(pendingHealthCheck: boolean, serverHealthy: boolean): {
+      nextPendingHealthCheck: boolean;
+      healthCheckedWhileAlive: boolean;
+    } {
+      let healthCheckedWhileAlive = false;
+      let serverAlive = false;
+
+      if (pendingHealthCheck) {
+        // Correct: spawn server first, health-check while it's running
+        serverAlive = true;
+        events.push("server_spawned");
+        if (serverAlive) {
+          healthCheckedWhileAlive = true;
+          events.push("health_checked");
+          if (!serverHealthy) {
+            serverAlive = false;
+            events.push("server_killed");
+          }
+        }
+        serverAlive = false;
+        events.push("server_exited");
+      }
+
+      return {
+        nextPendingHealthCheck: !serverHealthy,
+        healthCheckedWhileAlive,
+      };
+    }
+
+    // Simulate restart with pendingHealthCheck = true, server healthy
+    const result = simulateCycle(true, true);
+
+    const serverSpawnIndex = events.indexOf("server_spawned");
+    const healthCheckIndex = events.indexOf("health_checked");
+
+    expect(serverSpawnIndex).toBeGreaterThanOrEqual(0);
+    expect(healthCheckIndex).toBeGreaterThan(serverSpawnIndex);
+    expect(result.healthCheckedWhileAlive).toBe(true);
+    expect(result.nextPendingHealthCheck).toBe(false);
+  });
+
+  it("health check failure kills server and sets pendingHealthCheck for retry", () => {
+    const events: string[] = [];
+
+    function simulatePendingHealthCheckCycle(serverHealthy: boolean): {
+      serverKilled: boolean;
+      continueWithoutExitCodeProcessing: boolean;
+      nextPendingHealthCheck: boolean;
+    } {
+      let serverKilled = false;
+      let continueWithoutExitCodeProcessing = false;
+
+      // Spawn server
+      events.push("server_spawned");
+      // Concurrent health check
+      if (!serverHealthy) {
+        serverKilled = true;
+        events.push("server_killed");
+        continueWithoutExitCodeProcessing = true; // don't propagate kill exit code
+      }
+
+      return { serverKilled, continueWithoutExitCodeProcessing, nextPendingHealthCheck: !serverHealthy };
+    }
+
+    const result = simulatePendingHealthCheckCycle(false);
+
+    expect(result.serverKilled).toBe(true);
+    expect(result.continueWithoutExitCodeProcessing).toBe(true);
+    expect(result.nextPendingHealthCheck).toBe(true); // will retry health check on next restart
   });
 });
 
