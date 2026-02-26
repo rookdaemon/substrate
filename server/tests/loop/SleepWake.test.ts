@@ -248,7 +248,7 @@ describe("LoopOrchestrator: idle sleep in runLoop", () => {
     expect(orchestrator.getState()).toBe(LoopState.SLEEPING);
   });
 
-  it("stops (not sleeps) when idle sleep is disabled", async () => {
+  it("sleeps (not stops) when idle threshold reached even with idleSleepEnabled false", async () => {
     const deps = createDeps();
     await setupIdleSubstrate(deps.fs);
 
@@ -265,8 +265,8 @@ describe("LoopOrchestrator: idle sleep in runLoop", () => {
     orchestrator.start();
     await orchestrator.runLoop();
 
-    // Should be STOPPED not SLEEPING
-    expect(orchestrator.getState()).toBe(LoopState.STOPPED);
+    // Always sleep on idle — stopping requires explicit user action
+    expect(orchestrator.getState()).toBe(LoopState.SLEEPING);
   });
 
   it("emits state_changed with SLEEPING when idle sleep triggers", async () => {

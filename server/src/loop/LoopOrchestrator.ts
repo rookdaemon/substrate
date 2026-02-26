@@ -547,12 +547,8 @@ export class LoopOrchestrator implements IMessageInjector {
             continue;
           }
         }
-        this.logger.debug("runLoop: stopping — idle threshold exceeded with no plan created");
-        if (this.config.idleSleepEnabled) {
-          this.enterSleep();
-        } else {
-          this.stop();
-        }
+        this.logger.debug("runLoop: idle threshold exceeded with no plan created — sleeping");
+        this.enterSleep();
         break;
       }
 
