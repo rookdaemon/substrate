@@ -4,10 +4,11 @@ import type { BackendType } from "./types";
 import type { BackendResult, ICodeBackend, SubstrateSlice } from "./ICodeBackend";
 import { buildPrompt } from "./prompt";
 
-const DEFAULT_MODEL = "claude-sonnet-4-5";
+/** Timeout for copilot invocations in ms (5 minutes — agentic tasks take longer). */
+const COPILOT_TIMEOUT_MS = 5 * 60 * 1000;
 
-export class ClaudeCliBackend implements ICodeBackend {
-  readonly name: BackendType = "claude";
+export class CopilotBackend implements ICodeBackend {
+  readonly name: BackendType = "copilot";
 
   constructor(
     private readonly processRunner: IProcessRunner,
@@ -17,15 +18,16 @@ export class ClaudeCliBackend implements ICodeBackend {
 
   async invoke(spec: string, context: SubstrateSlice): Promise<BackendResult> {
     const prompt = buildPrompt(spec, context);
-    const model = this.model ?? DEFAULT_MODEL;
-
     const startMs = this.clock.now().getTime();
+
+    const args = ["-p", prompt, "--allow-all-tools", "--add-dir", context.cwd];
+    if (this.model) args.push("--model", this.model);
+
     try {
-      const result = await this.processRunner.run(
-        "claude",
-        ["--print", "-p", prompt, "--model", model],
-        { cwd: context.cwd },
-      );
+      const result = await this.processRunner.run("copilot", args, {
+        cwd: context.cwd,
+        timeoutMs: COPILOT_TIMEOUT_MS,
+      });
       return {
         success: result.exitCode === 0,
         output: result.stdout,

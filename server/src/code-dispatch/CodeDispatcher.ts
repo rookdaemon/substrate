@@ -41,8 +41,8 @@ export class CodeDispatcher {
       }
     }
 
-    // 3. Select backend — "auto" defaults to "claude" in Phase 1
-    const backendType: BackendType = task.backend === "auto" || !task.backend ? "claude" : task.backend;
+    // 3. Select backend
+    const backendType = this.selectBackend(task);
     const backend = this.backends.get(backendType);
     if (!backend) {
       return {
@@ -128,6 +128,18 @@ export class CodeDispatcher {
     };
   }
 
+  private selectBackend(task: CodeTask): BackendType {
+    if (task.backend && task.backend !== "auto") return task.backend;
+
+    // Heuristic — use usage data to tune thresholds over time:
+    // Many files or no files listed → prefer copilot (agentic, discovers scope)
+    // Single file listed           → prefer claude (fast, surgical)
+    // No test command              → analysis task, prefer claude
+    if (!task.testCommand) return "claude";
+    if (task.files.length === 1) return "claude";
+    return "copilot";
+  }
+
   private async getChangedFiles(cwd: string): Promise<string[]> {
     try {
       const result = await this.processRunner.run("git", ["diff", "--name-only"], { cwd });
@@ -154,8 +166,9 @@ export class CodeDispatcher {
   private async revertChanges(cwd: string): Promise<void> {
     try {
       await this.processRunner.run("git", ["checkout", "--", "."], { cwd });
-    } catch {
-      // Best-effort revert; ignore errors
-    }
+    } catch { /* best-effort */ }
+    try {
+      await this.processRunner.run("git", ["clean", "-fd"], { cwd });
+    } catch { /* best-effort */ }
   }
 }

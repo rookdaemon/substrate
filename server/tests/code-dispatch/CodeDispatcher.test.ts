@@ -49,6 +49,7 @@ describe("CodeDispatcher", () => {
   let processRunner: InMemoryProcessRunner;
   let clock: FixedClock;
   let claudeBackend: InMemoryCodeBackend;
+  let copilotBackend: InMemoryCodeBackend;
   let dispatcher: CodeDispatcher;
 
   beforeEach(() => {
@@ -56,7 +57,11 @@ describe("CodeDispatcher", () => {
     processRunner = new InMemoryProcessRunner();
     clock = new FixedClock(new Date("2025-01-01T00:00:00Z"));
     claudeBackend = new InMemoryCodeBackend("claude");
-    const backends = new Map<BackendType, ICodeBackend>([["claude", claudeBackend]]);
+    copilotBackend = new InMemoryCodeBackend("copilot");
+    const backends = new Map<BackendType, ICodeBackend>([
+      ["claude", claudeBackend],
+      ["copilot", copilotBackend],
+    ]);
     dispatcher = new CodeDispatcher(fs, processRunner, SUBSTRATE_PATH, backends, clock);
   });
 
@@ -133,6 +138,53 @@ describe("CodeDispatcher", () => {
       expect(result.backendUsed).toBe("claude");
     });
 
+    it("auto with no testCommand routes to 'claude'", async () => {
+      claudeBackend.enqueue(successBackendResult());
+      processRunner.enqueue({ stdout: "", stderr: "", exitCode: 0 }); // git diff
+
+      const result = await dispatcher.dispatch(
+        makeTask({ backend: "auto", testCommand: undefined, files: ["a.ts", "b.ts"] }),
+      );
+      expect(result.backendUsed).toBe("claude");
+      expect(claudeBackend.calls).toHaveLength(1);
+    });
+
+    it("auto with single file + testCommand routes to 'claude'", async () => {
+      claudeBackend.enqueue(successBackendResult());
+      processRunner.enqueue({ stdout: "", stderr: "", exitCode: 0 }); // git diff
+      processRunner.enqueue({ stdout: "", stderr: "", exitCode: 0 }); // test
+
+      const result = await dispatcher.dispatch(
+        makeTask({ backend: "auto", files: ["src/foo.ts"], testCommand: "npm test" }),
+      );
+      expect(result.backendUsed).toBe("claude");
+      expect(claudeBackend.calls).toHaveLength(1);
+    });
+
+    it("auto with multiple files + testCommand routes to 'copilot'", async () => {
+      copilotBackend.enqueue(successBackendResult());
+      processRunner.enqueue({ stdout: "", stderr: "", exitCode: 0 }); // git diff
+      processRunner.enqueue({ stdout: "", stderr: "", exitCode: 0 }); // test
+
+      const result = await dispatcher.dispatch(
+        makeTask({ backend: "auto", files: ["a.ts", "b.ts"], testCommand: "npm test" }),
+      );
+      expect(result.backendUsed).toBe("copilot");
+      expect(copilotBackend.calls).toHaveLength(1);
+    });
+
+    it("auto with no files + testCommand routes to 'copilot' (agentic scope discovery)", async () => {
+      copilotBackend.enqueue(successBackendResult());
+      processRunner.enqueue({ stdout: "", stderr: "", exitCode: 0 }); // git diff
+      processRunner.enqueue({ stdout: "", stderr: "", exitCode: 0 }); // test
+
+      const result = await dispatcher.dispatch(
+        makeTask({ backend: "auto", files: [], testCommand: "npm test" }),
+      );
+      expect(result.backendUsed).toBe("copilot");
+      expect(copilotBackend.calls).toHaveLength(1);
+    });
+
     it("returns error when backend is not registered", async () => {
       const backends = new Map<BackendType, ICodeBackend>(); // empty
       const emptyDispatcher = new CodeDispatcher(fs, processRunner, SUBSTRATE_PATH, backends, clock);
@@ -202,6 +254,7 @@ describe("CodeDispatcher", () => {
       processRunner.enqueue({ stdout: "a.ts", stderr: "", exitCode: 0 }); // git diff
       processRunner.enqueue({ stdout: "", stderr: "FAIL", exitCode: 1 });  // npm test fails
       processRunner.enqueue({ stdout: "", stderr: "", exitCode: 0 });       // git checkout -- .
+      processRunner.enqueue({ stdout: "", stderr: "", exitCode: 0 });       // git clean -fd
 
       const result = await dispatcher.dispatch(makeTask({ testCommand: "npm test" }));
       expect(result.testsPassed).toBe(false);
@@ -215,6 +268,13 @@ describe("CodeDispatcher", () => {
       );
       expect(revertCall).toBeDefined();
       expect(revertCall!.args).toEqual(["checkout", "--", "."]);
+
+      // git clean -fd was also called
+      const cleanCall = calls.find(
+        (c) => c.command === "git" && c.args[0] === "clean"
+      );
+      expect(cleanCall).toBeDefined();
+      expect(cleanCall!.args).toEqual(["clean", "-fd"]);
     });
 
     it("passes cwd to test command", async () => {
