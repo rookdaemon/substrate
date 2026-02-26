@@ -1,4 +1,4 @@
-export type BackendType = "copilot" | "claude" | "auto";
+export type BackendType = "copilot" | "claude" | "gemini" | "auto";
 
 export interface CodeTask {
   spec: string;

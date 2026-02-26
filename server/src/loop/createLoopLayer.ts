@@ -34,6 +34,7 @@ import { SubstrateFileType } from "../substrate/types";
 import { CodeDispatcher } from "../code-dispatch/CodeDispatcher";
 import { ClaudeCliBackend } from "../code-dispatch/ClaudeCliBackend";
 import { CopilotBackend } from "../code-dispatch/CopilotBackend";
+import { GeminiCliBackend } from "../code-dispatch/GeminiCliBackend";
 import type { BackendType } from "../code-dispatch/types";
 import type { ICodeBackend } from "../code-dispatch/ICodeBackend";
 import type { SdkQueryFn } from "../agents/claude/AgentSdkLauncher";
@@ -275,8 +276,10 @@ export async function createLoopLayer(
   const codeBackends = new Map<BackendType, ICodeBackend>([
     ["claude", new ClaudeCliBackend(codeDispatchRunner, clock, config.tacticalModel)],
     ["copilot", new CopilotBackend(codeDispatchRunner, clock)],
+    ["gemini", new GeminiCliBackend(codeDispatchRunner, clock, config.tacticalModel)],
   ]);
-  const codeDispatcher = new CodeDispatcher(fs, codeDispatchRunner, config.substratePath, codeBackends, clock);
+  const defaultBackend = (config.defaultCodeBackend ?? "auto") as BackendType;
+  const codeDispatcher = new CodeDispatcher(fs, codeDispatchRunner, config.substratePath, codeBackends, clock, defaultBackend);
   httpServer.setCodeDispatcher(codeDispatcher);
 
   if (agoraService && agoraMessageHandler) {

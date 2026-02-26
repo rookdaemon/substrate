@@ -73,6 +73,10 @@ export interface ApplicationConfig {
   progressMaxBytes?: number;
   /** Maximum concurrent Claude API sessions (default: 2). Prevents rate-limit saturation when work pipeline and conversations overlap. */
   maxConcurrentSessions?: number;
+  /** Which session launcher to use for agent reasoning sessions (default: "claude"). */
+  sessionLauncher?: "claude" | "gemini";
+  /** Default code backend to use for code dispatch tasks (default: "claude"). */
+  defaultCodeBackend?: "claude" | "copilot" | "gemini" | "auto";
   /** Configuration for the loop watchdog that detects stalls and injects reminders */
   watchdog?: {
     /** Disable the watchdog entirely (default: false) */

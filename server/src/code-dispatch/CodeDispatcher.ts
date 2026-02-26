@@ -16,6 +16,7 @@ export class CodeDispatcher {
     private readonly substratePath: string,
     private readonly backends: Map<BackendType, ICodeBackend>,
     private readonly clock: IClock,
+    private readonly defaultBackend: BackendType = "auto",
   ) {}
 
   async dispatch(task: CodeTask): Promise<CodeResult> {
@@ -130,6 +131,11 @@ export class CodeDispatcher {
 
   private selectBackend(task: CodeTask): BackendType {
     if (task.backend && task.backend !== "auto") return task.backend;
+
+    // When a non-auto default is configured, use it directly
+    if (this.defaultBackend !== "auto") {
+      return this.defaultBackend;
+    }
 
     // Heuristic — use usage data to tune thresholds over time:
     // Many files or no files listed → prefer copilot (agentic, discovers scope)
