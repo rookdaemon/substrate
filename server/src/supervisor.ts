@@ -236,7 +236,9 @@ async function main(): Promise<void> {
     isFirstTime = false;
     console.log("[supervisor] Restart requested (exit code 75) — rebuilding...");
 
-    const buildCode = await run("npx", ["tsc"], SERVER_DIR);
+    // IMPORTANT: Use npm run build (tsup), not npx tsc directly.
+    // Raw tsc fails with TS2835 (missing .js extensions) and produces different output than tsup.
+    const buildCode = await run("npm", ["run", "build"], SERVER_DIR);
     if (buildCode !== 0) {
       consecutiveFailures++;
       if (consecutiveFailures >= MAX_BUILD_RETRIES) {

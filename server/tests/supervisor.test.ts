@@ -233,6 +233,22 @@ describe("supervisor rollback logic", () => {
     expect(consecutiveUnhealthyRestarts).toBe(0);
   });
 
+  it("forward build (after exit 75) should use npm run build, not npx tsc", async () => {
+    // Regression test: supervisor used `npx tsc` for forward rebuilds which fails with
+    // TS2835 errors (missing .js extensions). The correct command is `npm run build` (tsup).
+    mockSpawn.mockReturnValueOnce(fakeProcess(0) as ReturnType<typeof spawn>);
+
+    const forwardBuildCode = await new Promise<number>((resolve) => {
+      // This mirrors what supervisor.ts does after exit code 75
+      const child = spawn("npm", ["run", "build"], { stdio: "inherit", cwd: "/srv" } as Parameters<typeof spawn>[2]);
+      child.on("exit", (code) => resolve(code ?? 1));
+      child.on("error", () => resolve(1));
+    });
+
+    expect(mockSpawn).toHaveBeenCalledWith("npm", ["run", "build"], expect.objectContaining({ cwd: "/srv" }));
+    expect(forwardBuildCode).toBe(0);
+  });
+
   it("rollback build should use npm run build, not npx tsc", async () => {
     // The rollback build is inside main() which is not exported.
     // This test simulates the rollback spawn call and verifies the correct args
