@@ -650,12 +650,13 @@ export async function createLoopLayer(
 
   // Startup scan: check CONVERSATION.md for **[UNPROCESSED]** messages from before a restart.
   // If found, queue a startup prompt so the agent will check for and handle them on the first cycle.
-  // IMPORTANT: Match the exact bold-markdown marker format "**[UNPROCESSED]**" used by
-  // AgoraMessageHandler and ConversationProvider — NOT the bare "[UNPROCESSED]" which
-  // can appear in historical log entries describing when markers were previously cleared.
+  // The regex matches the badge only in the format AgoraMessageHandler and ConversationProvider
+  // actually write it: after a colon (e.g. "publish: **[UNPROCESSED]**" or "(type):**[UNPROCESSED]**").
+  // This avoids false triggers from backtick-quoted mentions in EGO log entries like
+  // `**[UNPROCESSED]**` that discuss the marker rather than being actual markers.
   try {
     const conversationContent = await reader.read(SubstrateFileType.CONVERSATION);
-    if (conversationContent.rawMarkdown.includes("**[UNPROCESSED]**")) {
+    if (/:\s*\*\*\[UNPROCESSED\]\*\*/.test(conversationContent.rawMarkdown)) {
       const startupPrompt = "[STARTUP SCAN] Unprocessed messages detected in CONVERSATION.md from before the last restart. Please read CONVERSATION.md and respond to any messages marked with **[UNPROCESSED]**.";
       orchestrator.queueStartupMessage(startupPrompt);
       logger.debug("createApplication: queued startup message for unprocessed messages in CONVERSATION.md");
