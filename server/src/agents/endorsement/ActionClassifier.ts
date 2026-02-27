@@ -7,7 +7,7 @@ export interface ActionClassification {
 }
 
 const EXTERNAL_TOOL_PATTERNS: Array<{ pattern: RegExp; actionType: string }> = [
-  { pattern: /mcp__tinybus__send_message/i, actionType: "agora_send" },
+  { pattern: /(?:mcp__tinybus__)?send_message/i, actionType: "agora_send" },
   { pattern: /send.?email|email.?send/i, actionType: "email" },
   { pattern: /blog.?post|social.?media|publish.?post/i, actionType: "blog_post" },
 ];

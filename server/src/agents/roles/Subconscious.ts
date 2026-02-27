@@ -65,7 +65,7 @@ export class Subconscious {
 
       let message = this.promptBuilder.buildAgentMessage(eagerRefs, lazyRefs, "");
       if (pendingMessages && pendingMessages.length > 0) {
-        message += `[PENDING MESSAGES — process first]\nProcess and respond to these before the task below. Use the TinyBus MCP tool \`mcp__tinybus__send_message\` with type "agora.send" to reply to Agora messages.\n\n`;
+        message += `[PENDING MESSAGES — process first]\nProcess and respond to these before the task below. Use the TinyBus MCP tool (\`mcp__tinybus__send_message\` in Claude Code, or \`send_message\` in Gemini CLI) with type "agora.send" to reply to Agora messages.\n\n`;
         message += pendingMessages.join("\n\n---\n\n");
         message += "\n\n[TASK]\n";
       }

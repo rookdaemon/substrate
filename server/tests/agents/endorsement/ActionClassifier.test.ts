@@ -34,6 +34,15 @@ describe("ActionClassifier", () => {
       expect(result!.isExternal).toBe(true);
     });
 
+    it("detects agora send via bare send_message (Gemini CLI)", () => {
+      const result = classifier.classifyFromLogEntries([
+        toolEntry('{"tool":"send_message","args":{}}'),
+      ]);
+      expect(result).not.toBeNull();
+      expect(result!.actionType).toBe("agora_send");
+      expect(result!.isExternal).toBe(true);
+    });
+
     it("detects email sending", () => {
       const result = classifier.classifyFromLogEntries([
         toolEntry('{"tool":"send_email","to":"user@example.com"}'),
