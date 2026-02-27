@@ -105,7 +105,7 @@ export class PromptBuilder {
           const tail = lines.slice(-cap).join("\n");
           parts.push(`${substratePath}/${fileName} (last ${cap} lines):\n${tail}`);
         } catch {
-          // File unreadable — fall back to @ reference so Claude can attempt to load it
+          // File unreadable — fall back to @ reference so the runtime can attempt to load it
           parts.push(`@${substratePath}/${fileName}`);
         }
       } else {
