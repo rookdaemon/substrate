@@ -648,12 +648,15 @@ export async function createLoopLayer(
     orchestrator.setTickDependencies({ tickPromptBuilder, sdkSessionFactory });
   }
 
-  // Startup scan: check CONVERSATION.md for [UNPROCESSED] messages from before a restart.
+  // Startup scan: check CONVERSATION.md for **[UNPROCESSED]** messages from before a restart.
   // If found, queue a startup prompt so the agent will check for and handle them on the first cycle.
+  // IMPORTANT: Match the exact bold-markdown marker format "**[UNPROCESSED]**" used by
+  // AgoraMessageHandler and ConversationProvider — NOT the bare "[UNPROCESSED]" which
+  // can appear in historical log entries describing when markers were previously cleared.
   try {
     const conversationContent = await reader.read(SubstrateFileType.CONVERSATION);
-    if (conversationContent.rawMarkdown.includes("[UNPROCESSED]")) {
-      const startupPrompt = "[STARTUP SCAN] Unprocessed messages detected in CONVERSATION.md from before the last restart. Please read CONVERSATION.md and respond to any messages marked with [UNPROCESSED].";
+    if (conversationContent.rawMarkdown.includes("**[UNPROCESSED]**")) {
+      const startupPrompt = "[STARTUP SCAN] Unprocessed messages detected in CONVERSATION.md from before the last restart. Please read CONVERSATION.md and respond to any messages marked with **[UNPROCESSED]**.";
       orchestrator.queueStartupMessage(startupPrompt);
       logger.debug("createApplication: queued startup message for unprocessed messages in CONVERSATION.md");
     }
