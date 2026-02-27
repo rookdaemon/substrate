@@ -24,6 +24,7 @@ import type { Envelope } from "@rookdaemon/agora" with { "resolution-mode": "imp
 import type { AgoraService } from "@rookdaemon/agora" with { "resolution-mode": "import" };
 import { LoopWatchdog } from "./LoopWatchdog";
 import { getAppPaths } from "../paths";
+import { EndorsementInterceptor, EndorsementScreener } from "../agents/endorsement";
 import { TinyBus, SessionInjectionProvider, ChatMessageProvider, type Message } from "../tinybus";
 import { ConversationProvider } from "../tinybus/providers/ConversationProvider";
 import { AgoraMessageHandler } from "../agora/AgoraMessageHandler";
@@ -63,7 +64,7 @@ export async function createLoopLayer(
   agents: AgentLayerResult,
 ): Promise<LoopLayerResult> {
   const { fs, clock, substrateConfig, reader, appendWriter, lock, writer, logger, metaManager } = substrate;
-  const { ego, subconscious, superego, id, conversationManager, launcher,
+  const { ego, subconscious, superego, id, conversationManager, launcher, gatedLauncher,
     taskMetrics, sizeTracker, delegationTracker, driveQualityTracker } = agents;
 
   // Loop layer — build httpServer first for the underlying http.Server,
@@ -298,6 +299,24 @@ export async function createLoopLayer(
   httpServer.setReportStore(reportStore);
   orchestrator.setReportStore(reportStore);
   orchestrator.setDriveQualityTracker(driveQualityTracker);
+
+  // Endorsement interceptor — compliance circuit-breaker
+  {
+    const boundariesPath = path.join(config.substratePath, "BOUNDARIES.md");
+    const endorsementLogPath = path.join(config.substratePath, "..", "endorsement.log");
+    const screener = new EndorsementScreener(
+      fs,
+      gatedLauncher,
+      clock,
+      {
+        boundariesPath,
+        logPath: endorsementLogPath,
+        screenerModel: "haiku",
+      }
+    );
+    const interceptor = new EndorsementInterceptor(screener);
+    orchestrator.setEndorsementInterceptor(interceptor);
+  }
 
   const rateLimitStatePath = path.resolve(config.substratePath, "..", ".rate-limit-state");
   const dedupStatePath = path.resolve(config.substratePath, "..", ".agora-dedup-state");

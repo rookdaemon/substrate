@@ -1,6 +1,5 @@
 import { EndorsementInterceptor } from "../../../src/agents/endorsement/EndorsementInterceptor";
 import { HesitationDetector } from "../../../src/agents/endorsement/HesitationDetector";
-import { ActionClassifier } from "../../../src/agents/endorsement/ActionClassifier";
 import { IEndorsementScreener } from "../../../src/agents/endorsement/IEndorsementScreener";
 import { ScreenerInput, ScreenerResult } from "../../../src/agents/endorsement/types";
 import { ProcessLogEntry } from "../../../src/agents/claude/ISessionLauncher";

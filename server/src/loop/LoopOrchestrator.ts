@@ -30,6 +30,7 @@ import { GovernanceReportStore } from "../evaluation/GovernanceReportStore";
 import { DriveQualityTracker } from "../evaluation/DriveQualityTracker";
 import { msgPreview } from "./utils";
 import { DeferredWorkQueue } from "./DeferredWorkQueue";
+import { EndorsementInterceptor } from "../agents/endorsement";
 
 export class LoopOrchestrator implements IMessageInjector {
   private state: LoopState = LoopState.STOPPED;
@@ -82,6 +83,9 @@ export class LoopOrchestrator implements IMessageInjector {
 
   // Deferred work queue — overlaps post-execution work with next cycle dispatch
   private readonly deferredWork: DeferredWorkQueue;
+
+  // Endorsement interceptor — compliance circuit-breaker
+  private endorsementInterceptor: EndorsementInterceptor | null = null;
 
   // Conversation session gate
   private conversationSessionActive = false;
@@ -295,6 +299,10 @@ export class LoopOrchestrator implements IMessageInjector {
     this.driveQualityTracker = tracker;
   }
 
+  setEndorsementInterceptor(interceptor: EndorsementInterceptor): void {
+    this.endorsementInterceptor = interceptor;
+  }
+
   requestRestart(): void {
     this.logger.debug("requestRestart() called — exiting for supervisor restart");
     this.eventSink.emit({
@@ -366,7 +374,8 @@ export class LoopOrchestrator implements IMessageInjector {
         this.logger.debug(`cycle ${this.cycleNumber}: processing ${toProcess.length} pending message(s) (no task)`);
         const combined = toProcess.join("\n\n---\n\n");
         try {
-          await this.ego.respondToMessage(combined, this.createLogCallback("EGO"));
+          const egoResponse = await this.ego.respondToMessage(combined, this.createLogCallback("EGO"));
+          if (egoResponse) await this.checkEndorsement(egoResponse);
         } catch (err) {
           this.logger.debug(`cycle ${this.cycleNumber}: pending message response failed — ${err instanceof Error ? err.message : String(err)}`);
         }
@@ -818,6 +827,7 @@ export class LoopOrchestrator implements IMessageInjector {
             : await respondPromise;
 
           if (response) {
+            await this.checkEndorsement(response);
             this.eventSink.emit({
               type: "conversation_response",
               timestamp: this.clock.now().toISOString(),
@@ -905,7 +915,28 @@ export class LoopOrchestrator implements IMessageInjector {
         timestamp: this.clock.now().toISOString(),
         data: { role, cycleNumber: this.cycleNumber, entry, source },
       });
+      // Feed entries to endorsement interceptor for Layer 3 detection
+      if (role === "EGO" && this.endorsementInterceptor) {
+        this.endorsementInterceptor.onLogEntry(entry);
+      }
     };
+  }
+
+  private async checkEndorsement(rawOutput: string): Promise<void> {
+    if (!this.endorsementInterceptor) return;
+    try {
+      const result = await this.endorsementInterceptor.evaluateOutput(rawOutput);
+      if (result.triggered && result.injectionMessage) {
+        this.logger.debug(`endorsement: Layer ${result.layer} triggered — ${result.verdict} (action: "${result.action}")`);
+        this.injectMessage(result.injectionMessage);
+      } else if (result.triggered && result.layer === 3) {
+        this.logger.debug(`endorsement: Layer 3 detected external action — ${result.action} (log only)`);
+      }
+    } catch (err) {
+      this.logger.debug(`endorsement: check failed — ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      this.endorsementInterceptor.reset();
+    }
   }
 
   private async runAudit(): Promise<void> {
