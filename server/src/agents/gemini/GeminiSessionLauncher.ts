@@ -18,6 +18,7 @@ const DEFAULT_MODEL = "gemini-2.5-pro";
  *   message       → -p "<message>"
  *   model         → -m <model>
  *   continueSession → -r (resume latest session)
+ *   --yolo        → auto-approve all tool calls (required for MCP in headless mode)
  */
 export class GeminiSessionLauncher implements ISessionLauncher {
   private readonly model: string;
@@ -43,7 +44,9 @@ export class GeminiSessionLauncher implements ISessionLauncher {
       ? `SYSTEM INSTRUCTIONS:\n${request.systemPrompt}\n\n---\n\n${request.message}`
       : request.message;
 
-    const args: string[] = ["-p", fullMessage, "-m", modelToUse];
+    // --yolo auto-approves MCP tool calls; without it, headless mode (-p)
+    // cannot execute tools and Gemini falls back to emitting tool_code blocks.
+    const args: string[] = ["-p", fullMessage, "-m", modelToUse, "--yolo"];
 
     if (options?.continueSession) {
       args.push("-r");

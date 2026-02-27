@@ -22,7 +22,7 @@ describe("GeminiSessionLauncher", () => {
     launcher = new GeminiSessionLauncher(runner, clock);
   });
 
-  it("invokes gemini with -p and -m flags", async () => {
+  it("invokes gemini with -p, -m, and --yolo flags", async () => {
     runner.enqueue({ stdout: "response", stderr: "", exitCode: 0 });
 
     await launcher.launch(makeRequest({ message: "Do something" }));
@@ -32,6 +32,7 @@ describe("GeminiSessionLauncher", () => {
     expect(calls[0].command).toBe("gemini");
     expect(calls[0].args[0]).toBe("-p");
     expect(calls[0].args[2]).toBe("-m");
+    expect(calls[0].args).toContain("--yolo");
   });
 
   it("uses default model when none provided", async () => {
