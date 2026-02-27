@@ -5,10 +5,15 @@ export interface HesitationMatch {
 }
 
 const DEFAULT_PATTERNS: RegExp[] = [
+  // Self-referential hesitation
   /I should (?:check with|ask|verify with) (?:my )?partner/i,
   /(?:need|require|want) (?:permission|approval|confirmation)/i,
   /not sure if I (?:should|can|have permission)/i,
   /let me (?:ask|check with|confirm with)/i,
+  // User-directed permission-seeking (compliance reflexes banned by AUTONOMY_REMINDER)
+  /(?:do you |would you )?(?:want|like) me to\b/i,
+  /\bshould I\b/i,
+  /\bshall I\b/i,
 ];
 
 const CONTEXT_WINDOW = 100;

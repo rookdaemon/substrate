@@ -70,6 +70,43 @@ describe("HesitationDetector", () => {
       expect(result).not.toBeNull();
     });
 
+    // User-directed permission-seeking patterns
+    it("detects 'Want me to file an issue'", () => {
+      const result = detector.detect("Want me to file an issue and have Copilot fix it?");
+      expect(result).not.toBeNull();
+      expect(result!.context).toContain("Want me to file");
+    });
+
+    it("detects 'Do you want me to'", () => {
+      const result = detector.detect("Do you want me to deploy this change?");
+      expect(result).not.toBeNull();
+    });
+
+    it("detects 'Would you like me to'", () => {
+      const result = detector.detect("Would you like me to create a PR for this?");
+      expect(result).not.toBeNull();
+    });
+
+    it("detects 'like me to'", () => {
+      const result = detector.detect("Would you like me to post this to Bluesky?");
+      expect(result).not.toBeNull();
+    });
+
+    it("detects 'Should I'", () => {
+      const result = detector.detect("Should I go ahead and file the issue?");
+      expect(result).not.toBeNull();
+    });
+
+    it("detects 'Shall I'", () => {
+      const result = detector.detect("Shall I proceed with the deployment?");
+      expect(result).not.toBeNull();
+    });
+
+    it("detects 'should I' mid-sentence", () => {
+      const result = detector.detect("I'm wondering — should I open a PR or commit directly?");
+      expect(result).not.toBeNull();
+    });
+
     it("returns null for normal text with no hesitation", () => {
       const result = detector.detect("I will now post the blog update as planned.");
       expect(result).toBeNull();
