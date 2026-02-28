@@ -3,6 +3,7 @@ import { PermissionChecker } from "../agents/permissions";
 import { PromptBuilder } from "../agents/prompts/PromptBuilder";
 import { AgentSdkLauncher, SdkQueryFn } from "../agents/claude/AgentSdkLauncher";
 import { GeminiSessionLauncher } from "../agents/gemini/GeminiSessionLauncher";
+import { CopilotSessionLauncher } from "../agents/copilot/CopilotSessionLauncher";
 import { ProcessTracker, ProcessTrackerConfig } from "../agents/claude/ProcessTracker";
 import { NodeProcessKiller } from "../agents/claude/NodeProcessKiller";
 import { NodeProcessRunner } from "../agents/claude/NodeProcessRunner";
@@ -82,12 +83,16 @@ export async function createAgentLayer(
   // API semaphore — caps concurrent Claude sessions for rate-limit safety
   const apiSemaphore = new ApiSemaphore(config.maxConcurrentSessions ?? 2);
 
-  // Cognitive role launcher — switch to Gemini if configured
+  // Cognitive role launcher — switch based on sessionLauncher config
   let gatedLauncher: ISessionLauncher;
   if (config.sessionLauncher === "gemini") {
     logger.debug("agent-layer: using GeminiSessionLauncher for cognitive roles");
     const geminiLauncher = new GeminiSessionLauncher(new NodeProcessRunner(), clock, config.model);
     gatedLauncher = new SemaphoreSessionLauncher(geminiLauncher, apiSemaphore);
+  } else if (config.sessionLauncher === "copilot") {
+    logger.debug("agent-layer: using CopilotSessionLauncher for cognitive roles");
+    const copilotLauncher = new CopilotSessionLauncher(new NodeProcessRunner(), clock, config.model);
+    gatedLauncher = new SemaphoreSessionLauncher(copilotLauncher, apiSemaphore);
   } else {
     gatedLauncher = new SemaphoreSessionLauncher(launcher, apiSemaphore);
   }

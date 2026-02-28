@@ -76,7 +76,7 @@ const AppConfigSchema = z
     apiToken: z.string().optional(),
     enableFileReadCache: z.boolean().optional(),
     progressMaxBytes: z.number().int().min(1).optional(),
-    sessionLauncher: z.enum(["claude", "gemini"]).optional(),
+    sessionLauncher: z.enum(["claude", "gemini", "copilot"]).optional(),
     defaultCodeBackend: z.enum(["claude", "copilot", "gemini", "auto"]).optional(),
   })
   .refine(
@@ -178,7 +178,7 @@ export interface AppConfig {
   /** Maximum size of PROGRESS.md in bytes before rotation (default: 512 * 1024 = 512 KB). */
   progressMaxBytes?: number;
   /** Which session launcher to use for agent reasoning sessions (default: "claude"). */
-  sessionLauncher?: "claude" | "gemini";
+  sessionLauncher?: "claude" | "gemini" | "copilot";
   /** Default code backend to use for code dispatch tasks (default: "claude"). */
   defaultCodeBackend?: "claude" | "copilot" | "gemini" | "auto";
   /** Configuration for the loop watchdog that detects stalls and injects reminders */
