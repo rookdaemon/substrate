@@ -76,7 +76,8 @@ const AppConfigSchema = z
     apiToken: z.string().optional(),
     enableFileReadCache: z.boolean().optional(),
     progressMaxBytes: z.number().int().min(1).optional(),
-    sessionLauncher: z.enum(["claude", "gemini", "copilot"]).optional(),
+    sessionLauncher: z.enum(["claude", "gemini", "copilot", "ollama"]).optional(),
+    ollamaBaseUrl: z.string().url().optional(),
     defaultCodeBackend: z.enum(["claude", "copilot", "gemini", "auto"]).optional(),
   })
   .refine(
