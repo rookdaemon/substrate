@@ -33,4 +33,15 @@ describe("extractJson", () => {
     const result = extractJson('{"summary":"used {curly} braces"}');
     expect(result).toEqual({ summary: "used {curly} braces" });
   });
+
+  it("sanitizes invalid escape sequences from LLM output", () => {
+    // Gemini sometimes produces \' or \: which are not valid JSON escapes
+    const result = extractJson('{"summary":"it\'s a test with path C:\\Users\\name"}');
+    expect(result.summary).toContain("test with path");
+  });
+
+  it("preserves valid escape sequences during sanitization", () => {
+    const result = extractJson('{"summary":"line1\\nline2\\ttab"}');
+    expect(result).toEqual({ summary: "line1\nline2\ttab" });
+  });
 });

@@ -53,7 +53,17 @@ export function extractJson(text: string): Record<string, unknown> {
       depth--;
       if (depth === 0) {
         const candidate = trimmed.slice(start, i + 1);
-        return JSON.parse(candidate) as Record<string, unknown>;
+        try {
+          return JSON.parse(candidate) as Record<string, unknown>;
+        } catch {
+          // LLMs sometimes produce invalid escape sequences (e.g. \' or \:).
+          // Fix by escaping lone backslashes that aren't valid JSON escapes.
+          const sanitized = candidate.replace(
+            /\\(?!["\\/bfnrtu])/g,
+            "\\\\",
+          );
+          return JSON.parse(sanitized) as Record<string, unknown>;
+        }
       }
     }
   }
