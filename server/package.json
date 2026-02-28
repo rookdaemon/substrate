@@ -15,7 +15,8 @@
     "restore": "tsx src/cli.ts restore",
     "transfer": "tsx src/cli.ts transfer",
     "logs": "tsx src/cli.ts logs",
-    "lint": "eslint src/ tests/"
+    "lint": "eslint src/ tests/",
+    "preflight:ollama": "tsx src/tools/preflight/runOllamaPreflight.ts"
   },
   "devDependencies": {
     "@types/jest": "^29.5.14",

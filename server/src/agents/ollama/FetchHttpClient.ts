@@ -36,4 +36,29 @@ export class FetchHttpClient implements IHttpClient {
       clearTimeout(timer);
     }
   }
+
+  async get(
+    url: string,
+    options?: HttpRequestOptions
+  ): Promise<HttpResponse> {
+    const timeoutMs = options?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      const response = await fetch(url, {
+        method: "GET",
+        signal: controller.signal,
+      });
+
+      return {
+        ok: response.ok,
+        status: response.status,
+        text: () => response.text(),
+        json: () => response.json(),
+      };
+    } finally {
+      clearTimeout(timer);
+    }
+  }
 }

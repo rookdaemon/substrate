@@ -23,4 +23,9 @@ export interface IHttpClient {
     body: unknown,
     options?: HttpRequestOptions
   ): Promise<HttpResponse>;
+
+  get(
+    url: string,
+    options?: HttpRequestOptions
+  ): Promise<HttpResponse>;
 }

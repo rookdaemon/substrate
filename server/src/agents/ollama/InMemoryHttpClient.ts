@@ -1,8 +1,9 @@
 import type { IHttpClient, HttpResponse, HttpRequestOptions } from "./IHttpClient";
 
 export interface RecordedRequest {
+  method: "GET" | "POST";
   url: string;
-  body: unknown;
+  body?: unknown;
   options?: HttpRequestOptions;
 }
 
@@ -14,7 +15,7 @@ interface QueuedResponse {
 
 /**
  * In-memory IHttpClient for unit tests.
- * Enqueue responses in order; each launch() call consumes one.
+ * Enqueue responses in order; each post()/get() call consumes one.
  *
  * @author Nova Daemon
  */
@@ -31,7 +32,7 @@ export class InMemoryHttpClient implements IHttpClient {
   }
 
   enqueueNetworkError(message: string): void {
-    // Stored as a special sentinel — post() will throw
+    // Stored as a special sentinel — post()/get() will throw
     this.responses.push({ ok: false, status: -1, body: message });
   }
 
@@ -44,12 +45,13 @@ export class InMemoryHttpClient implements IHttpClient {
     this.requests.length = 0;
   }
 
-  async post(
+  private consumeResponse(
+    method: "GET" | "POST",
     url: string,
-    body: unknown,
-    options?: HttpRequestOptions
-  ): Promise<HttpResponse> {
-    this.requests.push({ url, body, options });
+    body: unknown | undefined,
+    options: HttpRequestOptions | undefined
+  ): HttpResponse {
+    this.requests.push({ method, url, body, options });
 
     const queued = this.responses.shift();
     if (!queued) {
@@ -75,5 +77,20 @@ export class InMemoryHttpClient implements IHttpClient {
       json: async () =>
         typeof queued.body === "string" ? JSON.parse(queued.body) : queued.body,
     };
+  }
+
+  async post(
+    url: string,
+    body: unknown,
+    options?: HttpRequestOptions
+  ): Promise<HttpResponse> {
+    return this.consumeResponse("POST", url, body, options);
+  }
+
+  async get(
+    url: string,
+    options?: HttpRequestOptions
+  ): Promise<HttpResponse> {
+    return this.consumeResponse("GET", url, undefined, options);
   }
 }
