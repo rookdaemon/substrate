@@ -43,7 +43,7 @@ export class CopilotSessionLauncher implements ISessionLauncher {
       ? `SYSTEM INSTRUCTIONS:\n${request.systemPrompt}\n\n---\n\n${request.message}`
       : request.message;
 
-    const args: string[] = ["-p", fullMessage, "--allow-all-tools", "--model", modelToUse];
+    const args: string[] = ["-p", fullMessage, "--allow-all-tools", "--silent", "--model", modelToUse];
 
     if (options?.cwd) {
       args.push("--add-dir", options.cwd);

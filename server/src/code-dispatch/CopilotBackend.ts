@@ -20,7 +20,7 @@ export class CopilotBackend implements ICodeBackend {
     const prompt = buildPrompt(spec, context);
     const startMs = this.clock.now().getTime();
 
-    const args = ["-p", prompt, "--allow-all-tools", "--add-dir", context.cwd];
+    const args = ["-p", prompt, "--allow-all-tools", "--silent", "--add-dir", context.cwd];
     if (this.model) args.push("--model", this.model);
 
     try {
