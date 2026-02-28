@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync } from "fs";
+import { join } from "path";
+import { tmpdir } from "os";
 import { createApplication, ApplicationConfig, Application } from "../../src/loop/createApplication";
 import { LoopState } from "../../src/loop/types";
 import type { SdkQueryFn } from "../../src/agents/claude/AgentSdkLauncher";
@@ -6,16 +9,13 @@ const mockSdkQuery: SdkQueryFn = async function* () {
   yield { type: "unused" };
 };
 
-function baseConfig(overrides?: Partial<ApplicationConfig>): ApplicationConfig {
-  return {
-    substratePath: "/tmp/test-substrate",
-    sdkQueryFn: mockSdkQuery,
-    ...overrides,
-  };
-}
-
 describe("createApplication", () => {
   const createdApps: Application[] = [];
+  let tempDir: string;
+
+  beforeEach(() => {
+    tempDir = mkdtempSync(join(tmpdir(), "substrate-test-"));
+  });
 
   afterEach(async () => {
     for (const app of createdApps) {
@@ -26,7 +26,16 @@ describe("createApplication", () => {
       }
     }
     createdApps.length = 0;
+    rmSync(tempDir, { recursive: true, force: true });
   });
+
+  function baseConfig(overrides?: Partial<ApplicationConfig>): ApplicationConfig {
+    return {
+      substratePath: join(tempDir, "substrate"),
+      sdkQueryFn: mockSdkQuery,
+      ...overrides,
+    };
+  }
 
   it("creates an application with all components wired", async () => {
     const app = await createApplication(baseConfig({
