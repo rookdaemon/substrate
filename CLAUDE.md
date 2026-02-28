@@ -1,10 +1,15 @@
+# Substrate
+This repo is an AI agent orchestration shell (roles, file-based substrate memory).
+
 # Way of working
-* Always start with identifying the 'smallest valuable increment'.
-* Always strive for simplicity and legibility. If solving a problem right means stepping back and refactor first, then do that.
-* Always work TDD: red/green/refactor.
-* Always leave the code in a better state than when you started.
-* Always abstract away environment operations like file, process, time so tests can mock them.
-* Always inject timestamps into function calls so tests can excercise with known values.
+* Always start coding tasks with a git pull.
+* Smallest valuable increment: decompose into the smallest possible valuable increments.
+* Simplicity and legibility. If the right solution requires refactoring first, do that.
+* TDD: red/green/refactor.
+* Boy scout rule: leave the codebase in better shape than you found it.
+* Abstract environment (file, process, time, env) behind interfaces; inject so tests can use in-memory/fixed implementations.
+* Inject timestamps into logic—no raw `Date.now()` or `new Date()` in business code.
+* End completed tasks with pull, build, lint, test, commit, push. Push often.
 
 # Versioning
-* Before committing and pushing, make sure to update package.json for every significant update, at least patch level
+* Before committing: update package.json (at least patch) for significant changes; ensure build and tests pass.
