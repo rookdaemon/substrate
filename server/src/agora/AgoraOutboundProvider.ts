@@ -11,7 +11,10 @@ import type { ILogger } from "../logging";
  *
  * Expected message format:
  * - type: "agora.send"
- * - payload: { peerName: string; type: string; payload: unknown; inReplyTo?: string }
+ * - payload: { peerName?: string; type: string; payload: unknown; inReplyTo?: string }
+ *
+ * Broadcast: omit peerName or set to "all" to send to every configured peer.
+ * Partial failures in broadcast mode are logged but don't throw unless ALL sends fail.
  */
 export class AgoraOutboundProvider implements Provider {
   public readonly id = "agora";
@@ -60,35 +63,55 @@ export class AgoraOutboundProvider implements Provider {
     }
 
     const payload = message.payload as {
-      peerName: string;
+      peerName?: string;
       type: string;
       payload: unknown;
       inReplyTo?: string;
     };
 
-    if (!payload.peerName || !payload.type) {
-      throw new Error("Invalid agora.send payload: missing peerName or type");
+    if (!payload.type) {
+      throw new Error("Invalid agora.send payload: missing type");
     }
 
-    this.logger?.debug(
-      `[AGORA-OUT] Sending: peerName=${payload.peerName} type=${payload.type}` +
-      (payload.inReplyTo ? ` inReplyTo=${payload.inReplyTo}` : "")
-    );
+    // Broadcast: if peerName is omitted or "all", send to every configured peer
+    const isBroadcast = !payload.peerName || payload.peerName === "all";
+    const targets = isBroadcast
+      ? this.agoraService.getPeers()
+      : [payload.peerName];
 
-    const result = await this.agoraService.sendMessage({
-      peerName: payload.peerName,
-      type: payload.type,
-      payload: payload.payload,
-      inReplyTo: payload.inReplyTo,
-    });
-
-    if (!result.ok) {
-      const errMsg = `Failed to send Agora message: ${result.error ?? "unknown error"} (status=${result.status})`;
-      this.logger?.debug(`[AGORA-OUT] ${errMsg}`);
-      throw new Error(errMsg);
+    if (isBroadcast) {
+      this.logger?.debug(
+        `[AGORA-OUT] Broadcasting: type=${payload.type} to ${targets.length} peers` +
+        (payload.inReplyTo ? ` inReplyTo=${payload.inReplyTo}` : "")
+      );
+    } else {
+      this.logger?.debug(
+        `[AGORA-OUT] Sending: peerName=${payload.peerName} type=${payload.type}` +
+        (payload.inReplyTo ? ` inReplyTo=${payload.inReplyTo}` : "")
+      );
     }
 
-    this.logger?.debug(`[AGORA-OUT] Sent successfully: peerName=${payload.peerName} status=${result.status}`);
+    const errors: string[] = [];
+    for (const target of targets) {
+      const result = await this.agoraService.sendMessage({
+        peerName: target,
+        type: payload.type,
+        payload: payload.payload,
+        inReplyTo: payload.inReplyTo,
+      });
+
+      if (!result.ok) {
+        const errMsg = `Failed to send to ${target}: ${result.error ?? "unknown error"} (status=${result.status})`;
+        this.logger?.debug(`[AGORA-OUT] ${errMsg}`);
+        errors.push(errMsg);
+      } else {
+        this.logger?.debug(`[AGORA-OUT] Sent successfully: peerName=${target} status=${result.status}`);
+      }
+    }
+
+    if (errors.length === targets.length && targets.length > 0) {
+      throw new Error(`All sends failed: ${errors.join("; ")}`);
+    }
   }
 
   onMessage(_handler: (message: Message) => Promise<void>): void {
