@@ -16,7 +16,12 @@
     "transfer": "tsx src/cli.ts transfer",
     "logs": "tsx src/cli.ts logs",
     "lint": "eslint src/ tests/",
-    "preflight:ollama": "tsx src/tools/preflight/runOllamaPreflight.ts"
+    "preflight:ollama": "tsx src/tools/preflight/runOllamaPreflight.ts",
+    "git:history": "tsx src/substrate-git.ts history",
+    "git:status": "tsx src/substrate-git.ts status",
+    "git:diff": "tsx src/substrate-git.ts diff",
+    "git:snapshot": "tsx src/substrate-git.ts snapshot",
+    "git:rollback": "tsx src/substrate-git.ts rollback"
   },
   "devDependencies": {
     "@types/jest": "^29.5.14",

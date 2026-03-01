@@ -11,6 +11,7 @@ import { extractJson } from "../parsers/extractJson";
 import { AgentRole } from "../types";
 import { TaskClassifier } from "../TaskClassifier";
 import { ConversationManager } from "../../conversation/ConversationManager";
+import { GitVersionControl } from "../../substrate/versioning/GitVersionControl";
 
 export interface SubconsciousProposal {
   target: string;
@@ -117,7 +118,8 @@ export class Subconscious {
     private readonly sessionLauncher: ISessionLauncher,
     private readonly clock: IClock,
     private readonly taskClassifier: TaskClassifier,
-    private readonly workingDirectory?: string
+    private readonly workingDirectory?: string,
+    private readonly git?: GitVersionControl
   ) {}
 
   async execute(
@@ -205,6 +207,18 @@ export class Subconscious {
   async updateMemory(content: string): Promise<void> {
     this.checker.assertCanWrite(AgentRole.SUBCONSCIOUS, SubstrateFileType.MEMORY);
     await this.writer.write(SubstrateFileType.MEMORY, content);
+  }
+
+  async commitChanges(message: string): Promise<void> {
+    if (!this.git) {
+      return; // Git not initialized
+    }
+    try {
+      await this.git.commitChanges({ message, skipIfClean: true });
+    } catch (err) {
+      // Log but do not fail if git commit fails
+      console.warn("Git commit failed:", err);
+    }
   }
 
   /**

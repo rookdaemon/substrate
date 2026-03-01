@@ -1,0 +1,92 @@
+.state-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 1rem;
+  border-radius: 0.375rem;
+  background: var(--bg-secondary, #f5f5f5);
+  border: 1px solid var(--border-color, #e0e0e0);
+  font-size: 0.875rem;
+  gap: 1rem;
+}
+
+.state-indicator.loading {
+  opacity: 0.7;
+}
+
+.state-indicator.error {
+  background: #fee;
+  border-color: #fcc;
+}
+
+.state-main {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.status-dot {
+  font-size: 1.25rem;
+  line-height: 1;
+}
+
+.state-indicator.initialized .status-dot {
+  color: #22c55e;
+}
+
+.state-indicator.uninitialized .status-dot {
+  color: #94a3b8;
+}
+
+.agent-name {
+  font-weight: 600;
+}
+
+.mode-badge {
+  padding: 0.125rem 0.5rem;
+  border-radius: 0.25rem;
+  background: var(--accent-bg, #e0e7ff);
+  color: var(--accent-text, #4338ca);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  font-weight: 500;
+}
+
+.state-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.source-badge {
+  padding: 0.125rem 0.5rem;
+  border-radius: 0.25rem;
+  background: var(--meta-bg, #f1f5f9);
+  color: var(--meta-text, #64748b);
+  font-size: 0.75rem;
+}
+
+.refresh-btn,
+.retry-btn {
+  background: none;
+  border: 1px solid var(--border-color, #e0e0e0);
+  border-radius: 0.25rem;
+  padding: 0.25rem 0.5rem;
+  cursor: pointer;
+  font-size: 1rem;
+  transition: all 0.2s;
+}
+
+.refresh-btn:hover,
+.retry-btn:hover {
+  background: var(--hover-bg, #e5e7eb);
+}
+
+.spinner {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}

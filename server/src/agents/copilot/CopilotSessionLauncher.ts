@@ -35,6 +35,7 @@ export class CopilotSessionLauncher implements ISessionLauncher {
     private readonly clock: IClock,
     model?: string,
     private readonly generateUUID: () => string = randomUUID,
+    private readonly additionalDirs: string[] = [],
   ) {
     this.model = model ?? DEFAULT_MODEL;
   }
@@ -56,6 +57,10 @@ export class CopilotSessionLauncher implements ISessionLauncher {
 
     if (options?.cwd) {
       args.push("--add-dir", options.cwd);
+    }
+
+    for (const dir of this.additionalDirs) {
+      args.push("--add-dir", dir);
     }
 
     if (options?.continueSession && options.cwd) {

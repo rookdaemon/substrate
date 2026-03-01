@@ -9,6 +9,13 @@ function toPosix(p: string): string {
   return p.replace(/\\/g, "/");
 }
 
+/** Return the absolute posix-style path as-is. Tilde-prefix is a shell
+ *  concept — Node.js APIs (fs, path.resolve) do NOT expand `~`, so using
+ *  it in code paths causes ENOENT crashes. */
+function toAbsolutePath(absolutePath: string): string {
+  return toPosix(absolutePath);
+}
+
 export interface AppPaths {
   config: string;
   data: string;
@@ -39,26 +46,32 @@ export function getAppPaths(options?: GetAppPathsOptions): AppPaths {
         options?.env && key in options.env ? options.env[key] : process.env[key];
 
   if (platform === "darwin") {
+    const config = path.join(home, "Library", "Preferences", APP_NAME);
+    const data = path.join(home, "Library", "Application Support", APP_NAME);
     return {
-      config: toPosix(path.join(home, "Library", "Preferences", APP_NAME)),
-      data: toPosix(path.join(home, "Library", "Application Support", APP_NAME)),
+      config: toAbsolutePath(config),
+      data: toAbsolutePath(data),
     };
   }
 
   if (platform === "win32") {
     const appData = envRecord("APPDATA") ?? path.join(home, "AppData", "Roaming");
     const localAppData = envRecord("LOCALAPPDATA") ?? path.join(home, "AppData", "Local");
+    const config = path.join(appData, APP_NAME);
+    const data = path.join(localAppData, APP_NAME);
     return {
-      config: toPosix(path.join(appData, APP_NAME)),
-      data: toPosix(path.join(localAppData, APP_NAME)),
+      config: toAbsolutePath(config),
+      data: toAbsolutePath(data),
     };
   }
 
   // Linux / other Unix
   const xdgConfig = envRecord("XDG_CONFIG_HOME") ?? path.join(home, ".config");
   const xdgData = envRecord("XDG_DATA_HOME") ?? path.join(home, ".local", "share");
+  const config = path.join(xdgConfig, APP_NAME);
+  const data = path.join(xdgData, APP_NAME);
   return {
-    config: toPosix(path.join(xdgConfig, APP_NAME)),
-    data: toPosix(path.join(xdgData, APP_NAME)),
+    config: toAbsolutePath(config),
+    data: toAbsolutePath(data),
   };
 }

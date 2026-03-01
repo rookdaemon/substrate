@@ -1,4 +1,5 @@
 import * as path from "path";
+import { randomUUID } from "node:crypto";
 import { PermissionChecker } from "../agents/permissions";
 import { PromptBuilder } from "../agents/prompts/PromptBuilder";
 import { AgentSdkLauncher, SdkQueryFn } from "../agents/claude/AgentSdkLauncher";
@@ -58,7 +59,7 @@ export async function createAgentLayer(
   sdkQuery: SdkQueryFn,
   substrate: SubstrateLayerResult,
 ): Promise<AgentLayerResult> {
-  const { reader, writer, appendWriter, lock, clock, fs, substrateConfig, logger } = substrate;
+  const { reader, writer, appendWriter, lock, clock, fs, substrateConfig, logger, git } = substrate;
 
   const checker = new PermissionChecker();
   const promptBuilder = new PromptBuilder(reader, checker, {
@@ -93,7 +94,9 @@ export async function createAgentLayer(
     gatedLauncher = new SemaphoreSessionLauncher(geminiLauncher, apiSemaphore);
   } else if (config.sessionLauncher === "copilot") {
     logger.debug("agent-layer: using CopilotSessionLauncher for cognitive roles");
-    const copilotLauncher = new CopilotSessionLauncher(new NodeProcessRunner(), clock, config.model);
+    const copilotLauncher = new CopilotSessionLauncher(
+      new NodeProcessRunner(), clock, config.model, randomUUID, [config.substratePath],
+    );
     gatedLauncher = new SemaphoreSessionLauncher(copilotLauncher, apiSemaphore);
   } else if (config.sessionLauncher === "ollama") {
     const ollamaBaseUrl = config.ollamaBaseUrl ?? "http://localhost:11434";
@@ -151,7 +154,7 @@ export async function createAgentLayer(
   const driveQualityTracker = new DriveQualityTracker(fs, driveRatingsPath);
 
   const ego = new Ego(reader, writer, conversationManager, checker, promptBuilder, gatedLauncher, clock, taskClassifier, workspaceManager.workspacePath(AgentRole.EGO));
-  const subconscious = new Subconscious(reader, writer, appendWriter, conversationManager, checker, promptBuilder, gatedLauncher, clock, taskClassifier, workspaceManager.workspacePath(AgentRole.SUBCONSCIOUS));
+  const subconscious = new Subconscious(reader, writer, appendWriter, conversationManager, checker, promptBuilder, gatedLauncher, clock, taskClassifier, workspaceManager.workspacePath(AgentRole.SUBCONSCIOUS), git);
   const superego = new Superego(reader, appendWriter, checker, promptBuilder, gatedLauncher, clock, taskClassifier, writer, workspaceManager.workspacePath(AgentRole.SUPEREGO));
   const id = new Id(reader, checker, promptBuilder, gatedLauncher, clock, taskClassifier, workspaceManager.workspacePath(AgentRole.ID), driveQualityTracker);
 

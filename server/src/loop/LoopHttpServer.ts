@@ -228,6 +228,13 @@ export class LoopHttpServer {
           fileCache: this.reader ? this.reader.getMetrics() : { cacheHits: 0, cacheMisses: 0 },
         });
         break;
+      case "GET /api/state":
+        this.json(res, 200, {
+          agentName: this.meta?.name ?? undefined,
+          mode: this.mode,
+          initialized: !!this.meta,
+        });
+        break;
       case "POST /api/loop/start":
         this.tryStateTransition(res, () => {
           const previousState = this.orc.getState();

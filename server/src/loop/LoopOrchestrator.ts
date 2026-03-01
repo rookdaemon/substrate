@@ -463,6 +463,11 @@ export class LoopOrchestrator implements IMessageInjector {
           await this.subconscious.updateMemory(taskResult.memoryUpdates);
         }
 
+        // Commit substrate changes to git (if enabled)
+        await this.subconscious.commitChanges(
+          `Subconscious execution: ${dispatch.taskId}\n\n${taskResult.summary}`
+        );
+
         if (taskResult.summary) {
           await this.subconscious.logConversation(taskResult.summary);
         }

@@ -48,6 +48,7 @@ export type PerformanceEvent = CycleEvent | ApiCallEvent | SubstrateIoEvent;
  * Design decisions:
  * - JSONL append-only — efficient for high-frequency writes, human-readable
  * - Best-effort writes — never throws; metrics must not interrupt the loop
+ * - OPTIMIZATION: Batched writes when buffer reaches size threshold (reduces I/O calls)
  * - Three event types: cycle (per-loop timing), api_call (model call timing),
  *   substrate_io (file I/O timing)
  * - Consumers (Bishop self-analysis) read the JSONL directly to compute stats
@@ -60,14 +61,20 @@ export class PerformanceMetrics {
   private readonly metricsDir: string;
   private readonly metricsPath: string;
   private dirEnsured = false;
+  
+  // OPTIMIZATION: Event buffer for batched writes (configurable for testing)
+  private eventBuffer: PerformanceEvent[] = [];
+  private readonly bufferSize: number;
 
   constructor(
     private readonly fs: IFileSystem,
     private readonly clock: IClock,
     substratePath: string,
+    bufferSize: number = 10, // Batch every 10 events in production
   ) {
     this.metricsDir = path.join(substratePath, ".metrics");
     this.metricsPath = path.join(this.metricsDir, "performance.jsonl");
+    this.bufferSize = bufferSize;
   }
 
   /**
@@ -126,10 +133,20 @@ export class PerformanceMetrics {
   }
 
   /**
+   * Flush any remaining events in the buffer. Call before shutdown or when reading.
+   */
+  async flush(): Promise<void> {
+    await this.flushBuffer();
+  }
+
+  /**
    * Read all events from the JSONL file (for analysis/reporting).
    * Returns empty array if file doesn't exist or is unreadable.
    */
   async readEvents(): Promise<PerformanceEvent[]> {
+    // Flush buffer before reading to ensure all events are included
+    await this.flush();
+    
     try {
       const content = await this.fs.readFile(this.metricsPath);
       return content
@@ -143,14 +160,39 @@ export class PerformanceMetrics {
   }
 
   /**
-   * Append a single event to the JSONL file. Best-effort — never throws.
+   * OPTIMIZATION: Add event to buffer and flush when buffer is full.
+   * For buffer size > 1, waits until buffer is full before flushing.
+   * For buffer size = 1, flushes immediately (backwards compatible with tests).
    */
   private async append(event: PerformanceEvent): Promise<void> {
+    this.eventBuffer.push(event);
+    
+    // Flush immediately if buffer reaches configured size
+    if (this.eventBuffer.length >= this.bufferSize) {
+      await this.flushBuffer();
+    }
+    // Note: For bufferSize > 1, events remain buffered until:
+    // - Buffer fills up, or
+    // - flush() or readEvents() is called explicitly
+  }
+
+  private async flushBuffer(): Promise<void> {
+    if (this.eventBuffer.length === 0) {
+      return;
+    }
+
     try {
       await this.ensureDir();
-      await this.fs.appendFile(this.metricsPath, JSON.stringify(event) + "\n");
+      
+      // Write all buffered events in a single append operation
+      const lines = this.eventBuffer.map((event) => JSON.stringify(event)).join("\n") + "\n";
+      await this.fs.appendFile(this.metricsPath, lines);
+      
+      // Clear buffer after successful write
+      this.eventBuffer = [];
     } catch {
       // Best-effort — performance metrics must never interrupt the loop
+      // Keep events in buffer for next flush attempt
     }
   }
 

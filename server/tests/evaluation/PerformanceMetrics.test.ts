@@ -12,7 +12,7 @@ describe("PerformanceMetrics", () => {
   beforeEach(async () => {
     fs = new InMemoryFileSystem();
     clock = new FixedClock(new Date("2026-02-27T12:00:00Z"));
-    metrics = new PerformanceMetrics(fs, clock, substratePath);
+    metrics = new PerformanceMetrics(fs, clock, substratePath, 1); // bufferSize=1 for immediate writes in tests
     await fs.mkdir(substratePath, { recursive: true });
   });
 

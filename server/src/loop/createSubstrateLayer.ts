@@ -9,6 +9,8 @@ import { FileLock } from "../substrate/io/FileLock";
 import { FileLogger, type LogLevel } from "../logging";
 import { SuperegoFindingTracker } from "../agents/roles/SuperegoFindingTracker";
 import { MetaManager } from "../substrate/MetaManager";
+import { GitVersionControl } from "../substrate/versioning/GitVersionControl";
+import { NodeProcessRunner as NodeProcessRunnerV2 } from "../substrate/abstractions/NodeProcessRunner";
 
 export interface SubstrateLayerResult {
   fs: NodeFileSystem;
@@ -23,6 +25,7 @@ export interface SubstrateLayerResult {
   metaManager: MetaManager;
   findingTracker: SuperegoFindingTracker;
   findingTrackerSave: () => Promise<void>;
+  git?: GitVersionControl;
 }
 
 /**
@@ -57,8 +60,17 @@ export async function createSubstrateLayer(
   const findingTracker = await SuperegoFindingTracker.load(trackerStatePath, fs, logger);
   const findingTrackerSave = () => findingTracker.save(trackerStatePath, fs);
 
+
+  // Initialize git version control (optional)
+  let git: GitVersionControl | undefined;
+  if (await fs.exists(path.join(substratePath, ".git"))) {
+    const processRunner = new NodeProcessRunnerV2();
+    git = new GitVersionControl(substratePath, processRunner, fs, logger);
+    await git.initialize(); // Ensure git config is set
+  }
+
   return {
     fs, clock, substrateConfig, reader, writer, appendWriter, lock,
-    logger, logPath, metaManager, findingTracker, findingTrackerSave,
+    logger, logPath, metaManager, findingTracker, findingTrackerSave, git,
   };
 }
