@@ -11,11 +11,49 @@ import { ShellTriggerEvaluator } from "../parsers/ShellTriggerEvaluator";
 import { extractJson } from "../parsers/extractJson";
 import { AgentRole } from "../types";
 import { TaskClassifier } from "../TaskClassifier";
+import { AgoraReply } from "./Subconscious";
 
 export interface EgoDecision {
   action: "dispatch" | "update_plan" | "converse" | "idle";
-  [key: string]: unknown;
+  taskId?: string;       // present when action === "dispatch"
+  description?: string;  // present when action === "dispatch"
+  content?: string;      // present when action === "update_plan"
+  entry?: string;        // present when action === "converse"
+  reason?: string;       // present when action === "idle"
+  agoraReplies: AgoraReply[];
 }
+
+/**
+ * JSON Schema for EgoDecision — used by OllamaSessionLauncher for
+ * grammar-constrained decoding via the `format` field.
+ */
+export const EGO_DECISION_SCHEMA = {
+  type: "object",
+  properties: {
+    action: {
+      type: "string",
+      enum: ["dispatch", "update_plan", "converse", "idle"],
+    },
+    taskId: { type: "string" },
+    description: { type: "string" },
+    content: { type: "string" },
+    entry: { type: "string" },
+    reason: { type: "string" },
+    agoraReplies: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          peerName: { type: "string" },
+          text: { type: "string" },
+          inReplyTo: { type: "string" },
+        },
+        required: ["peerName", "text"],
+      },
+    },
+  },
+  required: ["action", "agoraReplies"],
+} as const;
 
 export interface DispatchResult {
   targetRole: AgentRole;
@@ -54,17 +92,27 @@ export class Ego {
       const result = await this.sessionLauncher.launch({
         systemPrompt,
         message,
-      }, { model, onLogEntry, cwd: this.workingDirectory, continueSession: true, persistSession: true });
+      }, {
+        model,
+        onLogEntry,
+        cwd: this.workingDirectory,
+        continueSession: true,
+        persistSession: true,
+        outputSchema: EGO_DECISION_SCHEMA,
+      });
 
       if (!result.success) {
-        return { action: "idle", reason: `Claude session error: ${result.error || "unknown"}` };
+        return { action: "idle", reason: `Claude session error: ${result.error || "unknown"}`, agoraReplies: [] };
       }
 
-      const parsed = extractJson(result.rawOutput);
-      return parsed as EgoDecision;
+      const parsed = extractJson(result.rawOutput) as EgoDecision;
+      if (!Array.isArray(parsed.agoraReplies)) {
+        parsed.agoraReplies = [];
+      }
+      return parsed;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      return { action: "idle", reason: `Decision failed: ${msg}` };
+      return { action: "idle", reason: `Decision failed: ${msg}`, agoraReplies: [] };
     }
   }
 

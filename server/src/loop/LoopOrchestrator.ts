@@ -1,5 +1,5 @@
 import { Ego } from "../agents/roles/Ego";
-import { Subconscious, TaskResult, OutcomeEvaluation } from "../agents/roles/Subconscious";
+import { Subconscious, TaskResult, OutcomeEvaluation, AgoraReply } from "../agents/roles/Subconscious";
 import { Superego } from "../agents/roles/Superego";
 import { Id } from "../agents/roles/Id";
 import { ProcessLogEntry } from "../agents/claude/ISessionLauncher";
@@ -478,7 +478,7 @@ export class LoopOrchestrator implements IMessageInjector {
       // This moves Agora sends from LLM tool calls into the orchestrator,
       // enabling pure text-in → JSON-out execution for self-hosted models.
       if (taskResult.agoraReplies.length > 0 && this.agoraService) {
-        this.deferredWork.enqueue(this.sendAgoraReplies(taskResult));
+        this.deferredWork.enqueue(this.sendAgoraReplies(taskResult.agoraReplies));
       }
 
       // Drive learning: if task was Id-generated, record a quality rating for future drive improvement
@@ -1046,10 +1046,10 @@ export class LoopOrchestrator implements IMessageInjector {
     }
   }
 
-  private async sendAgoraReplies(taskResult: TaskResult): Promise<void> {
+  private async sendAgoraReplies(replies: AgoraReply[]): Promise<void> {
     if (!this.agoraService) return;
 
-    for (const reply of taskResult.agoraReplies) {
+    for (const reply of replies) {
       try {
         const result = await this.agoraService.sendMessage({
           peerName: reply.peerName,

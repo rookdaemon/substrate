@@ -1,4 +1,4 @@
-import { Ego } from "../../../src/agents/roles/Ego";
+import { Ego, EGO_DECISION_SCHEMA } from "../../../src/agents/roles/Ego";
 import { PermissionChecker } from "../../../src/agents/permissions";
 import { PromptBuilder } from "../../../src/agents/prompts/PromptBuilder";
 import { InMemorySessionLauncher } from "../../../src/agents/claude/InMemorySessionLauncher";
@@ -107,6 +107,76 @@ describe("Ego agent", () => {
       // but we verify the callback was passed by checking the recorded launch
       const launches = launcher.getLaunches();
       expect(launches[0].options?.onLogEntry).toBeDefined();
+    });
+
+    it("returns agoraReplies from the decision", async () => {
+      const response = JSON.stringify({
+        action: "idle",
+        reason: "waiting",
+        agoraReplies: [
+          { peerName: "stefan", text: "Standing by" },
+          { peerName: "nova", text: "Acknowledged", inReplyTo: "env-123" },
+        ],
+      });
+      launcher.enqueueSuccess(response);
+
+      const decision = await ego.decide();
+      expect(decision.action).toBe("idle");
+      expect(decision.agoraReplies).toHaveLength(2);
+      expect(decision.agoraReplies[0].peerName).toBe("stefan");
+      expect(decision.agoraReplies[0].text).toBe("Standing by");
+      expect(decision.agoraReplies[1].inReplyTo).toBe("env-123");
+    });
+
+    it("defaults agoraReplies to empty array when field is missing", async () => {
+      const response = JSON.stringify({
+        action: "idle",
+        reason: "waiting",
+      });
+      launcher.enqueueSuccess(response);
+
+      const decision = await ego.decide();
+      expect(decision.agoraReplies).toEqual([]);
+    });
+
+    it("returns empty agoraReplies on session failure", async () => {
+      launcher.enqueueFailure("rate limited");
+
+      const decision = await ego.decide();
+      expect(decision.action).toBe("idle");
+      expect(decision.agoraReplies).toEqual([]);
+    });
+
+    it("returns empty agoraReplies on invalid JSON", async () => {
+      launcher.enqueueSuccess("not valid json");
+
+      const decision = await ego.decide();
+      expect(decision.action).toBe("idle");
+      expect(decision.agoraReplies).toEqual([]);
+    });
+
+    it("passes EGO_DECISION_SCHEMA as outputSchema to session launcher", async () => {
+      launcher.enqueueSuccess(JSON.stringify({ action: "idle", agoraReplies: [] }));
+
+      await ego.decide();
+
+      const launches = launcher.getLaunches();
+      expect(launches[0].options?.outputSchema).toBe(EGO_DECISION_SCHEMA);
+    });
+
+    it("returns dispatch decision with agoraReplies", async () => {
+      const response = JSON.stringify({
+        action: "dispatch",
+        taskId: "t1",
+        description: "write spec",
+        agoraReplies: [],
+      });
+      launcher.enqueueSuccess(response);
+
+      const decision = await ego.decide();
+      expect(decision.action).toBe("dispatch");
+      expect(decision.taskId).toBe("t1");
+      expect(decision.agoraReplies).toEqual([]);
     });
   });
 

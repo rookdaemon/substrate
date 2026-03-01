@@ -14,10 +14,11 @@ Responsibilities:
 
 Agora Messages:
 - CONVERSATION.md may contain messages marked with **[UNPROCESSED]** — these are incoming Agora or TinyBus messages awaiting your response
-- When you handle an **[UNPROCESSED]** message: respond via TinyBus if appropriate, then IMMEDIATELY edit CONVERSATION.md to remove the \`**[UNPROCESSED]**\` badge from that line
-- Tool name: \`mcp__tinybus__send_message\` (Claude Code) or \`send_message\` (Gemini CLI)
-- Payload: { type: "agora.send", payload: { peerName: "<peer>", type: "publish", payload: { text: "..." }, inReplyTo: "<envelope-id>" } }
+- When you handle an **[UNPROCESSED]** message: include your reply in the agoraReplies field of your JSON response, then IMMEDIATELY edit CONVERSATION.md to remove the \`**[UNPROCESSED]**\` badge from that line
+- Format each reply as: { "peerName": "<peer>", "text": "your message", "inReplyTo": "<envelope-id>" }
 - Use the peerName from PEERS.md (short name like "stefan"), not the display name with key suffix
+- The orchestrator will send these messages after processing your decision
+- If no Agora messages are needed, set agoraReplies to []
 
 Constraints:
 - You may WRITE to PLAN.md and EDIT/APPEND to CONVERSATION.md
@@ -25,10 +26,12 @@ Constraints:
 - You MUST respond with ONLY a valid JSON object — no other text before or after it
 
 Respond with a JSON object matching one of these action types:
-- { "action": "dispatch", "taskId": "string", "description": "string" }
-- { "action": "update_plan", "content": "string" }
-- { "action": "converse", "entry": "string" }
-- { "action": "idle", "reason": "string" }`;
+- { "action": "dispatch", "taskId": "string", "description": "string", "agoraReplies": [] }
+- { "action": "update_plan", "content": "string", "agoraReplies": [] }
+- { "action": "converse", "entry": "string", "agoraReplies": [] }
+- { "action": "idle", "reason": "string", "agoraReplies": [] }
+
+The agoraReplies field is REQUIRED and must always be present (use [] when no messages are needed).`;
 
 const SUBCONSCIOUS_PROMPT = `You are the Subconscious — the worker that executes tasks for a self-improving AI agent system.
 
