@@ -1,4 +1,3 @@
-import * as fs from "node:fs";
 import { CopilotSessionLauncher } from "../../../src/agents/copilot/CopilotSessionLauncher";
 import { InMemoryProcessRunner } from "../../../src/agents/claude/InMemoryProcessRunner";
 import { FixedClock } from "../../../src/substrate/abstractions/FixedClock";
@@ -205,7 +204,7 @@ describe("CopilotSessionLauncher", () => {
   });
 
   describe("MCP server config", () => {
-    it("passes --mcp-config with correct JSON when mcpServers provided", async () => {
+    it("passes --additional-mcp-config with correct JSON when mcpServers provided", async () => {
       const mcpServers = {
         tinybus: { type: "http", url: "http://localhost:3001/mcp" },
       };
@@ -217,39 +216,10 @@ describe("CopilotSessionLauncher", () => {
       await mcpLauncher.launch(makeRequest());
 
       const args = runner.getCalls()[0].args;
-      expect(args).toContain("--mcp-config");
-      const configIdx = args.indexOf("--mcp-config");
-      const configPath = args[configIdx + 1];
-      expect(configPath).toContain("copilot-mcp-");
-      // File is cleaned up after launch; verify args structure only
-    });
-
-    it("writes valid MCP config JSON to the temp file", async () => {
-      const mcpServers = {
-        tinybus: { type: "http", url: "http://localhost:3001/mcp" },
-      };
-      // Capture the file before it's cleaned up by intercepting processRunner
-      let capturedConfig: string | undefined;
-      const capturingRunner = new InMemoryProcessRunner();
-      capturingRunner.enqueue({ stdout: "", stderr: "", exitCode: 0 });
-
-      const originalRun = capturingRunner.run.bind(capturingRunner);
-      capturingRunner.run = async (cmd, args, opts) => {
-        const configIdx = args.indexOf("--mcp-config");
-        if (configIdx >= 0) {
-          capturedConfig = fs.readFileSync(args[configIdx + 1], "utf-8");
-        }
-        return originalRun(cmd, args, opts);
-      };
-
-      const mcpLauncher = new CopilotSessionLauncher(
-        capturingRunner, clock, undefined, () => FIXED_UUID, [], mcpServers,
-      );
-
-      await mcpLauncher.launch(makeRequest());
-
-      expect(capturedConfig).toBeDefined();
-      const parsed = JSON.parse(capturedConfig!);
+      expect(args).toContain("--additional-mcp-config");
+      const configIdx = args.indexOf("--additional-mcp-config");
+      const configJson = args[configIdx + 1];
+      const parsed = JSON.parse(configJson);
       expect(parsed).toEqual({
         mcpServers: {
           tinybus: { type: "http", url: "http://localhost:3001/mcp" },
@@ -257,16 +227,16 @@ describe("CopilotSessionLauncher", () => {
       });
     });
 
-    it("omits --mcp-config when no mcpServers provided", async () => {
+    it("omits --additional-mcp-config when no mcpServers provided", async () => {
       runner.enqueue({ stdout: "", stderr: "", exitCode: 0 });
 
       await launcher.launch(makeRequest());
 
       const args = runner.getCalls()[0].args;
-      expect(args).not.toContain("--mcp-config");
+      expect(args).not.toContain("--additional-mcp-config");
     });
 
-    it("omits --mcp-config when mcpServers is empty", async () => {
+    it("omits --additional-mcp-config when mcpServers is empty", async () => {
       const emptyLauncher = new CopilotSessionLauncher(
         runner, clock, undefined, () => FIXED_UUID, [], {},
       );
@@ -275,7 +245,7 @@ describe("CopilotSessionLauncher", () => {
       await emptyLauncher.launch(makeRequest());
 
       const args = runner.getCalls()[0].args;
-      expect(args).not.toContain("--mcp-config");
+      expect(args).not.toContain("--additional-mcp-config");
     });
   });
 });

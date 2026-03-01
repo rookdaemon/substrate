@@ -1,7 +1,4 @@
 import { randomUUID } from "node:crypto";
-import * as fs from "node:fs";
-import * as os from "node:os";
-import * as path from "node:path";
 import type { IProcessRunner } from "../claude/IProcessRunner";
 import type { IClock } from "../../substrate/abstractions/IClock";
 import type {
@@ -76,14 +73,11 @@ export class CopilotSessionLauncher implements ISessionLauncher {
       args.push("--resume", this.sessionIds.get(options.cwd)!);
     }
 
-    // Write MCP server config to a temp file and pass via --mcp-config
-    let mcpConfigPath: string | undefined;
-    const mcpEntries = Object.keys(this.mcpServers);
-    if (mcpEntries.length > 0) {
+    // Pass MCP server config inline via --additional-mcp-config
+    const mcpKeys = Object.keys(this.mcpServers);
+    if (mcpKeys.length > 0) {
       const mcpConfig = { mcpServers: this.mcpServers };
-      mcpConfigPath = path.join(os.tmpdir(), `copilot-mcp-${this.generateUUID()}.json`);
-      fs.writeFileSync(mcpConfigPath, JSON.stringify(mcpConfig));
-      args.push("--mcp-config", mcpConfigPath);
+      args.push("--additional-mcp-config", JSON.stringify(mcpConfig));
     }
 
     try {
@@ -110,10 +104,6 @@ export class CopilotSessionLauncher implements ISessionLauncher {
         success: false,
         error: err instanceof Error ? err.message : String(err),
       };
-    } finally {
-      if (mcpConfigPath) {
-        try { fs.unlinkSync(mcpConfigPath); } catch { /* best-effort cleanup */ }
-      }
     }
   }
 }
