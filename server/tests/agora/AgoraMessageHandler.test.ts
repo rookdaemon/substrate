@@ -314,9 +314,9 @@ describe("AgoraMessageHandler", () => {
     });
 
     it("should process different envelope IDs", async () => {
-      const envelope1 = { ...testEnvelope, id: "envelope-1" };
-      const envelope2 = { ...testEnvelope, id: "envelope-2" };
-      const envelope3 = { ...testEnvelope, id: "envelope-3" };
+      const envelope1 = { ...testEnvelope, id: "envelope-1", payload: { question: "Hello 1?" } };
+      const envelope2 = { ...testEnvelope, id: "envelope-2", payload: { question: "Hello 2?" } };
+      const envelope3 = { ...testEnvelope, id: "envelope-3", payload: { question: "Hello 3?" } };
 
       await handler.processEnvelope(envelope1, "webhook");
       await handler.processEnvelope(envelope2, "webhook");
@@ -347,30 +347,31 @@ describe("AgoraMessageHandler", () => {
       // Override MAX_DEDUP_SIZE to 3 for testing
       (testHandler as unknown as { MAX_DEDUP_SIZE: number }).MAX_DEDUP_SIZE = 3;
 
-      // Process 4 envelopes (exceeds limit of 3)
-      await testHandler.processEnvelope({ ...testEnvelope, id: "envelope-1" }, "webhook");
-      await testHandler.processEnvelope({ ...testEnvelope, id: "envelope-2" }, "webhook");
-      await testHandler.processEnvelope({ ...testEnvelope, id: "envelope-3" }, "webhook");
-      await testHandler.processEnvelope({ ...testEnvelope, id: "envelope-4" }, "webhook");
+      // Process 4 envelopes (exceeds limit of 3) — each needs unique payload to avoid content dedup
+      await testHandler.processEnvelope({ ...testEnvelope, id: "envelope-1", payload: { n: 1 } }, "webhook");
+      await testHandler.processEnvelope({ ...testEnvelope, id: "envelope-2", payload: { n: 2 } }, "webhook");
+      await testHandler.processEnvelope({ ...testEnvelope, id: "envelope-3", payload: { n: 3 } }, "webhook");
+      await testHandler.processEnvelope({ ...testEnvelope, id: "envelope-4", payload: { n: 4 } }, "webhook");
 
       // All 4 should have been processed
       expect(conversationManager.appendedEntries).toHaveLength(4);
 
-      // Now send envelope-1 again (should be evicted from set, so should process again)
-      await testHandler.processEnvelope({ ...testEnvelope, id: "envelope-1" }, "webhook");
+      // Now send envelope-1 again (should be evicted from envelope ID set, so should process again)
+      // Use same payload as original envelope-1 — content dedup has 30min window but envelope ID dedup is the focus here
+      await testHandler.processEnvelope({ ...testEnvelope, id: "envelope-1", payload: { n: 1, retry: true } }, "webhook");
 
       // Should be processed again (count increases to 5)
       expect(conversationManager.appendedEntries).toHaveLength(5);
 
       // But envelope-4 should still be in the set (most recent 3 after envelope-1 re-added: envelope-1, envelope-3, envelope-4)
       // envelope-2 was evicted when envelope-1 was re-added
-      await testHandler.processEnvelope({ ...testEnvelope, id: "envelope-4" }, "webhook");
+      await testHandler.processEnvelope({ ...testEnvelope, id: "envelope-4", payload: { n: 4, retry: true } }, "webhook");
 
-      // Should not process (still at 5) - envelope-4 is still in set
+      // Should not process (still at 5) - envelope-4 is still in envelope ID set
       expect(conversationManager.appendedEntries).toHaveLength(5);
 
       // envelope-2 should have been evicted, so it should process
-      await testHandler.processEnvelope({ ...testEnvelope, id: "envelope-2" }, "webhook");
+      await testHandler.processEnvelope({ ...testEnvelope, id: "envelope-2", payload: { n: 2, retry: true } }, "webhook");
 
       // Should process (count increases to 6)
       expect(conversationManager.appendedEntries).toHaveLength(6);
@@ -387,6 +388,112 @@ describe("AgoraMessageHandler", () => {
 
       // Count should not increase
       expect(conversationManager.appendedEntries).toHaveLength(1);
+    });
+  });
+
+  describe("content-based dedup (#238)", () => {
+    const announceEnvelope: Envelope = {
+      id: "announce-1",
+      type: "announce",
+      sender: "302a300506032b6570032100abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd",
+      timestamp: 1708000000000,
+      payload: { name: "kuro", version: "1.0.0", capabilities: ["crypto_analysis"] },
+      signature: "test-signature",
+    };
+
+    it("should skip duplicate content from same sender within 30-minute window", async () => {
+      const env1 = { ...announceEnvelope, id: "announce-1" };
+      const env2 = { ...announceEnvelope, id: "announce-2" }; // Different ID, same content
+
+      await handler.processEnvelope(env1, "relay");
+      await handler.processEnvelope(env2, "relay");
+
+      // Only the first should be processed
+      expect(conversationManager.appendedEntries).toHaveLength(1);
+      expect(messageInjector.injectedMessages).toHaveLength(1);
+    });
+
+    it("should allow same content after window expires", async () => {
+      const mutableClock = new MockClock(new Date("2026-02-15T12:00:00Z"));
+      const windowHandler = new AgoraMessageHandler(
+        agoraService,
+        conversationManager,
+        messageInjector,
+        eventSink,
+        mutableClock,
+        getState,
+        isRateLimited,
+        logger,
+        'quarantine',
+        defaultRateLimitConfig
+      );
+
+      await windowHandler.processEnvelope({ ...announceEnvelope, id: "a-1" }, "relay");
+      expect(conversationManager.appendedEntries).toHaveLength(1);
+
+      // Advance clock past 30-minute window
+      mutableClock.setTime(new Date("2026-02-15T12:31:00Z"));
+
+      await windowHandler.processEnvelope({ ...announceEnvelope, id: "a-2" }, "relay");
+      expect(conversationManager.appendedEntries).toHaveLength(2);
+    });
+
+    it("should allow different content from same sender", async () => {
+      const env1 = { ...announceEnvelope, id: "a-1" };
+      const env2 = { ...announceEnvelope, id: "a-2", payload: { name: "kuro", version: "2.0.0" } };
+
+      await handler.processEnvelope(env1, "relay");
+      await handler.processEnvelope(env2, "relay");
+
+      expect(conversationManager.appendedEntries).toHaveLength(2);
+    });
+
+    it("should allow same content from different senders", async () => {
+      const sender2 = "302a300506032b6570032100ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
+      agoraService.addPeer("other-peer", sender2);
+
+      const env1 = { ...announceEnvelope, id: "a-1" };
+      const env2 = { ...announceEnvelope, id: "a-2", sender: sender2 };
+
+      await handler.processEnvelope(env1, "relay");
+      await handler.processEnvelope(env2, "relay");
+
+      expect(conversationManager.appendedEntries).toHaveLength(2);
+    });
+
+    it("should deduplicate non-announce message types too", async () => {
+      const request1: Envelope = {
+        id: "req-1",
+        type: "request",
+        sender: announceEnvelope.sender,
+        timestamp: 1708000000000,
+        payload: { question: "same question" },
+        signature: "test-sig",
+      };
+      const request2 = { ...request1, id: "req-2" };
+
+      await handler.processEnvelope(request1, "relay");
+      await handler.processEnvelope(request2, "relay");
+
+      expect(conversationManager.appendedEntries).toHaveLength(1);
+    });
+
+    it("should log dedup event with hash prefix", async () => {
+      await handler.processEnvelope({ ...announceEnvelope, id: "a-1" }, "relay");
+      await handler.processEnvelope({ ...announceEnvelope, id: "a-2" }, "relay");
+
+      const dedupLog = logger.debugMessages.find(m => m.includes("Duplicate content") && m.includes("#238"));
+      expect(dedupLog).toBeDefined();
+    });
+
+    it("should treat different message types as different content", async () => {
+      const asAnnounce = { ...announceEnvelope, id: "a-1", type: "announce" };
+      const asPublish = { ...announceEnvelope, id: "a-2", type: "publish" };
+
+      await handler.processEnvelope(asAnnounce, "relay");
+      await handler.processEnvelope(asPublish, "relay");
+
+      expect(conversationManager.appendedEntries).toHaveLength(2);
     });
   });
 
@@ -584,9 +691,9 @@ describe("AgoraMessageHandler", () => {
     });
 
     it("should allow messages under the rate limit", async () => {
-      // Send 10 messages (the limit)
+      // Send 10 messages (the limit) — each needs unique payload to avoid content dedup
       for (let i = 0; i < 10; i++) {
-        await handler.processEnvelope({ ...testEnvelope, id: `envelope-${i}` }, "webhook");
+        await handler.processEnvelope({ ...testEnvelope, id: `envelope-${i}`, payload: { n: i } }, "webhook");
       }
 
       expect(conversationManager.appendedEntries).toHaveLength(10);
@@ -594,9 +701,9 @@ describe("AgoraMessageHandler", () => {
     });
 
     it("should drop messages exceeding the rate limit", async () => {
-      // Send 11 messages (one over the limit)
+      // Send 11 messages (one over the limit) — unique payloads
       for (let i = 0; i < 11; i++) {
-        await handler.processEnvelope({ ...testEnvelope, id: `envelope-${i}` }, "webhook");
+        await handler.processEnvelope({ ...testEnvelope, id: `envelope-${i}`, payload: { n: i } }, "webhook");
       }
 
       // Only 10 messages should have been processed
@@ -605,14 +712,14 @@ describe("AgoraMessageHandler", () => {
     });
 
     it("should track rate limits per sender independently", async () => {
-      // Send 10 messages from first sender
+      // Send 10 messages from first sender — unique payloads
       for (let i = 0; i < 10; i++) {
-        await handler.processEnvelope({ ...testEnvelope, id: `envelope-1-${i}` }, "webhook");
+        await handler.processEnvelope({ ...testEnvelope, id: `envelope-1-${i}`, payload: { n: i } }, "webhook");
       }
 
-      // Send 10 messages from second sender
+      // Send 10 messages from second sender — unique payloads
       for (let i = 0; i < 10; i++) {
-        await handler.processEnvelope({ ...testEnvelope2, id: `envelope-2-${i}` }, "webhook");
+        await handler.processEnvelope({ ...testEnvelope2, id: `envelope-2-${i}`, payload: { n: i } }, "webhook");
       }
 
       // Both senders should have all messages processed
@@ -635,17 +742,17 @@ describe("AgoraMessageHandler", () => {
         defaultRateLimitConfig
       );
 
-      // Send 10 messages (the limit)
+      // Send 10 messages (the limit) — unique payloads
       for (let i = 0; i < 10; i++) {
-        await handler.processEnvelope({ ...testEnvelope, id: `envelope-first-${i}` }, "webhook");
+        await handler.processEnvelope({ ...testEnvelope, id: `envelope-first-${i}`, payload: { n: i } }, "webhook");
       }
 
       // Advance time by more than the window (60 seconds)
       mutableClock.setTime(new Date("2026-02-15T12:01:01Z"));
 
-      // Send 10 more messages (should be allowed as window reset)
+      // Send 10 more messages (should be allowed as window reset) — unique payloads
       for (let i = 0; i < 10; i++) {
-        await handler.processEnvelope({ ...testEnvelope, id: `envelope-second-${i}` }, "webhook");
+        await handler.processEnvelope({ ...testEnvelope, id: `envelope-second-${i}`, payload: { n: i + 100 } }, "webhook");
       }
 
       expect(conversationManager.appendedEntries).toHaveLength(20);
@@ -672,9 +779,9 @@ describe("AgoraMessageHandler", () => {
         disabledConfig
       );
 
-      // Send 15 messages (over the limit, but rate limiting is disabled)
+      // Send 15 messages (over the limit, but rate limiting is disabled) — unique payloads
       for (let i = 0; i < 15; i++) {
-        await handler.processEnvelope({ ...testEnvelope, id: `envelope-${i}` }, "webhook");
+        await handler.processEnvelope({ ...testEnvelope, id: `envelope-${i}`, payload: { n: i } }, "webhook");
       }
 
       expect(conversationManager.appendedEntries).toHaveLength(15);

@@ -687,7 +687,14 @@ export async function createLoopLayer(
   // `**[UNPROCESSED]**` that discuss the marker rather than being actual markers.
   try {
     const conversationContent = await reader.read(SubstrateFileType.CONVERSATION);
-    if (/:\s*\*\*\[UNPROCESSED\]\*\*/.test(conversationContent.rawMarkdown)) {
+    // #238: Filter startup scan to exclude announce messages — they are informational
+    // broadcasts (e.g. heartbeat/capability ads) that don't require agent response.
+    // Only trigger STARTUP SCAN for actionable [UNPROCESSED] messages.
+    const lines = conversationContent.rawMarkdown.split("\n");
+    const hasActionableUnprocessed = lines.some(
+      (line) => /:\s*\*\*\[UNPROCESSED\]\*\*/.test(line) && !/ announce:\s*\*\*\[UNPROCESSED\]\*\*/.test(line)
+    );
+    if (hasActionableUnprocessed) {
       const startupPrompt = "[STARTUP SCAN] Unprocessed messages detected in CONVERSATION.md from before the last restart. Please read CONVERSATION.md and respond to any messages marked with **[UNPROCESSED]**.";
       orchestrator.queueStartupMessage(startupPrompt);
       logger.debug("createApplication: queued startup message for unprocessed messages in CONVERSATION.md");

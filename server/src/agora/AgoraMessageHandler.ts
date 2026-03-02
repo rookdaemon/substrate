@@ -8,6 +8,7 @@ import { AgentRole } from "../agents/types";
 import { shortKey } from "./utils";
 import type { Envelope } from "@rookdaemon/agora" with { "resolution-mode": "import" };
 import type { ILogger } from "../logging";
+import { createHash } from "crypto";
 
 /**
  * Sliding window state for per-sender rate limiting
@@ -58,6 +59,15 @@ export class AgoraMessageHandler {
   private readonly senderWindows: Map<string, SenderWindow> = new Map();
   private static readonly MAX_SENDER_ENTRIES = 500;
 
+  /**
+   * Content-based dedup: Map of SHA-256(sender + type + payload) → first-seen timestamp.
+   * Prevents identical content from the same sender being processed multiple times
+   * within a time window, even when envelope IDs differ (#238).
+   */
+  private readonly contentDedup: Map<string, number> = new Map();
+  private readonly CONTENT_DEDUP_WINDOW_MS = 1800000; // 30 minutes
+  private readonly MAX_CONTENT_DEDUP_SIZE = 5000;
+
   constructor(
     private readonly agoraService: IAgoraService | null,
     private readonly conversationManager: IConversationManager,
@@ -106,6 +116,50 @@ export class AgoraMessageHandler {
       const oldest = this.processedEnvelopeIds.values().next().value;
       if (oldest !== undefined) {
         this.processedEnvelopeIds.delete(oldest);
+      }
+    }
+
+    return false;
+  }
+
+  /**
+   * Content-based dedup: check if this sender + type + payload combination
+   * has been seen within the dedup window (#238).
+   * Returns true if duplicate content, false if new.
+   */
+  private isDuplicateContent(senderPublicKey: string, messageType: string, payload: unknown): boolean {
+    const hash = createHash("sha256")
+      .update(senderPublicKey)
+      .update(messageType)
+      .update(JSON.stringify(payload))
+      .digest("hex");
+
+    const now = this.clock.now().getTime();
+    const firstSeen = this.contentDedup.get(hash);
+
+    if (firstSeen !== undefined && (now - firstSeen) < this.CONTENT_DEDUP_WINDOW_MS) {
+      this.logger.debug(
+        `[AGORA] Duplicate content from ${shortKey(senderPublicKey)} type=${messageType} (hash=${hash.slice(0, 12)}…) — skipping (#238)`
+      );
+      return true;
+    }
+
+    // New content or expired window — record it
+    this.contentDedup.set(hash, now);
+
+    // Bound map size: evict entries older than the window
+    if (this.contentDedup.size > this.MAX_CONTENT_DEDUP_SIZE) {
+      for (const [key, ts] of this.contentDedup.entries()) {
+        if ((now - ts) >= this.CONTENT_DEDUP_WINDOW_MS) {
+          this.contentDedup.delete(key);
+        }
+      }
+      // If still over limit after expiry sweep, remove oldest
+      if (this.contentDedup.size > this.MAX_CONTENT_DEDUP_SIZE) {
+        const oldestKey = this.contentDedup.keys().next().value;
+        if (oldestKey !== undefined) {
+          this.contentDedup.delete(oldestKey);
+        }
       }
     }
 
@@ -238,6 +292,12 @@ export class AgoraMessageHandler {
   async processEnvelope(envelope: Envelope, source: "webhook" | "relay" = "webhook", relayNameHint?: string): Promise<void> {
     // Check for duplicate envelope ID early - return without processing if duplicate
     if (this.isDuplicate(envelope.id)) {
+      return;
+    }
+
+    // Content-based dedup (#238): catch identical messages with different envelope IDs
+    // (e.g., announce heartbeat loops sending same payload every ~2 minutes)
+    if (this.isDuplicateContent(envelope.sender, envelope.type, envelope.payload)) {
       return;
     }
 
