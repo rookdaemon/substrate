@@ -1,6 +1,7 @@
 import { Message } from "./Message";
 import { Provider } from "./Provider";
 import { Router, DefaultRouter } from "./Router";
+import type { ILogger } from "../../logging";
 
 /**
  * TinyBus event types
@@ -12,7 +13,8 @@ export type TinyBusEvent =
   | "message.outbound"
   | "message.routed"
   | "message.error"
-  | "message.dropped";
+  | "message.dropped"
+  | "message.complete";
 
 /**
  * Event listener function
@@ -27,15 +29,18 @@ export type EventListener = (data: unknown) => void;
  * - Supports bidirectional flow
  * - Exposes minimal provider abstraction
  * - Is fully async and promise-driven
+ * - Optionally logs all operations via ILogger (#223)
  */
 export class TinyBus {
   private providers: Map<string, Provider> = new Map();
   private router: Router;
   private started = false;
   private eventListeners: Map<TinyBusEvent, Set<EventListener>> = new Map();
+  private logger?: ILogger;
 
-  constructor(router?: Router) {
+  constructor(router?: Router, logger?: ILogger) {
     this.router = router ?? new DefaultRouter();
+    this.logger = logger;
   }
 
   /**
@@ -62,6 +67,9 @@ export class TinyBus {
       return;
     }
 
+    const providerIds = Array.from(this.providers.keys());
+    this.logger?.debug(`[TINYBUS] Starting with ${providerIds.length} providers: ${providerIds.join(", ")}`);
+
     // Start all providers
     const startPromises = Array.from(this.providers.values()).map((p) =>
       p.start()
@@ -79,6 +87,7 @@ export class TinyBus {
     }
 
     this.started = true;
+    this.logger?.debug(`[TINYBUS] Started successfully`);
     this.emit("tinybus.started", {});
   }
 
@@ -90,6 +99,7 @@ export class TinyBus {
       return;
     }
 
+    this.logger?.debug(`[TINYBUS] Stopping...`);
     this.started = false;
 
     // Stop all providers
@@ -98,6 +108,7 @@ export class TinyBus {
     );
     await Promise.all(stopPromises);
 
+    this.logger?.debug(`[TINYBUS] Stopped`);
     this.emit("tinybus.stopped", {});
   }
 
@@ -109,6 +120,7 @@ export class TinyBus {
       throw new Error("TinyBus not started");
     }
 
+    const startTime = Date.now();
     this.emit("message.outbound", { message });
 
     // Route message to target providers
@@ -116,41 +128,73 @@ export class TinyBus {
     const targets = this.router.route(message, providers);
 
     if (targets.length === 0) {
+      this.logger?.debug(
+        `[TINYBUS] Dropped: type=${message.type} source=${message.source ?? "unknown"} destination=${message.destination ?? "broadcast"} reason=no_target_providers`
+      );
       this.emit("message.dropped", { message, reason: "No target providers" });
       return;
     }
 
-    // Send to all target providers
+    // Send to all target providers with per-provider timing
+    let successCount = 0;
+    let errorCount = 0;
     const sendPromises = targets.map(async (provider) => {
+      const handlerStart = Date.now();
       try {
         await provider.send(message);
-        this.emit("message.routed", { message, provider: provider.id });
+        const handlerDurationMs = Date.now() - handlerStart;
+        successCount++;
+        this.logger?.debug(
+          `[TINYBUS] Routed: type=${message.type} → provider=${provider.id} id=${message.id} durationMs=${handlerDurationMs}`
+        );
+        this.emit("message.routed", { message, provider: provider.id, durationMs: handlerDurationMs });
       } catch (error) {
+        const handlerDurationMs = Date.now() - handlerStart;
+        errorCount++;
+        const errorMsg = error instanceof Error ? error.message : "Unknown error";
+        this.logger?.warn(
+          `[TINYBUS] Error: type=${message.type} provider=${provider.id} error=${errorMsg} durationMs=${handlerDurationMs}`
+        );
         this.emit("message.error", {
           message,
           provider: provider.id,
-          error:
-            error instanceof Error ? error.message : "Unknown error",
+          error: errorMsg,
+          durationMs: handlerDurationMs,
         });
       }
     });
 
     await Promise.all(sendPromises);
+
+    const totalDurationMs = Date.now() - startTime;
+    this.emit("message.complete", {
+      message,
+      durationMs: totalDurationMs,
+      routedTo: targets.length,
+      successCount,
+      errorCount,
+    });
   }
 
   /**
    * Handle inbound message from a provider
    */
   private async handleInboundMessage(message: Message): Promise<void> {
+    this.logger?.debug(
+      `[TINYBUS] Inbound: type=${message.type} source=${message.source ?? "unknown"} id=${message.id}`
+    );
     this.emit("message.inbound", { message });
 
     try {
       await this.publish(message);
     } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : "Unknown error";
+      this.logger?.warn(
+        `[TINYBUS] Inbound routing failed: type=${message.type} error=${errorMsg}`
+      );
       this.emit("message.error", {
         message,
-        error:
-          error instanceof Error ? error.message : "Unknown error",
+        error: errorMsg,
       });
     }
   }

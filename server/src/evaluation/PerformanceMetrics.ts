@@ -40,7 +40,23 @@ export interface SubstrateIoEvent {
   };
 }
 
-export type PerformanceEvent = CycleEvent | ApiCallEvent | SubstrateIoEvent;
+/**
+ * TinyBus message event — recorded for each message routed through TinyBus (#223).
+ */
+export interface TinyBusMessageEvent {
+  timestamp: string; // ISO 8601
+  eventType: "tinybus_message";
+  durationMs: number;
+  metadata: {
+    messageType: string;     // e.g. "agora.send", "chat"
+    source: string;
+    destination?: string;
+    routedTo: number;        // count of providers that received message
+    success: boolean;
+  };
+}
+
+export type PerformanceEvent = CycleEvent | ApiCallEvent | SubstrateIoEvent | TinyBusMessageEvent;
 
 /**
  * Persists granular performance events to `.metrics/performance.jsonl`.
@@ -121,6 +137,27 @@ export class PerformanceMetrics {
       eventType: "substrate_io",
       durationMs,
       metadata: { operation, file },
+    };
+    await this.append(event);
+  }
+
+  /**
+   * Record a TinyBus message routing event (#223).
+   * Called via the message.complete event listener wired in createLoopLayer.
+   */
+  async recordTinyBusMessage(
+    durationMs: number,
+    messageType: string,
+    source: string,
+    routedTo: number,
+    success: boolean,
+    destination?: string,
+  ): Promise<void> {
+    const event: TinyBusMessageEvent = {
+      timestamp: this.clock.now().toISOString(),
+      eventType: "tinybus_message",
+      durationMs,
+      metadata: { messageType, source, destination, routedTo, success },
     };
     await this.append(event);
   }

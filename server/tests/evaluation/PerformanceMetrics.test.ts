@@ -1,4 +1,4 @@
-import { PerformanceMetrics, CycleEvent, ApiCallEvent, SubstrateIoEvent } from "../../src/evaluation/PerformanceMetrics";
+import { PerformanceMetrics, CycleEvent, ApiCallEvent, SubstrateIoEvent, TinyBusMessageEvent } from "../../src/evaluation/PerformanceMetrics";
 import { InMemoryFileSystem } from "../../src/substrate/abstractions/InMemoryFileSystem";
 import { FixedClock } from "../../src/substrate/abstractions/FixedClock";
 
@@ -139,6 +139,54 @@ describe("PerformanceMetrics", () => {
 
       const events = await metrics.readEvents();
       expect(events).toEqual([]);
+    });
+  });
+
+  describe("recordTinyBusMessage() (#223)", () => {
+    it("writes a tinybus_message event as a JSONL line", async () => {
+      await metrics.recordTinyBusMessage(15, "agora.send", "agora-outbound", 2, true, undefined);
+
+      const content = await fs.readFile(metricsPath);
+      const entry = JSON.parse(content.trim()) as TinyBusMessageEvent;
+
+      expect(entry.eventType).toBe("tinybus_message");
+      expect(entry.durationMs).toBe(15);
+      expect(entry.metadata.messageType).toBe("agora.send");
+      expect(entry.metadata.source).toBe("agora-outbound");
+      expect(entry.metadata.routedTo).toBe(2);
+      expect(entry.metadata.success).toBe(true);
+      expect(entry.metadata.destination).toBeUndefined();
+      expect(entry.timestamp).toBe("2026-02-27T12:00:00.000Z");
+    });
+
+    it("records destination when provided", async () => {
+      await metrics.recordTinyBusMessage(5, "chat", "chat-handler", 1, true, "session-injection");
+
+      const content = await fs.readFile(metricsPath);
+      const entry = JSON.parse(content.trim()) as TinyBusMessageEvent;
+
+      expect(entry.metadata.destination).toBe("session-injection");
+    });
+
+    it("records failed routing events", async () => {
+      await metrics.recordTinyBusMessage(100, "test.fail", "p1", 1, false);
+
+      const content = await fs.readFile(metricsPath);
+      const entry = JSON.parse(content.trim()) as TinyBusMessageEvent;
+
+      expect(entry.metadata.success).toBe(false);
+    });
+
+    it("appears in mixed readEvents output", async () => {
+      await metrics.recordCycleComplete(1, "dispatch", 5000, true);
+      await metrics.recordTinyBusMessage(10, "agora.send", "agora-outbound", 3, true);
+      await metrics.recordApiCall(30000, "SUBCONSCIOUS", "execute");
+
+      const events = await metrics.readEvents();
+      expect(events).toHaveLength(3);
+      expect(events[0].eventType).toBe("cycle");
+      expect(events[1].eventType).toBe("tinybus_message");
+      expect(events[2].eventType).toBe("api_call");
     });
   });
 

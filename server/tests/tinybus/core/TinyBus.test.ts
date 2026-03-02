@@ -146,10 +146,12 @@ describe("TinyBus", () => {
 
       await tinyBus.publish(message);
 
-      expect(listener).toHaveBeenCalledWith({
-        message,
-        provider: "provider-2",
-      });
+      expect(listener).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message,
+          provider: "provider-2",
+        })
+      );
     });
 
     it("emits dropped event when destination not found", async () => {
@@ -376,6 +378,242 @@ describe("TinyBus", () => {
       await provider1.injectMessage(message);
 
       expect(events).toEqual(["inbound", "outbound", "routed"]);
+    });
+  });
+
+  describe("observability (#223)", () => {
+    it("logs lifecycle events when logger is provided", async () => {
+      const logEntries: string[] = [];
+      const logger = {
+        debug: (msg: string) => logEntries.push(msg),
+        warn: (msg: string) => logEntries.push(`WARN: ${msg}`),
+        error: (msg: string) => logEntries.push(`ERROR: ${msg}`),
+        verbose: (msg: string) => logEntries.push(`VERBOSE: ${msg}`),
+      };
+      const bus = new TinyBus(undefined, logger);
+      bus.registerProvider(new MemoryProvider("p1"));
+
+      await bus.start();
+      await bus.stop();
+
+      expect(logEntries.some(e => e.includes("[TINYBUS] Starting with 1 providers"))).toBe(true);
+      expect(logEntries.some(e => e.includes("[TINYBUS] Started successfully"))).toBe(true);
+      expect(logEntries.some(e => e.includes("[TINYBUS] Stopping"))).toBe(true);
+      expect(logEntries.some(e => e.includes("[TINYBUS] Stopped"))).toBe(true);
+    });
+
+    it("logs routed messages with timing", async () => {
+      const logEntries: string[] = [];
+      const logger = {
+        debug: (msg: string) => logEntries.push(msg),
+        warn: () => {},
+        error: () => {},
+        verbose: () => {},
+      };
+      const bus = new TinyBus(undefined, logger);
+      const p1 = new MemoryProvider("p1");
+      const p2 = new MemoryProvider("p2");
+      bus.registerProvider(p1);
+      bus.registerProvider(p2);
+      await bus.start();
+
+      const message = createMessage({
+        type: "test.observe",
+        source: "p1",
+        destination: "p2",
+      });
+      await bus.publish(message);
+
+      const routedLog = logEntries.find(e => e.includes("[TINYBUS] Routed:") && e.includes("test.observe"));
+      expect(routedLog).toBeDefined();
+      expect(routedLog).toContain("provider=p2");
+      expect(routedLog).toContain("durationMs=");
+
+      await bus.stop();
+    });
+
+    it("logs dropped messages", async () => {
+      const logEntries: string[] = [];
+      const logger = {
+        debug: (msg: string) => logEntries.push(msg),
+        warn: () => {},
+        error: () => {},
+        verbose: () => {},
+      };
+      const bus = new TinyBus(undefined, logger);
+      const p1 = new MemoryProvider("p1");
+      bus.registerProvider(p1);
+      await bus.start();
+
+      const message = createMessage({
+        type: "test.drop",
+        destination: "nonexistent",
+      });
+      await bus.publish(message);
+
+      const droppedLog = logEntries.find(e => e.includes("[TINYBUS] Dropped:") && e.includes("test.drop"));
+      expect(droppedLog).toBeDefined();
+      expect(droppedLog).toContain("reason=no_target_providers");
+
+      await bus.stop();
+    });
+
+    it("warns on provider errors with timing", async () => {
+      const warnEntries: string[] = [];
+      const logger = {
+        debug: () => {},
+        warn: (msg: string) => warnEntries.push(msg),
+        error: () => {},
+        verbose: () => {},
+      };
+      const bus = new TinyBus(undefined, logger);
+      const p1 = new MemoryProvider("p1");
+      const p2 = new MemoryProvider("p2");
+      bus.registerProvider(p1);
+      bus.registerProvider(p2);
+      await bus.start();
+
+      // Stop p2 to cause send failure
+      await p2.stop();
+
+      const message = createMessage({
+        type: "test.error",
+        destination: "p2",
+      });
+      await bus.publish(message);
+
+      const errorLog = warnEntries.find(e => e.includes("[TINYBUS] Error:") && e.includes("test.error"));
+      expect(errorLog).toBeDefined();
+      expect(errorLog).toContain("provider=p2");
+      expect(errorLog).toContain("durationMs=");
+
+      await bus.stop();
+    });
+
+    it("emits message.complete event with routing summary", async () => {
+      const bus = new TinyBus();
+      const p1 = new MemoryProvider("p1");
+      const p2 = new MemoryProvider("p2");
+      const p3 = new MemoryProvider("p3");
+      bus.registerProvider(p1);
+      bus.registerProvider(p2);
+      bus.registerProvider(p3);
+      await bus.start();
+
+      const completeListener = jest.fn();
+      bus.on("message.complete", completeListener);
+
+      const message = createMessage({
+        type: "test.complete",
+        source: "p1",
+      });
+      await bus.publish(message);
+
+      expect(completeListener).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message,
+          routedTo: 2, // p2 and p3 (not p1 — source excluded)
+          successCount: 2,
+          errorCount: 0,
+          durationMs: expect.any(Number),
+        })
+      );
+
+      await bus.stop();
+    });
+
+    it("message.complete reports errors correctly", async () => {
+      const bus = new TinyBus();
+      const p1 = new MemoryProvider("p1");
+      const p2 = new MemoryProvider("p2");
+      bus.registerProvider(p1);
+      bus.registerProvider(p2);
+      await bus.start();
+
+      // Stop p2 to cause error
+      await p2.stop();
+
+      const completeListener = jest.fn();
+      bus.on("message.complete", completeListener);
+
+      const message = createMessage({
+        type: "test.complete.error",
+        source: "p1",
+      });
+      await bus.publish(message);
+
+      expect(completeListener).toHaveBeenCalledWith(
+        expect.objectContaining({
+          routedTo: 1, // only p2 (p1 excluded as source)
+          successCount: 0,
+          errorCount: 1,
+        })
+      );
+
+      await bus.stop();
+    });
+
+    it("works without logger (backward compatible)", async () => {
+      const bus = new TinyBus(); // no logger
+      const p1 = new MemoryProvider("p1");
+      bus.registerProvider(p1);
+      await bus.start();
+
+      const message = createMessage({ type: "test.nolog" });
+      await expect(bus.publish(message)).resolves.not.toThrow();
+
+      await bus.stop();
+    });
+
+    it("routed event includes durationMs", async () => {
+      const bus = new TinyBus();
+      const p1 = new MemoryProvider("p1");
+      bus.registerProvider(p1);
+      await bus.start();
+
+      const routedListener = jest.fn();
+      bus.on("message.routed", routedListener);
+
+      const message = createMessage({ type: "test.timing" });
+      await bus.publish(message);
+
+      expect(routedListener).toHaveBeenCalledWith(
+        expect.objectContaining({
+          provider: "p1",
+          durationMs: expect.any(Number),
+        })
+      );
+
+      await bus.stop();
+    });
+
+    it("logs inbound messages", async () => {
+      const logEntries: string[] = [];
+      const logger = {
+        debug: (msg: string) => logEntries.push(msg),
+        warn: () => {},
+        error: () => {},
+        verbose: () => {},
+      };
+      const bus = new TinyBus(undefined, logger);
+      const p1 = new MemoryProvider("p1");
+      const p2 = new MemoryProvider("p2");
+      bus.registerProvider(p1);
+      bus.registerProvider(p2);
+      await bus.start();
+
+      const message = createMessage({
+        type: "test.inbound",
+        source: "p1",
+        destination: "p2",
+      });
+      await p1.injectMessage(message);
+
+      const inboundLog = logEntries.find(e => e.includes("[TINYBUS] Inbound:") && e.includes("test.inbound"));
+      expect(inboundLog).toBeDefined();
+      expect(inboundLog).toContain("source=p1");
+
+      await bus.stop();
     });
   });
 });

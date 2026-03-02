@@ -88,8 +88,8 @@ export async function createLoopLayer(
   // File watcher for substrate files - emits file_changed events via websocket
   const fileWatcher = new FileWatcher(substrateConfig, wsServer, clock);
 
-  // Create TinyBus instance for message routing
-  const tinyBus = new TinyBus();
+  // Create TinyBus instance for message routing (logger injected for #223 observability)
+  const tinyBus = new TinyBus(undefined, logger);
 
   // Agora service for agent-to-agent communication
   let agoraService: IAgoraService | null = null;
@@ -249,19 +249,8 @@ export async function createLoopLayer(
   // Start TinyBus
   await tinyBus.start();
 
-  // TinyBus observability — log routing outcomes so we can diagnose message delivery issues
-  tinyBus.on("message.routed", (data) => {
-    const d = data as { message: Message; provider: string };
-    logger.debug(`[TINYBUS] Routed: type=${d.message.type} → provider=${d.provider} id=${d.message.id}`);
-  });
-  tinyBus.on("message.error", (data) => {
-    const d = data as { message: Message; provider?: string; error: string };
-    logger.debug(`[TINYBUS] Error: type=${d.message.type} provider=${d.provider ?? "unknown"} error=${d.error}`);
-  });
-  tinyBus.on("message.dropped", (data) => {
-    const d = data as { message: Message; reason: string };
-    logger.debug(`[TINYBUS] Dropped: type=${d.message.type} reason=${d.reason}`);
-  });
+  // TinyBus observability (#223) — logging is now handled internally by TinyBus (ILogger injected above).
+  // Wire PerformanceMetrics recording via message.complete event (deferred until performanceMetrics exists below).
 
   httpServer.setOrchestrator(orchestrator);
   httpServer.setDependencies({ reader, ego });
@@ -306,6 +295,25 @@ export async function createLoopLayer(
   // Create performance metrics collector and wire into orchestrator
   const performanceMetrics = new PerformanceMetrics(fs, clock, config.substratePath);
   orchestrator.setPerformanceMetrics(performanceMetrics);
+
+  // TinyBus → PerformanceMetrics wiring (#223): record message routing latency
+  tinyBus.on("message.complete", (data) => {
+    const d = data as {
+      message: Message;
+      durationMs: number;
+      routedTo: number;
+      successCount: number;
+      errorCount: number;
+    };
+    performanceMetrics.recordTinyBusMessage(
+      d.durationMs,
+      d.message.type,
+      d.message.source ?? "unknown",
+      d.routedTo,
+      d.errorCount === 0,
+      d.message.destination,
+    ).catch(() => { /* best-effort — never interrupt the bus */ });
+  });
 
   // Wire Agora service into orchestrator for sending agoraReplies
   // from Subconscious/Ego structured JSON output
