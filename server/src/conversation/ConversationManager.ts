@@ -128,7 +128,11 @@ export class ConversationManager implements IConversationManager {
       const release = await this.lock.acquire(SubstrateFileType.CONVERSATION);
       try {
         const filePath = this.config.getFilePath(SubstrateFileType.CONVERSATION);
-        await this.fs.writeFile(filePath, result.remainingContent);
+        // Ensure trailing newline so subsequent appendFile calls start on a new line
+        const contentToWrite = result.remainingContent.endsWith('\n')
+          ? result.remainingContent
+          : result.remainingContent + '\n';
+        await this.fs.writeFile(filePath, contentToWrite);
       } finally {
         release();
       }
@@ -204,10 +208,15 @@ export class ConversationManager implements IConversationManager {
       const release = await this.lock.acquire(SubstrateFileType.CONVERSATION);
       try {
         const filePath = this.config.getFilePath(SubstrateFileType.CONVERSATION);
-        await this.fs.writeFile(filePath, result.remainingContent);
+        // Ensure trailing newline so subsequent appendFile calls start on a new line
+        const contentToWrite = result.remainingContent.endsWith('\n')
+          ? result.remainingContent
+          : result.remainingContent + '\n';
+        await this.fs.writeFile(filePath, contentToWrite);
       } finally {
         release();
       }
+      this.cachedLineCount = null; // invalidate cache after forced archive
     }
 
     this.lastArchiveTime = this.clock.now();
