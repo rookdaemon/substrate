@@ -6,7 +6,7 @@ import { PromptBuilder } from "../prompts/PromptBuilder";
 import { ISessionLauncher, ProcessLogEntry } from "../claude/ISessionLauncher";
 import { PlanParser } from "../parsers/PlanParser";
 import { extractJson } from "../parsers/extractJson";
-import { AgentRole } from "../types";
+import { AgentRole, generateCorrelationId } from "../types";
 import { TaskClassifier } from "../TaskClassifier";
 import { DriveQualityTracker } from "../../evaluation/DriveQualityTracker";
 
@@ -15,6 +15,7 @@ export interface GoalCandidate {
   description: string;
   priority: "high" | "medium" | "low";
   confidence: number; // 0-100: how certain the ID is that this goal is appropriate
+  correlationId?: string;
 }
 
 export interface IdleDetectionResult {
@@ -82,7 +83,10 @@ export class Id {
       const parsed = extractJson(result.rawOutput);
       if (!Array.isArray(parsed.goalCandidates)) return [];
 
-      return parsed.goalCandidates;
+      return parsed.goalCandidates.map((c: GoalCandidate) => ({
+        ...c,
+        correlationId: generateCorrelationId(),
+      }));
     } catch {
       return [];  // Id silently returns empty — errors surface through other agents
     }

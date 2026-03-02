@@ -14,6 +14,7 @@ export interface PlanTask {
   status: TaskStatus;
   children: PlanTask[];
   trigger?: string;
+  correlationId?: string;
 }
 
 interface RawTaskLine {
@@ -21,6 +22,7 @@ interface RawTaskLine {
   checked: boolean;
   deferred: boolean;
   title: string;
+  correlationId?: string;
 }
 
 export class PlanParser {
@@ -112,11 +114,15 @@ export class PlanParser {
       if (line.startsWith("#")) break;
       const match = line.match(/^(\s*)- \[([ x~])\] (.+)$/);
       if (match) {
+        // Check next line for embedded correlation ID comment
+        const nextLine = lines[i + 1] ?? "";
+        const correlationMatch = nextLine.match(/<!--\s*correlationId:\s*(\S+)\s*-->/);
         result.push({
           indent: match[1].length,
           checked: match[2] === "x",
           deferred: match[2] === "~",
           title: match[3],
+          ...(correlationMatch ? { correlationId: correlationMatch[1] } : {}),
         });
       }
     }
@@ -182,6 +188,7 @@ export class PlanParser {
         status: line.checked ? TaskStatus.COMPLETE : line.deferred ? TaskStatus.DEFERRED : TaskStatus.PENDING,
         children,
         ...(trigger !== undefined ? { trigger } : {}),
+        ...(line.correlationId !== undefined ? { correlationId: line.correlationId } : {}),
       });
 
       counter++;

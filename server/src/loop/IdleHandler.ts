@@ -67,7 +67,12 @@ export class IdleHandler {
       approved.map((g) => g.title).join(", "),
       "",
       "## Tasks",
-      ...approved.map((g) => `- [ ] ${g.title}: ${g.description} ${dateTag}`),
+      ...approved.flatMap((g) => {
+        const line = `- [ ] ${g.title}: ${g.description} ${dateTag}`;
+        return g.correlationId
+          ? [line, `  <!-- correlationId: ${g.correlationId} -->`]
+          : [line];
+      }),
     ];
     await this.ego.writePlan(planLines.join("\n"));
 

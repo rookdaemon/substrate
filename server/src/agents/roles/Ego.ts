@@ -59,6 +59,7 @@ export interface DispatchResult {
   targetRole: AgentRole;
   taskId: string;
   description: string;
+  correlationId?: string;
 }
 
 export class Ego {
@@ -193,6 +194,7 @@ export class Ego {
       targetRole: AgentRole.SUBCONSCIOUS,
       taskId: next.id,
       description: next.title,
+      ...(next.correlationId !== undefined ? { correlationId: next.correlationId } : {}),
     };
   }
 }

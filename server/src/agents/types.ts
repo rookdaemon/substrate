@@ -1,5 +1,12 @@
 import { SubstrateFileType, SubstrateFileLoadStrategy } from "../substrate/types";
 
+export type CorrelationId = string;
+
+export function generateCorrelationId(): CorrelationId {
+  const random = Math.random().toString(36).slice(2, 8).padEnd(6, "0");
+  return `drive-${Date.now()}-${random}`;
+}
+
 export enum AgentRole {
   EGO = "EGO",
   SUBCONSCIOUS = "SUBCONSCIOUS",

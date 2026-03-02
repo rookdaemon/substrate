@@ -483,7 +483,7 @@ export class LoopOrchestrator implements IMessageInjector {
         data: { consecutiveIdleCycles: this.metrics.consecutiveIdleCycles },
       });
     } else {
-      this.logger.debug(`cycle ${this.cycleNumber}: dispatching task "${dispatch.taskId}"`);
+      this.logger.debug(`cycle ${this.cycleNumber}: dispatching task "${dispatch.taskId}"${dispatch.correlationId ? ` [correlationId: ${dispatch.correlationId}]` : ""}`);
 
       // Endpoint state injection — provide runtime context alongside task dispatch
       const endpointStateContext = await this.readEndpointState();
