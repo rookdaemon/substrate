@@ -332,51 +332,6 @@ describe("TinyBusMcpServer", () => {
   });
 
   // -------------------------------------------------------------------------
-  // list_peers
-  // -------------------------------------------------------------------------
-  describe("list_peers tool", () => {
-    it("list_peers tool is NOT registered when no agoraService provided", async () => {
-      bus = await startedBus();
-      ({ client, cleanup } = await buildClient(bus, null));
-      const tools = await client.listTools();
-      const names = tools.tools.map((t) => t.name);
-      expect(names).not.toContain("list_peers");
-    });
-
-    it("list_peers tool IS registered when agoraService is provided", async () => {
-      bus = await startedBus();
-      ({ client, cleanup } = await buildClient(bus, makeMockAgoraService()));
-      const tools = await client.listTools();
-      const names = tools.tools.map((t) => t.name);
-      expect(names).toContain("list_peers");
-    });
-
-    it("returns empty peers array when no peers configured", async () => {
-      bus = await startedBus();
-      ({ client, cleanup } = await buildClient(bus, makeMockAgoraService([])));
-      const result = await client.callTool({ name: "list_peers", arguments: {} });
-      const data = parseResult(result as Parameters<typeof parseResult>[0]) as { peers: string[] };
-      expect(data.peers).toEqual([]);
-    });
-
-    it("returns configured peer names", async () => {
-      bus = await startedBus();
-      ({ client, cleanup } = await buildClient(bus, makeMockAgoraService(["alice", "bob"])));
-      const result = await client.callTool({ name: "list_peers", arguments: {} });
-      const data = parseResult(result as Parameters<typeof parseResult>[0]) as { peers: string[] };
-      expect(data.peers).toEqual(["alice", "bob"]);
-    });
-
-    it("calls getPeers on the agoraService", async () => {
-      bus = await startedBus();
-      const agora = makeMockAgoraService(["carol"]);
-      ({ client, cleanup } = await buildClient(bus, agora));
-      await client.callTool({ name: "list_peers", arguments: {} });
-      expect(agora.getPeers).toHaveBeenCalled();
-    });
-  });
-
-  // -------------------------------------------------------------------------
   // tool listing / discovery
   // -------------------------------------------------------------------------
   describe("tool discovery", () => {
@@ -388,6 +343,25 @@ describe("TinyBusMcpServer", () => {
       expect(names).toContain("send_message");
       expect(names).toContain("list_message_types");
       expect(names).toContain("list_providers");
+    });
+
+    it("does not expose Agora tools when no agoraService provided", async () => {
+      bus = await startedBus();
+      ({ client, cleanup } = await buildClient(bus, null));
+      const tools = await client.listTools();
+      const names = tools.tools.map((t) => t.name);
+      expect(names).not.toContain("send_agora_message");
+      expect(names).not.toContain("list_peers");
+      expect(names).not.toContain("ignore_peer");
+    });
+
+    it("exposes Agora tools when agoraService is provided", async () => {
+      bus = await startedBus();
+      ({ client, cleanup } = await buildClient(bus, makeMockAgoraService()));
+      const tools = await client.listTools();
+      const names = tools.tools.map((t) => t.name);
+      expect(names).toContain("send_agora_message");
+      expect(names).toContain("list_peers");
     });
 
     it("deprecated single-arg overload still creates a working server", async () => {
@@ -405,65 +379,6 @@ describe("TinyBusMcpServer", () => {
       const data = parseResult(result as Parameters<typeof parseResult>[0]) as Record<string, unknown>;
       expect(data.success).toBe(true);
       cleanup = async () => { await c.close(); };
-    });
-  });
-
-  describe("ignored peers tools", () => {
-    it("registers ignore_peer, unignore_peer, list_ignored_peers when manager is provided", async () => {
-      bus = await startedBus();
-      const manager = makeIgnoredPeersManager();
-      ({ client, cleanup } = await buildClient(bus, null, manager));
-      const tools = await client.listTools();
-      const names = tools.tools.map((t) => t.name);
-      expect(names).toContain("ignore_peer");
-      expect(names).toContain("unignore_peer");
-      expect(names).toContain("list_ignored_peers");
-    });
-
-    it("does not register ignored-peers tools when manager is absent", async () => {
-      bus = await startedBus();
-      ({ client, cleanup } = await buildClient(bus, null, null));
-      const tools = await client.listTools();
-      const names = tools.tools.map((t) => t.name);
-      expect(names).not.toContain("ignore_peer");
-      expect(names).not.toContain("unignore_peer");
-      expect(names).not.toContain("list_ignored_peers");
-    });
-
-    it("ignore_peer adds key and list_ignored_peers reflects it", async () => {
-      bus = await startedBus();
-      const manager = makeIgnoredPeersManager();
-      ({ client, cleanup } = await buildClient(bus, null, manager));
-
-      await client.callTool({
-        name: "ignore_peer",
-        arguments: { publicKey: "peer-abc" },
-      });
-
-      const listResult = await client.callTool({
-        name: "list_ignored_peers",
-        arguments: {},
-      });
-      const data = parseResult(listResult as Parameters<typeof parseResult>[0]) as { ignoredPeers: string[] };
-      expect(data.ignoredPeers).toEqual(["peer-abc"]);
-    });
-
-    it("unignore_peer removes key", async () => {
-      bus = await startedBus();
-      const manager = makeIgnoredPeersManager(["peer-abc"]);
-      ({ client, cleanup } = await buildClient(bus, null, manager));
-
-      await client.callTool({
-        name: "unignore_peer",
-        arguments: { publicKey: "peer-abc" },
-      });
-
-      const listResult = await client.callTool({
-        name: "list_ignored_peers",
-        arguments: {},
-      });
-      const data = parseResult(listResult as Parameters<typeof parseResult>[0]) as { ignoredPeers: string[] };
-      expect(data.ignoredPeers).toEqual([]);
     });
   });
 });

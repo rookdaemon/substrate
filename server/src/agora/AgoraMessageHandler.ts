@@ -400,8 +400,8 @@ export class AgoraMessageHandler {
     // Format message as agent prompt similar to old checkAgoraInbox format
     let injected = false;
     const replyInstruction = knownPeer
-      ? `Respond to this message if appropriate. Use the TinyBus MCP tool (${"`"}mcp__tinybus__send_message${"`"} in Claude Code, or ${"`"}send_message${"`"} in Gemini CLI) with type "agora.send" to reply. Example: { type: "agora.send", payload: { peerName: "${knownPeer}", type: "publish", payload: { text: "your response" }, inReplyTo: "${envelope.id}" } }`
-      : `Respond to this message if appropriate. Note: Sender (${senderDisplayName}) is not in PEERS.md, but you can reply via relay using targetPubkey. Use the TinyBus MCP tool (${"`"}mcp__tinybus__send_message${"`"} in Claude Code, or ${"`"}send_message${"`"} in Gemini CLI) with type "agora.send". Example: { type: "agora.send", payload: { targetPubkey: "${envelope.sender}", type: "publish", payload: { text: "your response" }, inReplyTo: "${envelope.id}" } }`;
+      ? `Respond to this message if appropriate. Use ${"`"}mcp__tinybus__send_agora_message${"`"} (Claude Code) or ${"`"}send_agora_message${"`"} (Gemini CLI) with: peerName="${knownPeer}", text="your response", inReplyTo="${envelope.id}"`
+      : `Respond to this message if appropriate. Note: Sender (${senderDisplayName}) is not in PEERS.md, but you can reply via relay. Use ${"`"}mcp__tinybus__send_agora_message${"`"} (Claude Code) or ${"`"}send_agora_message${"`"} (Gemini CLI) with: targetPubkey="${envelope.sender}", text="your response", inReplyTo="${envelope.id}"`;
     try {
       const agentPrompt = `[AGORA MESSAGE from ${senderDisplayName}]\nType: ${envelope.type}\nEnvelope ID: ${envelope.id}\nTimestamp: ${timestamp}\nPayload: ${payloadStr}\n\n${replyInstruction}`;
       injected = this.messageInjector.injectMessage(agentPrompt);

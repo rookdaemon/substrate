@@ -6,17 +6,15 @@ import * as http from "node:http";
 import { TinyBus } from "../tinybus/core/TinyBus";
 import { createMessage } from "../tinybus/core/Message";
 import type { IAgoraService } from "../agora/IAgoraService";
+import { registerAgoraTools } from "../agora/AgoraMcpTools";
 
-export interface IgnoredPeersManager {
-  ignorePeer(publicKey: string): boolean;
-  unignorePeer(publicKey: string): boolean;
-  listIgnoredPeers(): string[];
-}
+// Re-export so existing callers importing from this module continue to work.
+export type { IgnoredPeersManager } from "../agora/AgoraMcpTools";
 
 export interface McpServerOptions {
   tinyBus: TinyBus;
   agoraService?: IAgoraService | null;
-  ignoredPeersManager?: IgnoredPeersManager | null;
+  ignoredPeersManager?: import("../agora/AgoraMcpTools").IgnoredPeersManager | null;
 }
 
 /**
@@ -177,92 +175,9 @@ export function createTinyBusMcpServer(arg: TinyBus | McpServerOptions): McpServ
     }
   );
 
-  // Register list_peers tool (only when Agora service is available)
+  // Register Agora-specific tools (send_agora_message, list_peers, ignore/unignore_peer, etc.)
   if (agoraService) {
-    server.tool(
-      "list_peers",
-      "List all configured Agora peers",
-      {},
-      async () => {
-        const peers = agoraService.getPeers();
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify({ peers }),
-            },
-          ],
-        };
-      }
-    );
-  }
-
-  if (ignoredPeersManager) {
-    server.tool(
-      "ignore_peer",
-      "Ignore a peer public key so inbound Agora messages from it are dropped",
-      {
-        publicKey: z.string().min(1).describe("Peer public key to ignore"),
-      },
-      async ({ publicKey }) => {
-        const added = ignoredPeersManager.ignorePeer(publicKey);
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify({
-                success: true,
-                ignored: publicKey,
-                added,
-                ignoredPeers: ignoredPeersManager.listIgnoredPeers(),
-              }),
-            },
-          ],
-        };
-      }
-    );
-
-    server.tool(
-      "unignore_peer",
-      "Remove a peer public key from the ignored Agora blocklist",
-      {
-        publicKey: z.string().min(1).describe("Peer public key to unignore"),
-      },
-      async ({ publicKey }) => {
-        const removed = ignoredPeersManager.unignorePeer(publicKey);
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify({
-                success: true,
-                unignored: publicKey,
-                removed,
-                ignoredPeers: ignoredPeersManager.listIgnoredPeers(),
-              }),
-            },
-          ],
-        };
-      }
-    );
-
-    server.tool(
-      "list_ignored_peers",
-      "List peer public keys currently ignored for inbound Agora messages",
-      {},
-      async () => {
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify({
-                ignoredPeers: ignoredPeersManager.listIgnoredPeers(),
-              }),
-            },
-          ],
-        };
-      }
-    );
+    registerAgoraTools(server, { tinyBus, agoraService, ignoredPeersManager });
   }
 
   return server;

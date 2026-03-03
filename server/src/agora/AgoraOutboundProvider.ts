@@ -65,7 +65,12 @@ export class AgoraOutboundProvider implements Provider {
       return;
     }
 
-    const payload = message.payload as {
+    // Defensively parse payload if the model passed it as a JSON string.
+    const raw = typeof message.payload === "string"
+      ? (() => { try { return JSON.parse(message.payload as string); } catch { return null; } })()
+      : message.payload;
+
+    const payload = raw as {
       peerName?: string;
       targetPubkey?: string;
       type: string;
@@ -73,7 +78,7 @@ export class AgoraOutboundProvider implements Provider {
       inReplyTo?: string;
     };
 
-    if (!payload.type) {
+    if (!payload?.type) {
       throw new Error("Invalid agora.send payload: missing type");
     }
 
