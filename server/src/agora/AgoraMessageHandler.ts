@@ -293,8 +293,16 @@ export class AgoraMessageHandler {
     const keySuffix = shortKey(senderPublicKey);
     const normalizedHint = relayNameHint?.trim();
 
-    // Prefer relay name hint if provided and not itself a short-key label.
-    if (normalizedHint && normalizedHint !== keySuffix && !/^\.\.\.[a-f0-9]{8}$/i.test(normalizedHint)) {
+    // Prefer relay name hint if provided and not itself a key representation.
+    // Ignore hints that are:
+    // - short-key labels (e.g., ...9f38f6d0)
+    // - full public keys (hex strings)
+    // - exact sender public key echo
+    const isShortKeyHint = normalizedHint ? /^\.\.\.[a-f0-9]{8}$/i.test(normalizedHint) : false;
+    const isFullKeyHint = normalizedHint ? /^[a-f0-9]{32,}$/i.test(normalizedHint) : false;
+    const isSenderEcho = normalizedHint ? normalizedHint === senderPublicKey : false;
+
+    if (normalizedHint && !isShortKeyHint && !isFullKeyHint && !isSenderEcho && normalizedHint !== keySuffix) {
       return normalizedHint;
     }
 

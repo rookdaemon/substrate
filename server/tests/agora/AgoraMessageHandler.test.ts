@@ -286,6 +286,20 @@ describe("AgoraMessageHandler", () => {
         source: "relay",
       });
     });
+
+    it("should ignore relay name hint when hint is a full public key and use registered peer name", async () => {
+      await handler.processEnvelope(testEnvelope, "relay", testEnvelope.sender);
+
+      expect(conversationManager.appendedEntries).toHaveLength(1);
+      const entry = conversationManager.appendedEntries[0];
+      expect(entry.entry).toContain("...cdefabcd(test-peer)");
+      expect(entry.entry).not.toContain(`...cdefabcd(${testEnvelope.sender})`);
+
+      expect(messageInjector.injectedMessages).toHaveLength(1);
+      const injected = messageInjector.injectedMessages[0];
+      expect(injected).toContain("...cdefabcd(test-peer)");
+      expect(injected).not.toContain(`...cdefabcd(${testEnvelope.sender})`);
+    });
   });
 
   describe("deduplication", () => {
