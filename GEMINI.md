@@ -9,6 +9,10 @@ This repo is an AI agent orchestration shell (roles, file-based substrate memory
 * Boy scout rule: leave the codebase in better shape than you found it.
 * Abstract environment (file, process, time, env) behind interfaces; inject so tests can use in-memory/fixed implementations.
 * Inject timestamps into logic—no raw `Date.now()` or `new Date()` in business code.
+* Treat CLI handlers, HTTP servers, workers, and subprocess launchers as thin process shells only.
+* Put business logic in services behind interfaces; process shells should only parse input, call services, and map output/errors.
+* Services must be unit-testable without spawning processes or opening ports (use injected runners/transports/adapters).
+* Prefer service-level unit tests by default; keep real process/port tests minimal and explicitly integration-only.
 * End completed tasks with pull, build, lint, test, commit, push. Push often.
 
 # Versioning
