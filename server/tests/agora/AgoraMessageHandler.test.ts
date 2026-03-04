@@ -300,6 +300,20 @@ describe("AgoraMessageHandler", () => {
       expect(injected).toContain("...cdefabcd(test-peer)");
       expect(injected).not.toContain(`...cdefabcd(${testEnvelope.sender})`);
     });
+
+    it("should prefer local peer name over relay name hint for known peers", async () => {
+      await handler.processEnvelope(testEnvelope, "relay", "relay-claimed-name");
+
+      expect(conversationManager.appendedEntries).toHaveLength(1);
+      const entry = conversationManager.appendedEntries[0];
+      expect(entry.entry).toContain("...cdefabcd(test-peer)");
+      expect(entry.entry).not.toContain("...cdefabcd(relay-claimed-name)");
+
+      expect(messageInjector.injectedMessages).toHaveLength(1);
+      const injected = messageInjector.injectedMessages[0];
+      expect(injected).toContain("...cdefabcd(test-peer)");
+      expect(injected).not.toContain("...cdefabcd(relay-claimed-name)");
+    });
   });
 
   describe("deduplication", () => {

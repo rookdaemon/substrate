@@ -287,9 +287,16 @@ export class AgoraMessageHandler {
   }
 
   /**
-   * Resolve sender name metadata (not identity): prefer relay hint, then local peer registry.
+   * Resolve sender name metadata (not identity).
+   * Local peer registry is authoritative for known senders.
+   * Relay hints are only considered for unknown senders.
    */
   private resolveSenderName(senderPublicKey: string, relayNameHint?: string): string | undefined {
+    const localPeerName = this.findPeerByPublicKey(senderPublicKey);
+    if (localPeerName) {
+      return localPeerName;
+    }
+
     const keySuffix = shortKey(senderPublicKey);
     const normalizedHint = relayNameHint?.trim();
 
@@ -306,7 +313,7 @@ export class AgoraMessageHandler {
       return normalizedHint;
     }
 
-    return this.findPeerByPublicKey(senderPublicKey);
+    return undefined;
   }
 
   /**
