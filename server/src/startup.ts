@@ -61,8 +61,25 @@ export async function startServer(config: AppConfig, options?: StartServerOption
     if (!isNaN(existingPid) && existingPid !== process.pid) {
       try {
         process.kill(existingPid, 0); // throws if process is gone (ESRCH on Unix)
-        console.error(`Another server instance is already running (PID ${existingPid}). Stop it before starting a new instance.`);
-        process.exit(1);
+        if (options?.forceStart) {
+          console.log(`Killing existing server instance (PID ${existingPid}) due to --forceStart`);
+          process.kill(existingPid, "SIGTERM");
+          // Wait briefly for graceful shutdown
+          const deadline = Date.now() + 5_000;
+          while (Date.now() < deadline) {
+            try { process.kill(existingPid, 0); } catch { break; }
+            await new Promise((r) => setTimeout(r, 200));
+          }
+          // Force kill if still alive
+          try {
+            process.kill(existingPid, 0);
+            console.log(`Force-killing PID ${existingPid}`);
+            process.kill(existingPid, "SIGKILL");
+          } catch { /* already gone */ }
+        } else {
+          console.error(`Another server instance is already running (PID ${existingPid}). Stop it before starting a new instance.`);
+          process.exit(1);
+        }
       } catch {
         // Process not found — stale PID file, safe to proceed
         console.log(`Stale PID file found (PID ${existingPid} not running). Proceeding.`);
