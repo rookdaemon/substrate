@@ -33,7 +33,9 @@ function parseEntries(raw: string): ConversationEntry[] {
       const message = line.replace(ENTRY_RE, "");
       
       // Detect provider type and extract sender identity/source name
-      // Agora canonical format: **fullPublicKey(optionalName)** type: ...
+      // Agora canonical format:
+      // - known peers: **...deadbeef(optionalName)** type: ...
+      // - unknown peers: **fullPublicKey(optionalName)** type: ...
       // TinyBus canonical format: **source** (type) ...
       let provider: "agora" | "tinybus" | undefined;
       let senderName: string | undefined;
@@ -51,7 +53,7 @@ function parseEntries(raw: string): ConversationEntry[] {
         if (oldTinyBusMatch) senderName = oldTinyBusMatch[1];
       } else {
         const tinyBusMatch = message.match(/^\*\*([^*]+)\*\*\s+\([^)]+\)/);
-        const agoraMatch = message.match(/^\*\*([a-f0-9]{32,}(?:\([^)]*\))?)\*\*\s+[a-z0-9_.-]+\s*:/i);
+        const agoraMatch = message.match(/^\*\*((?:\.{3}[a-f0-9]{6,}|[a-f0-9]{32,})(?:\([^)]*\))?)\*\*\s+[a-z0-9_.-]+\s*:/i);
 
         if (tinyBusMatch) {
           provider = "tinybus";

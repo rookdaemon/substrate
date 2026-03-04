@@ -137,8 +137,9 @@ describe("ConversationView", () => {
     const canonicalConversation = [
       "# Conversation",
       "",
-      "[2025-01-01T10:00:00.000Z] [SUBCONSCIOUS] **302a300506032b6570032100cdefabcd0123456789abcdef0123456789abcdef0123456789abcdef(stefan)** request: **[UNPROCESSED]** **question**: Are you there?",
-      "[2025-01-01T10:01:00.000Z] [SUBCONSCIOUS] **loop.http** (event) **[UNPROCESSED]** **status**: queued",
+      "[2025-01-01T10:00:00.000Z] [SUBCONSCIOUS] **...cdefabcd(stefan)** request: **[UNPROCESSED]** **question**: Are you there?",
+      "[2025-01-01T10:01:00.000Z] [SUBCONSCIOUS] **302a300506032b6570032100ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff** request: **[UNPROCESSED]** **question**: Unknown sender",
+      "[2025-01-01T10:02:00.000Z] [SUBCONSCIOUS] **loop.http** (event) **[UNPROCESSED]** **status**: queued",
     ].join("\n");
 
     vi.spyOn(globalThis, "fetch").mockResolvedValue({
@@ -151,9 +152,10 @@ describe("ConversationView", () => {
     await waitFor(() => {
       const el = screen.getByTestId("conversation-entries");
       const entries = el.querySelectorAll(".conversation-entry");
-      expect(entries).toHaveLength(2);
+      expect(entries).toHaveLength(3);
       expect(entries[0]).toHaveClass("agora-message");
-      expect(entries[1]).toHaveClass("tinybus-message");
+      expect(entries[1]).toHaveClass("agora-message");
+      expect(entries[2]).toHaveClass("tinybus-message");
     });
   });
 

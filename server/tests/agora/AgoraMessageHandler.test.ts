@@ -161,9 +161,8 @@ describe("AgoraMessageHandler", () => {
       expect(conversationManager.appendedEntries).toHaveLength(1);
       const entry = conversationManager.appendedEntries[0];
       expect(entry.role).toBe(AgentRole.SUBCONSCIOUS);
-      expect(entry.entry).toContain(testEnvelope.sender);
-      expect(entry.entry).toContain("(test-peer)");
-      expect(entry.entry).not.toContain("...cdefabcd");
+      expect(entry.entry).toContain("...cdefabcd(test-peer)");
+      expect(entry.entry).not.toContain(testEnvelope.sender);
       expect(entry.entry).toContain("question");
       expect(entry.entry).not.toContain("[UNPROCESSED]");
     });
@@ -252,7 +251,7 @@ describe("AgoraMessageHandler", () => {
       expect(messageInjector.injectedMessages).toHaveLength(1);
       const injected = messageInjector.injectedMessages[0];
       expect(injected).toContain("[AGORA MESSAGE from");
-      expect(injected).toContain(`${testEnvelope.sender}(test-peer)`);
+      expect(injected).toContain("...cdefabcd(test-peer)");
       expect(injected).toContain("Type: request");
       expect(injected).toContain("Envelope ID: envelope-123");
     });

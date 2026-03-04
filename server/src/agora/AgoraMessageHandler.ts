@@ -302,13 +302,15 @@ export class AgoraMessageHandler {
   }
 
   /**
-   * Canonical sender identity format for durable logs/conversation:
-   * - fullKey(name) when name metadata is available
-   * - fullKey when no name metadata is available
+   * Sender identity format for durable logs/conversation:
+   * - known peers (present in peer registry): shortKey(name) or shortKey
+   * - unknown peers: fullKey(name) or fullKey
    */
   private formatSenderIdentity(senderPublicKey: string, relayNameHint?: string): string {
     const senderName = this.resolveSenderName(senderPublicKey, relayNameHint);
-    return senderName ? `${senderPublicKey}(${senderName})` : senderPublicKey;
+    const isKnownPeer = this.findPeerByPublicKey(senderPublicKey) !== undefined;
+    const displayKey = isKnownPeer ? shortKey(senderPublicKey) : senderPublicKey;
+    return senderName ? `${displayKey}(${senderName})` : displayKey;
   }
 
   /**
