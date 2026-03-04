@@ -32,9 +32,9 @@ function parseEntries(raw: string): ConversationEntry[] {
       if (current) entries.push(current);
       const message = line.replace(ENTRY_RE, "");
       
-      // Detect provider type and extract sender name
-      // Agora messages: **senderShort** (type) - sender keys are short (start with ... or are 12-20 chars)
-      // TinyBus messages: **source** (type) - source names are typically longer/internal
+      // Detect provider type and extract sender identity/source name
+      // Agora canonical format: **fullPublicKey(optionalName)** type: ...
+      // TinyBus canonical format: **source** (type) ...
       let provider: "agora" | "tinybus" | undefined;
       let senderName: string | undefined;
       
@@ -50,27 +50,15 @@ function parseEntries(raw: string): ConversationEntry[] {
         const oldTinyBusMatch = message.match(/from [`']?([^`'\s]+)/);
         if (oldTinyBusMatch) senderName = oldTinyBusMatch[1];
       } else {
-        // New format: **senderName** (type) or **senderName** [UNPROCESSED] payload (one line)
-        const boldMatch = message.match(/^\*\*([^*]+)\*\*(?:\s*\([^)]+\))?/);
-        if (boldMatch) {
-          senderName = boldMatch[1];
-          // Detection heuristic:
-          // - Agora: short keys (start with "..." or are 8-20 chars, alphanumeric/hex-like)
-          // - TinyBus: longer names, might contain dots/dashes, or common source names
-          const isShortKey = senderName.startsWith("...") || 
-                            (senderName.length >= 8 && senderName.length <= 20 && /^[a-f0-9.]+$/i.test(senderName));
-          const isInternalSource = senderName.includes(".") || 
-                                  senderName.includes("-") ||
-                                  senderName.length > 20 ||
-                                  /^(file|http|process|system|loop|orchestrator)/i.test(senderName);
-          
-          if (isShortKey && !isInternalSource) {
-            provider = "agora";
-          } else if (isInternalSource || match[1] === "SUBCONSCIOUS") {
-            // If it's from SUBCONSCIOUS role and doesn't look like agora, it's likely tinybus
-            // match[1] is the role from the timestamp line
-            provider = "tinybus";
-          }
+        const tinyBusMatch = message.match(/^\*\*([^*]+)\*\*\s+\([^)]+\)/);
+        const agoraMatch = message.match(/^\*\*([a-f0-9]{32,}(?:\([^)]*\))?)\*\*\s+[a-z0-9_.-]+\s*:/i);
+
+        if (tinyBusMatch) {
+          provider = "tinybus";
+          senderName = tinyBusMatch[1];
+        } else if (agoraMatch) {
+          provider = "agora";
+          senderName = agoraMatch[1];
         }
       }
       

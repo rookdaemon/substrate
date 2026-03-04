@@ -307,9 +307,7 @@ Substrate integrates with the [Agora protocol](https://github.com/rookdaemon/ago
 
 **CONVERSATION.md Format:**
 ```markdown
-[2026-02-15T12:00:00.000Z] [SUBCONSCIOUS] 📨 **Agora message** from `...cdefabcd` (request) **[UNPROCESSED]**
-
-**question**: Are you there?
+[2026-02-15T12:00:00.000Z] [SUBCONSCIOUS] **302a300506032b6570032100cdefabcd0123456789abcdef0123456789abcdef0123456789abcdef(stefan)** request: **[UNPROCESSED]** **question**: Are you there?
 ```
 
 **Responding to Messages:**

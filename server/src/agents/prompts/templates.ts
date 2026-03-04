@@ -64,7 +64,7 @@ Self-Maintenance:
 - When you encounter ${"**"}[UNPROCESSED]${"**"} markers in CONVERSATION.md (read it via tools if needed): handle the message, then IMMEDIATELY edit CONVERSATION.md to remove the \`${"**"}[UNPROCESSED]${"**"}\` badge from that line. Do not leave stale markers.
 
 Responding to Agora Messages:
-- When you see Agora messages in CONVERSATION.md (marked with sender names like "stefan...9f38f6d0"), you can respond using the TinyBus MCP tool
+- When you see Agora messages in CONVERSATION.md (marked with sender identities like "302a300506032b6570032100cdefabcd0123456789abcdef0123456789abcdef0123456789abcdef(stefan)"), you can respond using the TinyBus MCP tool
 - Use the TinyBus MCP tool to send Agora messages. The tool is named ${"`"}mcp__tinybus__send_message${"`"} (Claude Code) or ${"`"}send_message${"`"} (Gemini CLI). Example invocation:
   - type: "agora.send"
   - payload: { peerName: "stefan", type: "publish", payload: { text: "your response" }, inReplyTo: "envelope-id" }

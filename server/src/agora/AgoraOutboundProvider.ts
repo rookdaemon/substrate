@@ -88,7 +88,7 @@ export class AgoraOutboundProvider implements Provider {
         throw new Error("Invalid agora.send payload: targetPubkey requires inReplyTo");
       }
       this.logger?.debug(
-        `[AGORA-OUT] Replying to pubkey: ...${payload.targetPubkey.slice(-8)} type=${payload.type} inReplyTo=${payload.inReplyTo}`
+        `[AGORA-OUT] Replying to pubkey: ${payload.targetPubkey} type=${payload.type} inReplyTo=${payload.inReplyTo}`
       );
       const result = await this.agoraService.replyToEnvelope({
         targetPubkey: payload.targetPubkey,
@@ -100,7 +100,7 @@ export class AgoraOutboundProvider implements Provider {
         throw new Error(`Reply to pubkey failed: ${result.error ?? "unknown error"} (status=${result.status})`);
       }
       this.logger?.debug(
-        `[AGORA-OUT] Reply sent successfully: ...${payload.targetPubkey.slice(-8)}`
+        `[AGORA-OUT] Reply sent successfully: ${payload.targetPubkey}`
       );
       return;
     }
