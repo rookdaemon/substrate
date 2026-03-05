@@ -25,7 +25,7 @@
     "node": ">=20.0.0"
   },
   "dependencies": {
-    "@rookdaemon/agora": "^0.4.6"
+    "@rookdaemon/agora": "^0.5.0"
   },
   "overrides": {
     "esbuild": "0.27.3"
