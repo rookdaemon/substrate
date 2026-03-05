@@ -11,6 +11,20 @@ export class ConfigValidationError extends Error {
   }
 }
 
+const DEFAULT_SESSION_LAUNCHER = "claude" as const;
+
+export interface ProviderModelsConfig {
+  model?: string;
+  strategicModel?: string;
+  tacticalModel?: string;
+}
+
+const ProviderModelsSchema = z.object({
+  model: z.string().optional(),
+  strategicModel: z.string().optional(),
+  tacticalModel: z.string().optional(),
+});
+
 const AppConfigSchema = z
   .object({
     substratePath: z.string(),
@@ -21,6 +35,7 @@ const AppConfigSchema = z
     model: z.string(),
     strategicModel: z.string().optional(),
     tacticalModel: z.string().optional(),
+    models: z.record(z.string(), ProviderModelsSchema).optional(),
     mode: z.enum(["cycle", "tick"]),
     autoStartOnFirstRun: z.boolean(),
     autoStartAfterRestart: z.boolean(),
@@ -120,6 +135,28 @@ function pathJoin(base: string, ...segments: string[]): string {
   return path.join(base, ...segments);
 }
 
+/**
+ * Resolves the effective model, strategicModel, and tacticalModel from file config.
+ *
+ * Resolution order (highest priority first):
+ *   1. models[sessionLauncher] — per-provider model config block
+ *   2. Legacy flat model/strategicModel/tacticalModel fields
+ *   3. Defaults
+ */
+function resolveModelFields(
+  fileConfig: Partial<AppConfig>,
+  defaults: AppConfig
+): { model: string; strategicModel?: string; tacticalModel?: string } {
+  const launcher = fileConfig.sessionLauncher ?? defaults.sessionLauncher ?? DEFAULT_SESSION_LAUNCHER;
+  const providerModels = fileConfig.models?.[launcher];
+
+  return {
+    model: providerModels?.model ?? fileConfig.model ?? defaults.model,
+    strategicModel: providerModels?.strategicModel ?? fileConfig.strategicModel ?? defaults.strategicModel,
+    tacticalModel: providerModels?.tacticalModel ?? fileConfig.tacticalModel ?? defaults.tacticalModel,
+  };
+}
+
 export interface AppConfig {
   substratePath: string;
   workingDirectory: string;
@@ -129,6 +166,8 @@ export interface AppConfig {
   model: string;
   strategicModel?: string;
   tacticalModel?: string;
+  /** Per-provider model configuration. Keys match sessionLauncher/defaultCodeBackend values (e.g. "claude", "gemini", "copilot"). */
+  models?: Record<string, ProviderModelsConfig>;
   mode: "cycle" | "tick";
   /** If true, the agent loop auto-starts on first/cold start (default: false — you often want to be there). */
   autoStartOnFirstRun: boolean;
@@ -324,9 +363,8 @@ export async function resolveConfig(
     sourceCodePath: fileConfig.sourceCodePath ?? defaults.sourceCodePath,
     backupPath: fileConfig.backupPath ?? defaults.backupPath,
     port: fileConfig.port ?? defaults.port,
-    model: fileConfig.model ?? defaults.model,
-    strategicModel: fileConfig.strategicModel ?? defaults.strategicModel,
-    tacticalModel: fileConfig.tacticalModel ?? defaults.tacticalModel,
+    ...resolveModelFields(fileConfig, defaults),
+    models: fileConfig.models,
     mode: (fileConfig as Partial<AppConfig>).mode ?? defaults.mode,
     autoStartOnFirstRun: fileConfig.autoStartOnFirstRun ?? defaults.autoStartOnFirstRun,
     autoStartAfterRestart: fileConfig.autoStartAfterRestart ?? defaults.autoStartAfterRestart,

@@ -488,4 +488,178 @@ describe("resolveConfig", () => {
       expect(config.vertexModel).toBeUndefined();
     });
   });
+
+  describe("per-provider models config", () => {
+    it("resolves model from models[sessionLauncher] when present", async () => {
+      await fs.mkdir("/project", { recursive: true });
+      await fs.writeFile("/project/config.json", JSON.stringify({
+        sessionLauncher: "claude",
+        models: {
+          claude: {
+            model: "claude-sonnet-4-5",
+            strategicModel: "claude-opus-4-5",
+            tacticalModel: "claude-haiku-4-5",
+          },
+        },
+      }));
+
+      const config = await resolveConfig(fs, {
+        appPaths: TEST_PATHS,
+        cwd: "/project",
+        env: {},
+      });
+
+      expect(config.model).toBe("claude-sonnet-4-5");
+      expect(config.strategicModel).toBe("claude-opus-4-5");
+      expect(config.tacticalModel).toBe("claude-haiku-4-5");
+    });
+
+    it("resolves model for the active sessionLauncher, not other providers", async () => {
+      await fs.mkdir("/project", { recursive: true });
+      await fs.writeFile("/project/config.json", JSON.stringify({
+        sessionLauncher: "gemini",
+        models: {
+          claude: {
+            model: "claude-sonnet-4-5",
+            strategicModel: "claude-opus-4-5",
+            tacticalModel: "claude-haiku-4-5",
+          },
+          gemini: {
+            model: "gemini-2.5-pro",
+            strategicModel: "gemini-2.5-pro",
+            tacticalModel: "gemini-2.5-flash",
+          },
+        },
+      }));
+
+      const config = await resolveConfig(fs, {
+        appPaths: TEST_PATHS,
+        cwd: "/project",
+        env: {},
+      });
+
+      expect(config.model).toBe("gemini-2.5-pro");
+      expect(config.strategicModel).toBe("gemini-2.5-pro");
+      expect(config.tacticalModel).toBe("gemini-2.5-flash");
+    });
+
+    it("falls back to legacy flat fields when models block is absent", async () => {
+      await fs.mkdir("/project", { recursive: true });
+      await fs.writeFile("/project/config.json", JSON.stringify({
+        model: "claude-sonnet-4-5",
+        strategicModel: "claude-opus-4-5",
+        tacticalModel: "claude-haiku-4-5",
+      }));
+
+      const config = await resolveConfig(fs, {
+        appPaths: TEST_PATHS,
+        cwd: "/project",
+        env: {},
+      });
+
+      expect(config.model).toBe("claude-sonnet-4-5");
+      expect(config.strategicModel).toBe("claude-opus-4-5");
+      expect(config.tacticalModel).toBe("claude-haiku-4-5");
+    });
+
+    it("models block takes priority over legacy flat fields for the active launcher", async () => {
+      await fs.mkdir("/project", { recursive: true });
+      await fs.writeFile("/project/config.json", JSON.stringify({
+        sessionLauncher: "claude",
+        model: "legacy-model",
+        strategicModel: "legacy-strategic",
+        tacticalModel: "legacy-tactical",
+        models: {
+          claude: {
+            model: "claude-sonnet-4-5",
+            strategicModel: "claude-opus-4-5",
+            tacticalModel: "claude-haiku-4-5",
+          },
+        },
+      }));
+
+      const config = await resolveConfig(fs, {
+        appPaths: TEST_PATHS,
+        cwd: "/project",
+        env: {},
+      });
+
+      expect(config.model).toBe("claude-sonnet-4-5");
+      expect(config.strategicModel).toBe("claude-opus-4-5");
+      expect(config.tacticalModel).toBe("claude-haiku-4-5");
+    });
+
+    it("uses defaults when models block has no entry for the active launcher", async () => {
+      await fs.mkdir("/project", { recursive: true });
+      await fs.writeFile("/project/config.json", JSON.stringify({
+        sessionLauncher: "claude",
+        models: {
+          gemini: {
+            model: "gemini-2.5-pro",
+          },
+        },
+      }));
+
+      const config = await resolveConfig(fs, {
+        appPaths: TEST_PATHS,
+        cwd: "/project",
+        env: {},
+      });
+
+      expect(config.model).toBe("sonnet");
+      expect(config.models).toEqual({ gemini: { model: "gemini-2.5-pro" } });
+    });
+
+    it("partial models entry falls back to legacy flat fields then defaults", async () => {
+      await fs.mkdir("/project", { recursive: true });
+      await fs.writeFile("/project/config.json", JSON.stringify({
+        sessionLauncher: "claude",
+        model: "legacy-model",
+        models: {
+          claude: {
+            strategicModel: "claude-opus-4-5",
+          },
+        },
+      }));
+
+      const config = await resolveConfig(fs, {
+        appPaths: TEST_PATHS,
+        cwd: "/project",
+        env: {},
+      });
+
+      expect(config.model).toBe("legacy-model");
+      expect(config.strategicModel).toBe("claude-opus-4-5");
+      expect(config.tacticalModel).toBe("sonnet");
+    });
+
+    it("preserves models map in resolved config", async () => {
+      await fs.mkdir("/project", { recursive: true });
+      const modelsMap = {
+        claude: { model: "claude-sonnet-4-5", strategicModel: "claude-opus-4-5", tacticalModel: "claude-haiku-4-5" },
+        gemini: { model: "gemini-2.5-pro" },
+      };
+      await fs.writeFile("/project/config.json", JSON.stringify({
+        sessionLauncher: "claude",
+        models: modelsMap,
+      }));
+
+      const config = await resolveConfig(fs, {
+        appPaths: TEST_PATHS,
+        cwd: "/project",
+        env: {},
+      });
+
+      expect(config.models).toEqual(modelsMap);
+    });
+
+    it("defaults models to undefined when not in config file", async () => {
+      const config = await resolveConfig(fs, {
+        appPaths: TEST_PATHS,
+        env: {},
+      });
+
+      expect(config.models).toBeUndefined();
+    });
+  });
 });
