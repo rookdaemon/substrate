@@ -23,7 +23,7 @@ export interface SubconsciousProposal {
  * enabling pure text-in → JSON-out execution without MCP tool calling.
  */
 export interface AgoraReply {
-  peerName: string;
+  to: string;
   text: string;
   inReplyTo?: string; // optional envelope ID when replying to a specific message
 }
@@ -66,11 +66,11 @@ export const TASK_RESULT_SCHEMA = {
       items: {
         type: "object",
         properties: {
-          peerName: { type: "string" },
+          to: { type: "string" },
           text: { type: "string" },
           inReplyTo: { type: "string" },
         },
-        required: ["peerName", "text"],
+        required: ["to", "text"],
       },
     },
   },

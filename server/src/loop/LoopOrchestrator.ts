@@ -1132,7 +1132,7 @@ export class LoopOrchestrator implements IMessageInjector {
 
     for (const reply of replies) {
       try {
-        const peerRef = resolvePeerReference(reply.peerName, peerDirectory);
+        const peerRef = resolvePeerReference(reply.to, peerDirectory);
         const result = await this.agoraService.sendMessage({
           peerName: peerRef,
           type: "publish",
@@ -1146,7 +1146,7 @@ export class LoopOrchestrator implements IMessageInjector {
         }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        this.logger.debug(`agoraReplies: error sending to ${reply.peerName} — ${msg}`);
+        this.logger.debug(`agoraReplies: error sending to ${reply.to} — ${msg}`);
       }
     }
   }

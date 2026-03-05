@@ -35,8 +35,8 @@ export function registerAgoraTools(server: McpServer, options: AgoraToolsOptions
     "send_agora_message",
     "Send a message to an Agora peer. Use this for all Agora communication instead of the generic send_message tool.",
     {
-      peerName: z.string().optional().describe(
-        "Peer reference for the recipient (configured name, full public key, or compact short form such as ...abcd1234)."
+      to: z.union([z.string(), z.array(z.string())]).optional().describe(
+        "Recipient(s) — a peer reference or array of peer references (configured name, full public key, or compact short form such as ...abcd1234)."
       ),
       targetPubkey: z.string().optional().describe(
         "Recipient public key (or compact short form) for relay-only replies to unknown senders. Requires inReplyTo."
@@ -46,13 +46,13 @@ export function registerAgoraTools(server: McpServer, options: AgoraToolsOptions
         "Envelope ID of the message being replied to. Always include when responding to a specific message."
       ),
     },
-    async ({ peerName, targetPubkey, text, inReplyTo }) => {
+    async ({ to, targetPubkey, text, inReplyTo }) => {
       try {
         const agoraPayload: Record<string, unknown> = {
           type: "publish",
           payload: { text },
         };
-        if (peerName) agoraPayload.peerName = peerName;
+        if (to) agoraPayload.to = Array.isArray(to) ? to : [to];
         if (targetPubkey) agoraPayload.targetPubkey = targetPubkey;
         if (inReplyTo) agoraPayload.inReplyTo = inReplyTo;
 

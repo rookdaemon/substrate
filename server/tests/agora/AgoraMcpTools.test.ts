@@ -117,7 +117,7 @@ describe("AgoraMcpTools", () => {
     it("returns success with messageId", async () => {
       const result = await client.callTool({
         name: "send_agora_message",
-        arguments: { peerName: "stefan", text: "hello" },
+        arguments: { to: "stefan", text: "hello" },
       });
       const data = parseResult(result as Parameters<typeof parseResult>[0]) as Record<string, unknown>;
       expect(data.success).toBe(true);
@@ -128,26 +128,26 @@ describe("AgoraMcpTools", () => {
       const provider = bus.getProviders()[0] as MemoryProvider;
       await client.callTool({
         name: "send_agora_message",
-        arguments: { peerName: "stefan", text: "hello stefan", inReplyTo: "env-123" },
+        arguments: { to: "stefan", text: "hello stefan", inReplyTo: "env-123" },
       });
       const sent = provider.getSentMessages();
       expect(sent).toHaveLength(1);
       expect(sent[0].type).toBe("agora.send");
       const payload = sent[0].payload as Record<string, unknown>;
-      expect(payload.peerName).toBe("stefan");
+      expect(payload.to).toEqual(["stefan"]);
       expect(payload.type).toBe("publish");
       expect(payload.inReplyTo).toBe("env-123");
       expect((payload.payload as Record<string, unknown>).text).toBe("hello stefan");
     });
 
-    it("omits peerName from payload when not provided (broadcast)", async () => {
+    it("omits to from payload when not provided", async () => {
       const provider = bus.getProviders()[0] as MemoryProvider;
       await client.callTool({
         name: "send_agora_message",
-        arguments: { text: "broadcast message" },
+        arguments: { text: "message without recipient" },
       });
       const payload = provider.getSentMessages()[0].payload as Record<string, unknown>;
-      expect(payload.peerName).toBeUndefined();
+      expect(payload.to).toBeUndefined();
     });
 
     it("includes targetPubkey when provided", async () => {

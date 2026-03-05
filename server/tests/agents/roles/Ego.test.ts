@@ -114,8 +114,8 @@ describe("Ego agent", () => {
         action: "idle",
         reason: "waiting",
         agoraReplies: [
-          { peerName: "stefan", text: "Standing by" },
-          { peerName: "nova", text: "Acknowledged", inReplyTo: "env-123" },
+          { to: "stefan", text: "Standing by" },
+          { to: "nova", text: "Acknowledged", inReplyTo: "env-123" },
         ],
       });
       launcher.enqueueSuccess(response);
@@ -123,7 +123,7 @@ describe("Ego agent", () => {
       const decision = await ego.decide();
       expect(decision.action).toBe("idle");
       expect(decision.agoraReplies).toHaveLength(2);
-      expect(decision.agoraReplies[0].peerName).toBe("stefan");
+      expect(decision.agoraReplies[0].to).toBe("stefan");
       expect(decision.agoraReplies[0].text).toBe("Standing by");
       expect(decision.agoraReplies[1].inReplyTo).toBe("env-123");
     });

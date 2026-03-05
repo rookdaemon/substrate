@@ -44,11 +44,11 @@ export const EGO_DECISION_SCHEMA = {
       items: {
         type: "object",
         properties: {
-          peerName: { type: "string" },
+          to: { type: "string" },
           text: { type: "string" },
           inReplyTo: { type: "string" },
         },
-        required: ["peerName", "text"],
+        required: ["to", "text"],
       },
     },
   },
@@ -156,7 +156,7 @@ export class Ego {
       `Keep responses concise and conversational.\n\n` +
       `If the message is an Agora message, use the dedicated Agora MCP tool (${"`"}mcp__tinybus__send_agora_message${"`"} in Claude Code, or ${"`"}send_agora_message${"`"} in Gemini CLI).\n` +
       `Read the FROM/TO metadata in CONVERSATION.md. The TO list is compacted from full IDs and indicates recipients of the original message.\n` +
-      `Reply to known peers with: peerName: "<peer-ref>", text: "your response", inReplyTo: "envelope-id".\n` +
+      `Reply to known peers with: to: "<peer-ref>", text: "your response", inReplyTo: "envelope-id".\n` +
       `peer-ref can be a configured peer name, full public key, or compact short form.\n` +
       `For unknown senders, use targetPubkey with the full key provided in the injected Agora instruction block.\n` +
       `Always include inReplyTo when replying. It is considered good form to reply to the sender and all recipients of a message, to keep everyone in the loop - unless you have a reason not to.`;

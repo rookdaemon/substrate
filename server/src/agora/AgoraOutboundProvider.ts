@@ -12,13 +12,12 @@ import type { ILogger } from "../logging";
  *
  * Expected message format:
  * - type: "agora.send"
- * - payload: { peerName?: string; targetPubkey?: string; type: string; payload: unknown; inReplyTo?: string }
+ * - payload: { to?: string[]; targetPubkey?: string; type: string; payload: unknown; inReplyTo?: string }
  *
  * Routing priority:
  * 1. targetPubkey: reply via relay to any pubkey (RFC-002 Phase 1, requires inReplyTo)
- * 2. peerName: send to named peer (HTTP first, relay fallback)
- * 3. Broadcast: omit peerName or set to "all" to send to every configured peer.
- * Partial failures in broadcast mode are logged but don't throw unless ALL sends fail.
+ * 2. to: send to each listed recipient (names, short refs, or full keys are expanded)
+ * Partial failures are logged but don't throw unless ALL sends fail.
  */
 export class AgoraOutboundProvider implements Provider {
   public readonly id = "agora";
@@ -72,7 +71,7 @@ export class AgoraOutboundProvider implements Provider {
       : message.payload;
 
     const payload = raw as {
-      peerName?: string;
+      to?: string[];
       targetPubkey?: string;
       type: string;
       payload: unknown;
@@ -109,23 +108,16 @@ export class AgoraOutboundProvider implements Provider {
       return;
     }
 
-    // Broadcast: if peerName is omitted or "all", send to every configured peer
-    const isBroadcast = !payload.peerName || payload.peerName === "all";
-    const targets = isBroadcast
-      ? this.agoraService.getPeers()
-      : [resolvePeerReference(payload.peerName!, peerDirectory)];
-
-    if (isBroadcast) {
-      this.logger?.debug(
-        `[AGORA-OUT] Broadcasting: type=${payload.type} to ${targets.length} peers` +
-        (payload.inReplyTo ? ` inReplyTo=${payload.inReplyTo}` : "")
-      );
-    } else {
-      this.logger?.debug(
-        `[AGORA-OUT] Sending: peerName=${payload.peerName} type=${payload.type}` +
-        (payload.inReplyTo ? ` inReplyTo=${payload.inReplyTo}` : "")
-      );
+    // Multi-recipient send via the `to` list
+    const targets = (payload.to ?? []).map((ref) => resolvePeerReference(ref, peerDirectory));
+    if (targets.length === 0) {
+      throw new Error("Invalid agora.send payload: no recipients (provide to or targetPubkey)");
     }
+
+    this.logger?.debug(
+      `[AGORA-OUT] Sending: type=${payload.type} to ${targets.length} recipient(s)` +
+      (payload.inReplyTo ? ` inReplyTo=${payload.inReplyTo}` : "")
+    );
 
     const errors: string[] = [];
     for (const target of targets) {
@@ -141,7 +133,7 @@ export class AgoraOutboundProvider implements Provider {
         this.logger?.debug(`[AGORA-OUT] ${errMsg}`);
         errors.push(errMsg);
       } else {
-        this.logger?.debug(`[AGORA-OUT] Sent successfully: peerName=${target} status=${result.status}`);
+        this.logger?.debug(`[AGORA-OUT] Sent successfully: target=${target} status=${result.status}`);
       }
     }
 

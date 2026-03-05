@@ -725,13 +725,13 @@ describe("AgoraMessageHandler", () => {
       expect(injectedMsg).not.toContain("unless the peer is added first");
     });
 
-    it("should include peerName reply instruction for known senders", async () => {
+    it("should include to reply instruction for known senders", async () => {
       await handler.processEnvelope(testEnvelope, "webhook");
 
       expect(messageInjector.injectedMessages).toHaveLength(1);
       const injectedMsg = messageInjector.injectedMessages[0];
-      // Should contain peerName instruction, not targetPubkey
-      expect(injectedMsg).toContain("peerName");
+      // Should contain to instruction, not targetPubkey
+      expect(injectedMsg).toContain('to=');
       expect(injectedMsg).not.toContain("targetPubkey");
     });
   });

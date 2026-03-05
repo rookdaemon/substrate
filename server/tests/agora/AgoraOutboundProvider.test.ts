@@ -77,7 +77,7 @@ describe("AgoraOutboundProvider", () => {
       const message = createMessage({
         type: "agora.send",
         payload: {
-          peerName: "test-peer",
+          to: ["test-peer"],
           type: "request",
           payload: { question: "Hello?" },
         },
@@ -99,7 +99,7 @@ describe("AgoraOutboundProvider", () => {
       const message = createMessage({
         type: "agora.send",
         payload: {
-          peerName: "test-peer",
+          to: ["test-peer"],
           type: "response",
           payload: { answer: "Yes" },
           inReplyTo: "envelope-123",
@@ -117,7 +117,7 @@ describe("AgoraOutboundProvider", () => {
       const message = createMessage({
         type: "agora.send",
         payload: {
-          peerName: "...aaaaaaaa",
+          to: ["...aaaaaaaa"],
           type: "publish",
           payload: { text: "hello" },
         },
@@ -127,6 +127,81 @@ describe("AgoraOutboundProvider", () => {
 
       expect(agoraService.sentMessages).toHaveLength(1);
       expect(agoraService.sentMessages[0].peerName).toBe("302a300506032b6570032100aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+    });
+
+    it("should send to multiple recipients", async () => {
+      await provider.start();
+
+      const message = createMessage({
+        type: "agora.send",
+        payload: {
+          to: ["test-peer", "other-peer"],
+          type: "publish",
+          payload: { text: "Hello both" },
+        },
+      });
+
+      await provider.send(message);
+
+      expect(agoraService.sentMessages).toHaveLength(2);
+      for (const msg of agoraService.sentMessages) {
+        expect(msg.payload).toEqual({ text: "Hello both" });
+        expect(msg.type).toBe("publish");
+      }
+    });
+
+    it("should not throw on partial multi-recipient failure", async () => {
+      let callCount = 0;
+      agoraService.sendMessage = async (options) => {
+        callCount++;
+        if (callCount === 2) return { ok: false, status: 500, error: "one failed" };
+        agoraService.sentMessages.push(options);
+        return { ok: true, status: 200 };
+      };
+      await provider.start();
+
+      const message = createMessage({
+        type: "agora.send",
+        payload: {
+          to: ["test-peer", "other-peer", "third-peer"],
+          type: "publish",
+          payload: { text: "Partial" },
+        },
+      });
+
+      // Should not throw — only 1 of 3 failed
+      await provider.send(message);
+      expect(agoraService.sentMessages).toHaveLength(2);
+    });
+
+    it("should throw when all sends fail", async () => {
+      agoraService.shouldFailSend = true;
+      await provider.start();
+
+      const message = createMessage({
+        type: "agora.send",
+        payload: {
+          to: ["test-peer"],
+          type: "request",
+          payload: {},
+        },
+      });
+
+      await expect(provider.send(message)).rejects.toThrow("All sends failed");
+    });
+
+    it("should throw when no recipients provided", async () => {
+      await provider.start();
+
+      const message = createMessage({
+        type: "agora.send",
+        payload: {
+          type: "publish",
+          payload: { text: "no recipients" },
+        },
+      });
+
+      await expect(provider.send(message)).rejects.toThrow("no recipients");
     });
 
     it("should ignore non-agora.send messages", async () => {
@@ -146,7 +221,7 @@ describe("AgoraOutboundProvider", () => {
       const message = createMessage({
         type: "agora.send",
         payload: {
-          peerName: "test-peer",
+          to: ["test-peer"],
           type: "request",
           payload: {},
         },
@@ -162,7 +237,7 @@ describe("AgoraOutboundProvider", () => {
       const message = createMessage({
         type: "agora.send",
         payload: {
-          peerName: "test-peer",
+          to: ["test-peer"],
           type: "request",
           payload: {},
         },
@@ -177,105 +252,12 @@ describe("AgoraOutboundProvider", () => {
       const message = createMessage({
         type: "agora.send",
         payload: {
-          peerName: "test-peer",
+          to: ["test-peer"],
           payload: {},
         },
       });
 
       await expect(provider.send(message)).rejects.toThrow("Invalid agora.send payload: missing type");
-    });
-
-    it("should throw error if send fails", async () => {
-      agoraService.shouldFailSend = true;
-      await provider.start();
-
-      const message = createMessage({
-        type: "agora.send",
-        payload: {
-          peerName: "test-peer",
-          type: "request",
-          payload: {},
-        },
-      });
-
-      await expect(provider.send(message)).rejects.toThrow("All sends failed");
-    });
-
-    it("should broadcast to all peers when peerName is omitted", async () => {
-      await provider.start();
-
-      const message = createMessage({
-        type: "agora.send",
-        payload: {
-          type: "publish",
-          payload: { text: "Hello everyone" },
-        },
-      });
-
-      await provider.send(message);
-
-      expect(agoraService.sentMessages).toHaveLength(3);
-      expect(agoraService.sentMessages.map(m => m.peerName)).toEqual(["test-peer", "other-peer", "third-peer"]);
-      // All get the same payload
-      for (const msg of agoraService.sentMessages) {
-        expect(msg.payload).toEqual({ text: "Hello everyone" });
-        expect(msg.type).toBe("publish");
-      }
-    });
-
-    it("should broadcast to all peers when peerName is 'all'", async () => {
-      await provider.start();
-
-      const message = createMessage({
-        type: "agora.send",
-        payload: {
-          peerName: "all",
-          type: "publish",
-          payload: { text: "Broadcast" },
-        },
-      });
-
-      await provider.send(message);
-
-      expect(agoraService.sentMessages).toHaveLength(3);
-    });
-
-    it("should not throw on partial broadcast failure", async () => {
-      let callCount = 0;
-      agoraService.sendMessage = async (options) => {
-        callCount++;
-        if (callCount === 2) return { ok: false, status: 500, error: "one failed" };
-        agoraService.sentMessages.push(options);
-        return { ok: true, status: 200 };
-      };
-      await provider.start();
-
-      const message = createMessage({
-        type: "agora.send",
-        payload: {
-          type: "publish",
-          payload: { text: "Partial" },
-        },
-      });
-
-      // Should not throw — only 1 of 3 failed
-      await provider.send(message);
-      expect(agoraService.sentMessages).toHaveLength(2);
-    });
-
-    it("should throw when all broadcast sends fail", async () => {
-      agoraService.shouldFailSend = true;
-      await provider.start();
-
-      const message = createMessage({
-        type: "agora.send",
-        payload: {
-          type: "publish",
-          payload: { text: "Will fail" },
-        },
-      });
-
-      await expect(provider.send(message)).rejects.toThrow("All sends failed");
     });
 
     it("should route targetPubkey to replyToEnvelope", async () => {
@@ -355,13 +337,13 @@ describe("AgoraOutboundProvider", () => {
       await expect(provider.send(message)).rejects.toThrow("Reply to pubkey failed");
     });
 
-    it("should prefer targetPubkey over peerName when both present", async () => {
+    it("should prefer targetPubkey over to when both present", async () => {
       await provider.start();
 
       const message = createMessage({
         type: "agora.send",
         payload: {
-          peerName: "test-peer",
+          to: ["test-peer"],
           targetPubkey: "302a300506032b6570032100deadbeef",
           type: "publish",
           payload: { text: "both set" },
