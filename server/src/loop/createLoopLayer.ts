@@ -23,7 +23,7 @@ import { SelfImprovementMetricsCollector } from "../evaluation/SelfImprovementMe
 import { PerformanceMetrics } from "../evaluation/PerformanceMetrics";
 import type { Envelope } from "@rookdaemon/agora" with { "resolution-mode": "import" };
 import type { AgoraService } from "@rookdaemon/agora" with { "resolution-mode": "import" };
-import { getIgnoredPeersPath } from "@rookdaemon/agora";
+import { getIgnoredPeersPath, getSeenKeysPath } from "@rookdaemon/agora";
 import { LoopWatchdog } from "./LoopWatchdog";
 import { getAppPaths } from "../paths";
 import { EndorsementInterceptor, EndorsementScreener } from "../agents/endorsement";
@@ -105,17 +105,17 @@ export async function createLoopLayer(
     // any relay message arrives (after connectRelay below), it will be set.
     agoraService = new agora.AgoraService(
       agoraConfig,
-      async (envelope: Envelope, from: string, fromName?: string) => {
+      async (envelope: Envelope, from: string) => {
         if (!agoraMessageHandler) return;
         try {
-          logger.debug(`[AGORA] Relay message received: envelopeId=${envelope.id} type=${envelope.type} from=${fromName || from}`);
+          logger.debug(`[AGORA] Relay message received: envelopeId=${envelope.id} type=${envelope.type} from=${from}`);
           const verifyResult = agora.verifyEnvelope(envelope);
           if (!verifyResult.valid) {
             logger.debug(`[AGORA] Rejected relay message: ${verifyResult.reason ?? "invalid signature"} envelopeId=${envelope.id}`);
             return;
           }
           logger.debug(`[AGORA] Relay message verified: envelopeId=${envelope.id}`);
-          await agoraMessageHandler.processEnvelope(envelope, "relay", fromName);
+          await agoraMessageHandler.processEnvelope(envelope, "relay");
           logger.debug(`[AGORA] Relay message processed: envelopeId=${envelope.id}`);
         } catch (err) {
           logger.debug(`[AGORA] Failed to process relay message: ${err instanceof Error ? err.message : String(err)}`);
@@ -203,6 +203,7 @@ export async function createLoopLayer(
         try { orchestrator.wake(); } catch { /* not sleeping */ }
       },
       getIgnoredPeersPath(),
+      getSeenKeysPath(),
     );
 
     // Connect to relay if configured — handler is already wired via constructor closure above

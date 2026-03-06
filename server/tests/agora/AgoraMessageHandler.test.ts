@@ -315,8 +315,8 @@ describe("AgoraMessageHandler", () => {
       });
     });
 
-    it("should ignore relay name hint when hint is a full public key and use registered peer name", async () => {
-      await handler.processEnvelope(testEnvelope, "relay", testEnvelope.from);
+    it("should use registered peer name for relay messages (claimed names never surface)", async () => {
+      await handler.processEnvelope(testEnvelope, "relay");
 
       expect(conversationManager.appendedEntries).toHaveLength(1);
       const entry = conversationManager.appendedEntries[0];
@@ -327,20 +327,6 @@ describe("AgoraMessageHandler", () => {
       const injected = messageInjector.injectedMessages[0];
       expect(injected).toContain("test-peer@cdefabcd");
       expect(injected).not.toContain(testEnvelope.from);
-    });
-
-    it("should prefer local peer name over relay name hint for known peers", async () => {
-      await handler.processEnvelope(testEnvelope, "relay", "relay-claimed-name");
-
-      expect(conversationManager.appendedEntries).toHaveLength(1);
-      const entry = conversationManager.appendedEntries[0];
-      expect(entry.entry).toContain("test-peer@cdefabcd");
-      expect(entry.entry).not.toContain("relay-claimed-name@cdefabcd");
-
-      expect(messageInjector.injectedMessages).toHaveLength(1);
-      const injected = messageInjector.injectedMessages[0];
-      expect(injected).toContain("test-peer@cdefabcd");
-      expect(injected).not.toContain("relay-claimed-name@cdefabcd");
     });
   });
 

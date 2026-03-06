@@ -6,7 +6,7 @@ import { IAgoraService } from "./IAgoraService";
 import { LoopState } from "../loop/types";
 import { AgentRole } from "../agents/types";
 import { buildPeerReferenceDirectory, compactKnownInlineReferences, compactPeerReference, shortKey } from "./utils";
-import { IgnoredPeersManager } from "@rookdaemon/agora";
+import { IgnoredPeersManager, SeenKeyStore } from "@rookdaemon/agora";
 import type { Envelope } from "@rookdaemon/agora" with { "resolution-mode": "import" };
 import type { ILogger } from "../logging";
 import { createHash } from "crypto";
@@ -70,6 +70,7 @@ export class AgoraMessageHandler {
   private readonly MAX_CONTENT_DEDUP_SIZE = 5000;
   private readonly ignoredPeersManager: IgnoredPeersManager | null;
   private readonly ignoredPeers: Set<string>;
+  private readonly seenKeyStore: SeenKeyStore | null;
 
   constructor(
     private readonly agoraService: IAgoraService | null,
@@ -84,6 +85,7 @@ export class AgoraMessageHandler {
     private readonly rateLimitConfig: RateLimitConfig = { enabled: true, maxMessages: 10, windowMs: 60000 },
     private readonly wakeLoop: (() => void) | null = null,
     private readonly ignoredPeersPath: string | null = null,
+    private readonly seenKeysPath: string | null = null,
   ) {
     if (this.ignoredPeersPath) {
       try {
@@ -97,6 +99,17 @@ export class AgoraMessageHandler {
     } else {
       this.ignoredPeersManager = null;
       this.ignoredPeers = new Set();
+    }
+
+    if (this.seenKeysPath) {
+      try {
+        this.seenKeyStore = new SeenKeyStore(this.seenKeysPath);
+      } catch (error) {
+        this.logger.debug(`[AGORA] Failed to initialize seen-key store: ${error instanceof Error ? error.message : String(error)}`);
+        this.seenKeyStore = null;
+      }
+    } else {
+      this.seenKeyStore = null;
     }
   }
 
@@ -283,7 +296,7 @@ export class AgoraMessageHandler {
    * Sender identity format for durable logs/conversation:
    * - known peers: name@<last8>
    * - unknown peers: @<last8>
-   * Claimed names from relay hints are never used.
+   * Identity is always derived from verified public keys, never from claimed names.
    */
   private formatSenderIdentity(senderPublicKey: string): string {
     const directory = buildPeerReferenceDirectory(this.agoraService);
@@ -349,7 +362,7 @@ export class AgoraMessageHandler {
     return JSON.stringify(compactedPayload);
   }
 
-  async processEnvelope(envelope: Envelope, source: "webhook" | "relay" = "webhook", relayNameHint?: string): Promise<void> {
+  async processEnvelope(envelope: Envelope, source: "webhook" | "relay" = "webhook"): Promise<void> {
     const envelopeRouting = envelope as Envelope & { from?: string; to?: string[]; sender?: string };
     const envelopeFrom = envelopeRouting.from ?? envelopeRouting.sender ?? "";
     const envelopeTo = Array.isArray(envelopeRouting.to) ? envelopeRouting.to : [];
@@ -368,6 +381,12 @@ export class AgoraMessageHandler {
     // (e.g., announce heartbeat loops sending same payload every ~2 minutes)
     if (this.isDuplicateContent(envelopeFrom, envelope.type, envelope.payload)) {
       return;
+    }
+
+    // Persist seen public key for identity resolution
+    if (envelopeFrom && this.seenKeyStore) {
+      this.seenKeyStore.record(envelopeFrom);
+      this.seenKeyStore.flush();
     }
 
     const timestamp = this.clock.now().toISOString();

@@ -3,12 +3,20 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 export const IGNORED_FILE_NAME = "IGNORED_PEERS.md";
+export const SEEN_KEYS_FILE_NAME = "seen-keys.json";
 
 export function getIgnoredPeersPath(storageDir?: string): string {
   if (storageDir) {
     return join(storageDir, IGNORED_FILE_NAME);
   }
   return join(process.cwd(), IGNORED_FILE_NAME);
+}
+
+export function getSeenKeysPath(storageDir?: string): string {
+  if (storageDir) {
+    return join(storageDir, SEEN_KEYS_FILE_NAME);
+  }
+  return join(process.cwd(), SEEN_KEYS_FILE_NAME);
 }
 
 export function loadIgnoredPeers(filePath?: string): string[] {
@@ -73,11 +81,33 @@ export class IgnoredPeersManager {
   }
 }
 
+export class SeenKeyStore {
+  private keys: Map<string, { publicKey: string; firstSeen: number; lastSeen: number; seenCount: number }> = new Map();
+
+  constructor(private readonly filePath: string) {}
+
+  record(publicKey: string): void {
+    const now = Date.now();
+    const existing = this.keys.get(publicKey);
+    if (existing) {
+      existing.lastSeen = now;
+      existing.seenCount++;
+    } else {
+      this.keys.set(publicKey, { publicKey, firstSeen: now, lastSeen: now, seenCount: 1 });
+    }
+  }
+
+  has(publicKey: string): boolean { return this.keys.has(publicKey); }
+  get(publicKey: string) { return this.keys.get(publicKey); }
+  getAll() { return Array.from(this.keys.values()); }
+  flush(): void { /* no-op in mock */ }
+}
+
 export interface Envelope { id: string; type: string; sender: string; timestamp: number; payload: unknown; signature: string; inReplyTo?: string; }
 export interface AgoraServiceConfig { identity: { publicKey: string; privateKey: string; name?: string }; peers: Map<string, { publicKey: string; url: string; token: string }>; relay?: { url: string; autoConnect: boolean; name?: string; reconnectMaxMs?: number }; }
 export type RelayMessageHandler = (e: Envelope) => void;
 export interface Logger { debug(message: string): void; }
-export interface RelayClientLike { connect(): Promise<void>; disconnect(): void; connected(): boolean; on(event: "message", h: (e: Envelope, from: string, fromName?: string) => void): void; on(event: "error", h: (err: Error) => void): void; }
+export interface RelayClientLike { connect(): Promise<void>; disconnect(): void; connected(): boolean; on(event: "message", h: (e: Envelope, from: string) => void): void; on(event: "error", h: (err: Error) => void): void; }
 export type RelayClientFactory = (opts: object) => RelayClientLike;
 
 /**
@@ -130,10 +160,10 @@ export function verifyEnvelope(envelope: Envelope): { valid: boolean; reason?: s
 export class AgoraService {
   private config: AgoraServiceConfig;
   private relayClient: RelayClientLike | null = null;
-  private onRelayMessage: ((e: Envelope, from: string, fromName?: string) => void) | null = null;
+  private onRelayMessage: ((e: Envelope, from: string) => void) | null = null;
   private logger: Logger | null = null;
   private relayClientFactory: RelayClientFactory | null = null;
-  constructor(config: AgoraServiceConfig, onRelayMessage?: ((e: Envelope, from: string, fromName?: string) => void) | Logger, logger?: Logger | RelayClientFactory, relayClientFactory?: RelayClientFactory) {
+  constructor(config: AgoraServiceConfig, onRelayMessage?: ((e: Envelope, from: string) => void) | Logger, logger?: Logger | RelayClientFactory, relayClientFactory?: RelayClientFactory) {
     this.config = config;
     if (typeof onRelayMessage === "function") {
       this.onRelayMessage = onRelayMessage;
@@ -157,7 +187,7 @@ export class AgoraService {
     if (this.relayClientFactory) this.relayClient = this.relayClientFactory(opts);
     else throw new Error("factory required");
     this.relayClient.on("error", (err: Error) => { this.logger?.debug("Agora relay error: " + err.message); });
-    this.relayClient.on("message", (e: Envelope, from: string, fromName?: string) => { this.onRelayMessage?.(e, from, fromName); });
+    this.relayClient.on("message", (e: Envelope, from: string) => { this.onRelayMessage?.(e, from); });
     try { await this.relayClient.connect(); } catch (e) { this.logger?.debug("Agora relay connect failed (" + url + "): " + (e instanceof Error ? e.message : String(e))); this.relayClient = null; }
   }
   async disconnectRelay() { if (this.relayClient) { this.relayClient.disconnect(); this.relayClient = null; } }
