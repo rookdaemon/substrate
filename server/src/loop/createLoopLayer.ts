@@ -32,6 +32,7 @@ import { ConversationProvider } from "../tinybus/providers/ConversationProvider"
 import { AgoraMessageHandler } from "../agora/AgoraMessageHandler";
 import { AgoraOutboundProvider } from "../agora/AgoraOutboundProvider";
 import { IAgoraService } from "../agora/IAgoraService";
+import { buildPeerReferenceDirectory } from "../agora/utils";
 import { FileWatcher } from "../substrate/watcher/FileWatcher";
 import { SubstrateFileType } from "../substrate/types";
 import { CodeDispatcher } from "../code-dispatch/CodeDispatcher";
@@ -319,7 +320,10 @@ export async function createLoopLayer(
   // Wire Agora service into orchestrator for sending agoraReplies
   // from Subconscious/Ego structured JSON output
   if (agoraService) {
-    orchestrator.setAgoraService(agoraService);
+    orchestrator.setAgoraService(
+      agoraService,
+      () => buildPeerReferenceDirectory(agoraService, agoraMessageHandler?.getSeenKeyStore() ?? undefined)
+    );
   }
 
   // INS (Involuntary Nervous System) — pre-cycle deterministic rule checks

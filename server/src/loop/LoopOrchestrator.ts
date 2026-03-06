@@ -99,6 +99,7 @@ export class LoopOrchestrator implements IMessageInjector {
 
   // Agora service — sends agoraReplies from Subconscious/Ego structured JSON output
   private agoraService: IAgoraService | null = null;
+  private agoraPeerDirectoryBuilder: (() => ReturnType<typeof buildPeerReferenceDirectory>) | null = null;
 
   // INS (Involuntary Nervous System) — pre-cycle deterministic rule checks
   private insHook: INSHook | null = null;
@@ -335,8 +336,16 @@ export class LoopOrchestrator implements IMessageInjector {
    * When set, the orchestrator will send any agoraReplies returned by
    * Subconscious.execute() after the execution completes.
    */
-  setAgoraService(service: IAgoraService): void {
+  setAgoraService(
+    service: IAgoraService,
+    peerDirectoryBuilder?: () => ReturnType<typeof buildPeerReferenceDirectory>
+  ): void {
     this.agoraService = service;
+    this.agoraPeerDirectoryBuilder = peerDirectoryBuilder ?? null;
+  }
+
+  private isLikelyFullPublicKey(value: string): boolean {
+    return /^[0-9a-fA-F]{16,}$/.test(value);
   }
 
   /** Set the INS pre-cycle hook for deterministic rule checks. */
@@ -1128,17 +1137,30 @@ export class LoopOrchestrator implements IMessageInjector {
   private async sendAgoraReplies(replies: AgoraReply[]): Promise<void> {
     if (!this.agoraService) return;
 
-    const peerDirectory = buildPeerReferenceDirectory(this.agoraService);
+    const peerDirectory = this.agoraPeerDirectoryBuilder
+      ? this.agoraPeerDirectoryBuilder()
+      : buildPeerReferenceDirectory(this.agoraService);
 
     for (const reply of replies) {
       try {
         const peerRef = resolvePeerReference(reply.to, peerDirectory);
-        const result = await this.agoraService.sendMessage({
-          peerName: peerRef,
-          type: "publish",
-          payload: { text: reply.text },
-          inReplyTo: reply.inReplyTo,
-        });
+        const isConfiguredPeer = !!this.agoraService.getPeerConfig(peerRef);
+        const shouldReplyToUnknown = !!reply.inReplyTo && !isConfiguredPeer && this.isLikelyFullPublicKey(peerRef);
+
+        const result = shouldReplyToUnknown
+          ? await this.agoraService.replyToEnvelope({
+              targetPubkey: peerRef,
+              type: "publish",
+              payload: { text: reply.text },
+              inReplyTo: reply.inReplyTo!,
+            })
+          : await this.agoraService.sendMessage({
+              peerName: peerRef,
+              type: "publish",
+              payload: { text: reply.text },
+              inReplyTo: reply.inReplyTo,
+            });
+
         if (result.ok) {
           this.logger.debug(`agoraReplies: sent to ${peerRef} (status=${result.status})`);
         } else {

@@ -31,6 +31,10 @@ export class AgoraOutboundProvider implements Provider {
     private readonly seenKeyStore?: SeenKeyStore | null,
   ) {}
 
+  private isLikelyFullPublicKey(value: string): boolean {
+    return /^[0-9a-fA-F]{16,}$/.test(value);
+  }
+
   async isReady(): Promise<boolean> {
     return this.ready && this.agoraService !== null;
   }
@@ -110,30 +114,76 @@ export class AgoraOutboundProvider implements Provider {
       return;
     }
 
-    // Multi-recipient send via the `to` list
-    const targets = (payload.to ?? []).map((ref) => resolvePeerReference(ref, peerDirectory));
-    if (targets.length === 0) {
+    // Multi-recipient send via the `to` list.
+    // For in-reply-to flows, unknown recipients should still work via relay reply semantics.
+    const resolvedTargets = (payload.to ?? []).map((ref) => ({
+      original: ref,
+      resolved: resolvePeerReference(ref, peerDirectory),
+    }));
+    if (resolvedTargets.length === 0) {
       throw new Error("Invalid agora.send payload: no recipients (provide to or targetPubkey)");
     }
 
+    const sendTargets: string[] = [];
+    const replyTargets: string[] = [];
+    const unresolvedTargets: string[] = [];
+
+    for (const target of resolvedTargets) {
+      const isConfiguredPeer = !!this.agoraService.getPeerConfig(target.resolved);
+      const isFullKey = this.isLikelyFullPublicKey(target.resolved);
+
+      if (payload.inReplyTo && !isConfiguredPeer && isFullKey) {
+        replyTargets.push(target.resolved);
+      } else if (!isConfiguredPeer && !isFullKey) {
+        unresolvedTargets.push(target.original);
+      } else {
+        sendTargets.push(target.resolved);
+      }
+    }
+
+    if (unresolvedTargets.length > 0) {
+      throw new Error(`Unresolved recipient reference(s): ${unresolvedTargets.join(", ")}`);
+    }
+
     this.logger?.debug(
-      `[AGORA-OUT] Sending: type=${payload.type} to ${targets.length} recipient(s)` +
+      `[AGORA-OUT] Sending: type=${payload.type} to ${resolvedTargets.length} recipient(s)` +
       (payload.inReplyTo ? ` inReplyTo=${payload.inReplyTo}` : "")
     );
 
-    const result = await this.agoraService.sendToAll({
-      recipients: targets,
-      type: payload.type,
-      payload: payload.payload,
-      inReplyTo: payload.inReplyTo,
-    });
+    const errors: Array<{ recipient: string; error: string }> = [];
 
-    for (const err of result.errors) {
-      this.logger?.debug(`[AGORA-OUT] Failed to send to ${err.recipient}: ${err.error}`);
+    if (sendTargets.length > 0) {
+      const sendResult = await this.agoraService.sendToAll({
+        recipients: sendTargets,
+        type: payload.type,
+        payload: payload.payload,
+        inReplyTo: payload.inReplyTo,
+      });
+
+      for (const err of sendResult.errors) {
+        this.logger?.debug(`[AGORA-OUT] Failed to send to ${err.recipient}: ${err.error}`);
+      }
+      errors.push(...sendResult.errors);
     }
 
-    if (!result.ok) {
-      throw new Error(`All sends failed: ${result.errors.map((e: { error: string }) => e.error).join("; ")}`);
+    for (const targetPubkey of replyTargets) {
+      const replyResult = await this.agoraService.replyToEnvelope({
+        targetPubkey,
+        type: payload.type,
+        payload: payload.payload,
+        inReplyTo: payload.inReplyTo!,
+      });
+
+      if (!replyResult.ok) {
+        const error = replyResult.error ?? "unknown error";
+        this.logger?.debug(`[AGORA-OUT] Failed reply to ${targetPubkey}: ${error}`);
+        errors.push({ recipient: targetPubkey, error });
+      }
+    }
+
+    const total = sendTargets.length + replyTargets.length;
+    if (total > 0 && errors.length >= total) {
+      throw new Error(`All sends failed: ${errors.map((e) => e.error).join("; ")}`);
     }
   }
 

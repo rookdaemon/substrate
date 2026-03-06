@@ -58,7 +58,13 @@ class MockAgoraService implements IAgoraService {
   }
 
   getPeerConfig(name: string) {
-    return this.peerConfigs[name];
+    const direct = this.peerConfigs[name];
+    if (direct) {
+      return direct;
+    }
+    return Object.values(this.peerConfigs).find(
+      (peer) => peer.publicKey === name || peer.name === name
+    );
   }
 
   getSelfIdentity() {
@@ -301,6 +307,56 @@ describe("AgoraOutboundProvider", () => {
       });
       // Should NOT have used sendMessage
       expect(agoraService.sentMessages).toHaveLength(0);
+    });
+
+    it("should route unknown full-key recipients with inReplyTo to replyToEnvelope", async () => {
+      await provider.start();
+
+      const unknownPubkey = "302a300506032b6570032100dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd";
+      const message = createMessage({
+        type: "agora.send",
+        payload: {
+          to: [unknownPubkey],
+          type: "publish",
+          payload: { text: "reply to unknown" },
+          inReplyTo: "env-unknown-1",
+        },
+      });
+
+      await provider.send(message);
+
+      expect(agoraService.repliedEnvelopes).toHaveLength(1);
+      expect(agoraService.repliedEnvelopes[0]).toEqual({
+        targetPubkey: unknownPubkey,
+        type: "publish",
+        payload: { text: "reply to unknown" },
+        inReplyTo: "env-unknown-1",
+      });
+      expect(agoraService.sentToAll).toHaveLength(0);
+    });
+
+    it("should split configured and unknown recipients for inReplyTo sends", async () => {
+      await provider.start();
+
+      const unknownPubkey = "302a300506032b6570032100dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd";
+      const message = createMessage({
+        type: "agora.send",
+        payload: {
+          to: ["test-peer", unknownPubkey],
+          type: "publish",
+          payload: { text: "mixed" },
+          inReplyTo: "env-mixed-1",
+        },
+      });
+
+      await provider.send(message);
+
+      expect(agoraService.sentToAll).toHaveLength(1);
+      expect(agoraService.sentToAll[0].recipients).toEqual([
+        "302a300506032b6570032100aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      ]);
+      expect(agoraService.repliedEnvelopes).toHaveLength(1);
+      expect(agoraService.repliedEnvelopes[0].targetPubkey).toBe(unknownPubkey);
     });
 
     it("should expand short targetPubkey refs before reply", async () => {
