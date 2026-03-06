@@ -243,7 +243,7 @@ export async function createLoopLayer(
 
   // 4. Agora outbound provider - handles outbound agora.send messages (if configured)
   if (agoraService) {
-    agoraOutboundProvider = new AgoraOutboundProvider(agoraService, logger);
+    agoraOutboundProvider = new AgoraOutboundProvider(agoraService, logger, agoraMessageHandler?.getSeenKeyStore());
     tinyBus.registerProvider(agoraOutboundProvider);
   }
 

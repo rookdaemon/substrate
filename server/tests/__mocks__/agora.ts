@@ -100,6 +100,7 @@ export class SeenKeyStore {
   has(publicKey: string): boolean { return this.keys.has(publicKey); }
   get(publicKey: string) { return this.keys.get(publicKey); }
   getAll() { return Array.from(this.keys.values()); }
+  toReferenceEntries() { return Array.from(this.keys.values()).map((e: { publicKey: string }) => ({ publicKey: e.publicKey })); }
   flush(): void { /* no-op in mock */ }
 }
 

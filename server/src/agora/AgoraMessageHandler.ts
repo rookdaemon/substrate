@@ -120,6 +120,13 @@ export class AgoraMessageHandler {
     return Array.from(this.processedEnvelopeIds);
   }
 
+  /**
+   * Access the seen-key store (or null if not configured).
+   */
+  getSeenKeyStore(): SeenKeyStore | null {
+    return this.seenKeyStore;
+  }
+
   ignorePeer(publicKey: string): boolean {
     const normalized = publicKey.trim();
     if (!normalized) {

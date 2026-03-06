@@ -1,4 +1,6 @@
 import type { IAgoraService } from "./IAgoraService";
+import type { SeenKeyStore } from "@rookdaemon/agora";
+import { mergeDirectories } from "@rookdaemon/agora";
 import * as Agora from "@rookdaemon/agora";
 
 export interface PeerReferenceEntry {
@@ -92,13 +94,18 @@ function shortenLocal(id: string, directory?: PeerReferenceDirectory): string {
 
 /**
  * Build a directory keyed by public key from the configured Agora peers.
+ * Optionally merges seen keys so expand() can resolve @suffix8 for previously-seen unknown peers.
  */
-export function buildPeerReferenceDirectory(agoraService: Pick<IAgoraService, "getPeers" | "getPeerConfig"> | null): PeerReferenceDirectory {
+export function buildPeerReferenceDirectory(
+  agoraService: Pick<IAgoraService, "getPeers" | "getPeerConfig" | "getSelfIdentity"> | null,
+  seenKeyStore?: SeenKeyStore,
+): PeerReferenceDirectory {
   const directory: PeerReferenceDirectory = {};
   if (!agoraService) {
     return directory;
   }
 
+  // Config peers from agoraService
   for (const peerRef of agoraService.getPeers()) {
     const peer = agoraService.getPeerConfig(peerRef);
     if (!peer?.publicKey) {
@@ -116,7 +123,16 @@ export function buildPeerReferenceDirectory(agoraService: Pick<IAgoraService, "g
     directory[self.publicKey] = { publicKey: self.publicKey, name: self.name };
   }
 
-  return directory;
+  if (!seenKeyStore) {
+    return directory;
+  }
+
+  const merged = mergeDirectories(directory, seenKeyStore.toReferenceEntries());
+  const mergedDirectory: PeerReferenceDirectory = {};
+  for (const entry of merged) {
+    mergedDirectory[entry.publicKey] = entry;
+  }
+  return mergedDirectory;
 }
 
 /**

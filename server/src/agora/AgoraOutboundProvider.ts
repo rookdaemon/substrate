@@ -2,6 +2,7 @@ import { Message } from "../tinybus/core/Message";
 import { Provider } from "../tinybus/core/Provider";
 import { IAgoraService } from "./IAgoraService";
 import { buildPeerReferenceDirectory, resolvePeerReference } from "./utils";
+import type { SeenKeyStore } from "@rookdaemon/agora";
 import type { ILogger } from "../logging";
 
 /**
@@ -27,6 +28,7 @@ export class AgoraOutboundProvider implements Provider {
   constructor(
     private readonly agoraService: IAgoraService | null,
     private readonly logger?: ILogger,
+    private readonly seenKeyStore?: SeenKeyStore | null,
   ) {}
 
   async isReady(): Promise<boolean> {
@@ -78,7 +80,7 @@ export class AgoraOutboundProvider implements Provider {
       inReplyTo?: string;
     };
 
-    const peerDirectory = buildPeerReferenceDirectory(this.agoraService);
+    const peerDirectory = buildPeerReferenceDirectory(this.agoraService, this.seenKeyStore ?? undefined);
 
     if (!payload?.type) {
       throw new Error("Invalid agora.send payload: missing type");
