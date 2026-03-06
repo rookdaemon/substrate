@@ -4,6 +4,7 @@ import { createMessage } from "../../src/tinybus/core/Message";
 
 class MockAgoraService implements IAgoraService {
   public sentMessages: Array<{ peerName: string; type: string; payload: unknown; inReplyTo?: string; allRecipients?: string[] }> = [];
+  public sentToAll: Array<{ recipients: string[]; type: string; payload: unknown; inReplyTo?: string }> = [];
   public repliedEnvelopes: Array<{ targetPubkey: string; type: string; payload: unknown; inReplyTo: string }> = [];
   public shouldFailSend = false;
   public shouldFailReply = false;
@@ -14,6 +15,14 @@ class MockAgoraService implements IAgoraService {
     }
     this.sentMessages.push(options);
     return { ok: true, status: 200 };
+  }
+
+  async sendToAll(options: { recipients: string[]; type: string; payload: unknown; inReplyTo?: string }) {
+    this.sentToAll.push(options);
+    if (this.shouldFailSend) {
+      return { ok: false, errors: options.recipients.map(r => ({ recipient: r, error: "Mock error" })) };
+    }
+    return { ok: true, errors: [] };
   }
 
   async replyToEnvelope(options: { targetPubkey: string; type: string; payload: unknown; inReplyTo: string }) {
@@ -85,9 +94,9 @@ describe("AgoraOutboundProvider", () => {
 
       await provider.send(message);
 
-      expect(agoraService.sentMessages).toHaveLength(1);
-      expect(agoraService.sentMessages[0]).toMatchObject({
-        peerName: "302a300506032b6570032100aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      expect(agoraService.sentToAll).toHaveLength(1);
+      expect(agoraService.sentToAll[0]).toMatchObject({
+        recipients: ["302a300506032b6570032100aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
         type: "request",
         payload: { question: "Hello?" },
       });
@@ -108,7 +117,7 @@ describe("AgoraOutboundProvider", () => {
 
       await provider.send(message);
 
-      expect(agoraService.sentMessages[0].inReplyTo).toBe("envelope-123");
+      expect(agoraService.sentToAll[0].inReplyTo).toBe("envelope-123");
     });
 
     it("should expand short peer refs before send", async () => {
@@ -125,8 +134,8 @@ describe("AgoraOutboundProvider", () => {
 
       await provider.send(message);
 
-      expect(agoraService.sentMessages).toHaveLength(1);
-      expect(agoraService.sentMessages[0].peerName).toBe("302a300506032b6570032100aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+      expect(agoraService.sentToAll).toHaveLength(1);
+      expect(agoraService.sentToAll[0].recipients).toEqual(["302a300506032b6570032100aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]);
     });
 
     it("should send to multiple recipients", async () => {
@@ -143,25 +152,24 @@ describe("AgoraOutboundProvider", () => {
 
       await provider.send(message);
 
-      expect(agoraService.sentMessages).toHaveLength(2);
-      const expectedAllRecipients = [
-        "302a300506032b6570032100aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-        "302a300506032b6570032100bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-      ];
-      for (const msg of agoraService.sentMessages) {
-        expect(msg.payload).toEqual({ text: "Hello both" });
-        expect(msg.type).toBe("publish");
-        expect(msg.allRecipients).toEqual(expectedAllRecipients);
-      }
+      expect(agoraService.sentToAll).toHaveLength(1);
+      expect(agoraService.sentToAll[0]).toMatchObject({
+        recipients: [
+          "302a300506032b6570032100aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "302a300506032b6570032100bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        ],
+        type: "publish",
+        payload: { text: "Hello both" },
+      });
     });
 
     it("should not throw on partial multi-recipient failure", async () => {
-      let callCount = 0;
-      agoraService.sendMessage = async (options) => {
-        callCount++;
-        if (callCount === 2) return { ok: false, status: 500, error: "one failed" };
-        agoraService.sentMessages.push(options);
-        return { ok: true, status: 200 };
+      agoraService.sendToAll = async (options) => {
+        agoraService.sentToAll.push(options);
+        return {
+          ok: true, // at least one succeeded
+          errors: [{ recipient: options.recipients[1], error: "one failed" }],
+        };
       };
       await provider.start();
 
@@ -176,7 +184,7 @@ describe("AgoraOutboundProvider", () => {
 
       // Should not throw — only 1 of 3 failed
       await provider.send(message);
-      expect(agoraService.sentMessages).toHaveLength(2);
+      expect(agoraService.sentToAll).toHaveLength(1);
     });
 
     it("should throw when all sends fail", async () => {
