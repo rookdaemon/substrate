@@ -3,12 +3,12 @@ import { IAgoraService } from "../../src/agora/IAgoraService";
 import { createMessage } from "../../src/tinybus/core/Message";
 
 class MockAgoraService implements IAgoraService {
-  public sentMessages: Array<{ peerName: string; type: string; payload: unknown; inReplyTo?: string }> = [];
+  public sentMessages: Array<{ peerName: string; type: string; payload: unknown; inReplyTo?: string; allRecipients?: string[] }> = [];
   public repliedEnvelopes: Array<{ targetPubkey: string; type: string; payload: unknown; inReplyTo: string }> = [];
   public shouldFailSend = false;
   public shouldFailReply = false;
 
-  async sendMessage(options: { peerName: string; type: string; payload: unknown; inReplyTo?: string }) {
+  async sendMessage(options: { peerName: string; type: string; payload: unknown; inReplyTo?: string; allRecipients?: string[] }) {
     if (this.shouldFailSend) {
       return { ok: false, status: 500, error: "Mock error" };
     }
@@ -144,9 +144,14 @@ describe("AgoraOutboundProvider", () => {
       await provider.send(message);
 
       expect(agoraService.sentMessages).toHaveLength(2);
+      const expectedAllRecipients = [
+        "302a300506032b6570032100aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "302a300506032b6570032100bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      ];
       for (const msg of agoraService.sentMessages) {
         expect(msg.payload).toEqual({ text: "Hello both" });
         expect(msg.type).toBe("publish");
+        expect(msg.allRecipients).toEqual(expectedAllRecipients);
       }
     });
 

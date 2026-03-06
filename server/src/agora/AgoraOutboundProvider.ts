@@ -114,6 +114,13 @@ export class AgoraOutboundProvider implements Provider {
       throw new Error("Invalid agora.send payload: no recipients (provide to or targetPubkey)");
     }
 
+    // Resolve all recipient public keys for the envelope `to` field,
+    // so each recipient sees ALL recipients (enables multi-party replies).
+    const allRecipientKeys = targets.map((target) => {
+      const peerCfg = this.agoraService!.getPeerConfig(target);
+      return peerCfg?.publicKey ?? target;
+    });
+
     this.logger?.debug(
       `[AGORA-OUT] Sending: type=${payload.type} to ${targets.length} recipient(s)` +
       (payload.inReplyTo ? ` inReplyTo=${payload.inReplyTo}` : "")
@@ -126,6 +133,7 @@ export class AgoraOutboundProvider implements Provider {
         type: payload.type,
         payload: payload.payload,
         inReplyTo: payload.inReplyTo,
+        allRecipients: allRecipientKeys,
       });
 
       if (!result.ok) {
