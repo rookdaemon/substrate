@@ -44,7 +44,7 @@ Fork the repo. Configure your identity. Evolve the substrate to fit your needs. 
 
 ### Prerequisites
 
-- Node.js 18+
+- Node.js 24+
 - npm 9+
 - Claude Code CLI installed and authenticated (`claude --version`)
 
@@ -255,7 +255,7 @@ cd server && npx eslint src/ tests/
 
 ## Substrate File Formats
 
-The substrate is a directory of 14 markdown files that serve as the system's shared memory. Each file follows a two-tier pattern: a concise index in the main file with `@`-references to long-form detail files in subdirectories.
+The substrate is a directory of 15 markdown files that serve as the system's shared memory (12 required + 3 optional). Each file follows a two-tier pattern: a concise index in the main file with `@`-references to long-form detail files in subdirectories.
 
 | File | Write Mode | Description |
 |------|-----------|-------------|
@@ -272,7 +272,8 @@ The substrate is a directory of 14 markdown files that serve as the system's sha
 | `SUPEREGO.md` | OVERWRITE | Evaluation criteria, references `superego/*.md` |
 | `CLAUDE.md` | OVERWRITE | Claude Code capabilities and self-improvement doctrine |
 | `PEERS.md` | OVERWRITE | Agora peer registry for agent-to-agent communication (optional) |
-| `AGORA_INBOX.md` | OVERWRITE | ~~Deprecated: Agora messages now go to CONVERSATION.md~~ (optional, legacy) |
+| `ESCALATE_TO_STEFAN.md` | APPEND | Escalation log for issues requiring manual intervention (optional) |
+| `restart-context.md` | OVERWRITE | Restart handoff context and state restoration notes (optional) |
 
 ### Two-Tier Knowledge System
 
@@ -340,10 +341,11 @@ Each agent role has specific file access permissions enforced by `PermissionChec
 | SUPEREGO | — | — | — | — | ✅ | — | — |
 | CLAUDE | — | — | — | — | ✅ | — | — |
 | PEERS | ✅ | — | ✅ | ✅ overwrite | ✅ | — | — |
-| AGORA_INBOX | ~~✅~~ | — | ~~✅~~ | ~~✅ overwrite~~ | ✅ | — | — | *Deprecated* |
+| ESCALATE_TO_STEFAN | — | — | — | — | ✅ | ✅ append | — |
+| RESTART_CONTEXT | — | — | — | — | ✅ | — | — |
 
 **Key constraints:**
-- **Superego** has read access to all 14 files but can only append to PROGRESS
+- **Superego** has read access to all substrate file types; it can write `HABITS` and `SECURITY`, and append to `PROGRESS` and `ESCALATE_TO_STEFAN`
 - **Id** has read-only access to 6 files (ID, VALUES, PLAN, PROGRESS, SKILLS, MEMORY) — no writes
 - **Ego** can overwrite PLAN and append to CONVERSATION, read PEERS
 - **Subconscious** can overwrite PLAN, SKILLS, MEMORY, and PEERS; append to PROGRESS and CONVERSATION
@@ -379,7 +381,7 @@ substrate/
 │   │   │   ├── io/               # FileReader, OverwriteWriter, AppendOnlyWriter, FileLock
 │   │   │   ├── abstractions/     # IFileSystem, IClock, InMemoryFileSystem, FixedClock
 │   │   │   ├── initialization/   # SubstrateInitializer, SubstrateBackup
-│   │   │   ├── templates/        # Initial content templates for all 12 files
+│   │   │   ├── templates/        # Initial content templates for core + optional files
 │   │   │   ├── validation/       # Validators for substrate file structure
 │   │   │   ├── types.ts          # SubstrateFileType, WriteMode enums
 │   │   │   └── config.ts         # SubstrateConfig path resolver
