@@ -216,7 +216,7 @@ export async function createLoopLayer(
       },
       getIgnoredPeersPath(),
       getSeenKeysPath(),
-      flashGate,
+      flashGate, // F2 gate — null when VertexSessionLauncher is unavailable
     );
 
     // Connect to relay if configured — handler is already wired via constructor closure above

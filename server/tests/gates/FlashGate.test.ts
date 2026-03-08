@@ -207,8 +207,8 @@ describe("FlashGate", () => {
       expect(launch.request.message).not.toContain("[CONTEXT]");
     });
 
-    it("proceeds (PROCEED) without calling gate when inReplyTo summary is missing (fallback)", async () => {
-      // No summary → gate still runs, just without context
+    it("calls gate without inReplyTo context when no summary is provided", async () => {
+      // No summary → gate still runs, just without context in the prompt
       launcher.enqueueSuccess(JSON.stringify({ verdict: "PROCEED", reasons: ["r1", "r2", "r3", "r4", "r5"] }));
 
       const result = await gate.evaluateF2(makeInput({ inReplyToSummary: undefined }));
