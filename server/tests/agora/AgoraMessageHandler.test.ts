@@ -8,7 +8,7 @@ import { LoopState } from "../../src/loop/types";
 import { AgentRole } from "../../src/agents/types";
 import type { Envelope } from "@rookdaemon/agora" with { "resolution-mode": "import" };
 import type { ILogger } from "../../src/logging";
-import type { IFlashGate, F2GateInput, F2GateResult } from "../../src/gates/IFlashGate";
+import type { IFlashGate, F2GateInput, F2GateResult, FlashGateResult } from "../../src/gates/IFlashGate";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -115,6 +115,10 @@ class MockFlashGate implements IFlashGate {
 
   enqueue(result: F2GateResult): void {
     this.responses.push(result);
+  }
+
+  async evaluate(_envelope: unknown): Promise<FlashGateResult> {
+    return { decision: "PASS" };
   }
 
   async evaluateF2(input: F2GateInput): Promise<F2GateResult> {

@@ -1,10 +1,27 @@
+import type { Envelope } from "@rookdaemon/agora" with { "resolution-mode": "import" };
 import type { ISessionLauncher } from "../agents/claude/ISessionLauncher";
 import type { IClock } from "../substrate/abstractions/IClock";
 import type { ILogger } from "../logging";
-import type { IFlashGate, F2GateInput, F2GateResult, FlashGateVerdict } from "./IFlashGate";
+import type { IFlashGate, F2GateInput, F2GateResult, FlashGateVerdict, FlashGateResult } from "./IFlashGate";
 
 export const DEFAULT_F2_MODEL = "gemini-2.5-flash";
 export const F2_TIMEOUT_MS = 30_000;
+
+/**
+ * Message types that the lightweight pre-check actively gates.
+ * All other types receive an unconditional PASS.
+ */
+const GATED_TYPES = new Set(["dm", "publish"]);
+
+/**
+ * Maximum allowed clock drift (ms) between an envelope's timestamp and the
+ * local wall clock. Messages whose timestamps fall outside this window are
+ * flagged as anomalous.
+ *
+ * 5 minutes matches common NTP slew tolerances while staying well above
+ * normal network round-trip variance.
+ */
+const TIMESTAMP_TOLERANCE_MS = 5 * 60 * 1000;
 
 /**
  * Keywords that indicate an irreversible action is being requested.
@@ -51,24 +68,14 @@ Return ONLY this JSON (no markdown, no code blocks):
 /**
  * FlashGate — F2 (Healthy Paranoia) pre-input behavioral filter gate.
  *
- * Uses Vertex Flash (gemini-2.5-flash) to evaluate inbound Agora messages
- * before they reach ego.decide(). Enforces a mandatory five-reason pre-mortem
- * structure to prevent hasty verdicts.
+ * Two layers of protection:
+ * 1. Lightweight pre-check (`evaluate`): timestamp anomaly detection on raw envelopes
+ * 2. LLM-based evaluation (`evaluateF2`): five-reason pre-mortem via Vertex Flash
  *
- * Placement: runs in AgoraMessageHandler before injection/CONVERSATION.md write.
- *
- * Verdict handling (caller responsibility):
- * - PROCEED → process message normally
- * - BLOCK   → discard message; do not inject or write to CONVERSATION.md
- * - ESCALATE → process with [F2-ESCALATION] flag
- *
- * Failure modes:
- * - Timeout (>30s) → BLOCK
- * - Parse failure  → BLOCK
- * - Launcher error → BLOCK
- *
- * Auto-BLOCK (no LLM call):
- * - sender_verified=false AND message requests irreversible action
+ * ## Issue C fix (FP11-12, FP18, FP21)
+ * The timestamp comparison uses the numeric `envelope.timestamp` directly instead
+ * of truncating to YYYY-MM-DD, which caused false-positive ESCALATEs for same-day
+ * messages sent after midnight UTC.
  */
 export class FlashGate implements IFlashGate {
   private readonly model: string;
@@ -81,6 +88,41 @@ export class FlashGate implements IFlashGate {
   ) {
     this.model = model ?? DEFAULT_F2_MODEL;
   }
+
+  // ── Lightweight pre-check (timestamp anomaly) ────────────────────────
+
+  async evaluate(envelope: Envelope): Promise<FlashGateResult> {
+    if (!GATED_TYPES.has(envelope.type)) {
+      return { decision: "PASS" };
+    }
+
+    return this.checkTimestampAnomaly(envelope);
+  }
+
+  private checkTimestampAnomaly(envelope: Envelope): FlashGateResult {
+    const now = this.clock.now().getTime();
+
+    // Use the numeric envelope timestamp directly (milliseconds since epoch).
+    // FIX (Issue C): previous implementation truncated to "YYYY-MM-DD" via
+    // Date.parse(timestamp.slice(0, 10)), resolving to midnight UTC and
+    // causing false-positive ESCALATEs for same-day messages.
+    const epoch = envelope.timestamp;
+
+    const drift = Math.abs(now - epoch);
+    if (drift > TIMESTAMP_TOLERANCE_MS) {
+      this.logger.debug(
+        `[FLASHGATE] Timestamp anomaly: envelopeId=${envelope.id} drift=${drift}ms tolerance=${TIMESTAMP_TOLERANCE_MS}ms`,
+      );
+      return {
+        decision: "ESCALATE",
+        reason: `Timestamp anomaly: drift=${drift}ms exceeds tolerance=${TIMESTAMP_TOLERANCE_MS}ms`,
+      };
+    }
+
+    return { decision: "PASS" };
+  }
+
+  // ── LLM-based F2 evaluation (five-reason pre-mortem) ─────────────────
 
   async evaluateF2(input: F2GateInput): Promise<F2GateResult> {
     const { context } = input;

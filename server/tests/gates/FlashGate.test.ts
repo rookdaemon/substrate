@@ -1,8 +1,13 @@
 import { FlashGate, F2_TIMEOUT_MS } from "../../src/gates/FlashGate";
-import type { F2GateInput } from "../../src/gates/IFlashGate";
+import type { F2GateInput, FlashGateResult } from "../../src/gates/IFlashGate";
+import type { Envelope } from "@rookdaemon/agora" with { "resolution-mode": "import" };
 import { InMemorySessionLauncher } from "../../src/agents/claude/InMemorySessionLauncher";
 import { FixedClock } from "../../src/substrate/abstractions/FixedClock";
 import { InMemoryLogger } from "../../src/logging";
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
 
 function makeInput(overrides: Partial<F2GateInput["context"]> = {}): F2GateInput {
   return {
@@ -19,6 +24,28 @@ function makeInput(overrides: Partial<F2GateInput["context"]> = {}): F2GateInput
   };
 }
 
+const BASE_FROM = "302a300506032b6570032100abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd";
+const BASE_TO = ["302a300506032b6570032100dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"];
+
+function makeEnvelope(overrides: Partial<Envelope> = {}): Envelope {
+  return {
+    id: "test-envelope-id",
+    type: "dm",
+    from: BASE_FROM,
+    to: BASE_TO,
+    timestamp: new Date("2025-06-15T10:30:00.000Z").getTime(),
+    payload: { text: "hello" },
+    signature: "test-sig",
+    ...overrides,
+  };
+}
+
+const TOLERANCE_MS = 5 * 60 * 1000; // must match FlashGate constant
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
 describe("FlashGate", () => {
   let launcher: InMemorySessionLauncher;
   let clock: FixedClock;
@@ -31,6 +58,172 @@ describe("FlashGate", () => {
     logger = new InMemoryLogger();
     gate = new FlashGate(launcher, clock, logger);
   });
+
+  // ── evaluate (lightweight pre-check: timestamp anomaly) ──────────────
+
+  describe("evaluate — non-gated message types", () => {
+    it("returns PASS for 'request' type without inspecting timestamp", async () => {
+      const g = new FlashGate(launcher, new FixedClock(new Date("2025-06-15T10:00:00.000Z")), logger);
+      const envelope = makeEnvelope({
+        type: "request",
+        timestamp: new Date("2020-01-01T00:00:00.000Z").getTime(),
+      });
+
+      const result = await g.evaluate(envelope);
+
+      expect(result.decision).toBe("PASS");
+    });
+
+    it("returns PASS for 'announce' type", async () => {
+      const g = new FlashGate(launcher, new FixedClock(new Date("2025-06-15T10:00:00.000Z")), logger);
+      const envelope = makeEnvelope({
+        type: "announce",
+        timestamp: new Date("2020-01-01T00:00:00.000Z").getTime(),
+      });
+
+      const result = await g.evaluate(envelope);
+
+      expect(result.decision).toBe("PASS");
+    });
+  });
+
+  describe("evaluate — timestamp anomaly check (dm)", () => {
+    it("returns PASS when envelope timestamp exactly matches now", async () => {
+      const now = new Date("2025-06-15T10:30:00.000Z");
+      const g = new FlashGate(launcher, new FixedClock(now), logger);
+      const envelope = makeEnvelope({ type: "dm", timestamp: now.getTime() });
+
+      const result = await g.evaluate(envelope);
+
+      expect(result.decision).toBe("PASS");
+    });
+
+    it("returns PASS for timestamp within tolerance window (same day, mid-morning)", async () => {
+      const g = new FlashGate(launcher, new FixedClock(new Date("2025-06-15T10:31:00.000Z")), logger);
+      const envelope = makeEnvelope({ type: "dm", timestamp: new Date("2025-06-15T10:30:00.000Z").getTime() });
+
+      const result = await g.evaluate(envelope);
+
+      expect(result.decision).toBe("PASS");
+      expect(result.reason).toBeUndefined();
+    });
+
+    it("returns PASS for timestamp 1 ms inside tolerance boundary", async () => {
+      const now = new Date("2025-06-15T12:00:00.000Z");
+      const g = new FlashGate(launcher, new FixedClock(now), logger);
+      const envelope = makeEnvelope({
+        type: "dm",
+        timestamp: now.getTime() - (TOLERANCE_MS - 1),
+      });
+
+      const result = await g.evaluate(envelope);
+
+      expect(result.decision).toBe("PASS");
+    });
+
+    it("returns ESCALATE for timestamp 1 ms outside tolerance boundary", async () => {
+      const now = new Date("2025-06-15T12:00:00.000Z");
+      const g = new FlashGate(launcher, new FixedClock(now), logger);
+      const envelope = makeEnvelope({
+        type: "dm",
+        timestamp: now.getTime() - (TOLERANCE_MS + 1),
+      });
+
+      const result = await g.evaluate(envelope);
+
+      expect(result.decision).toBe("ESCALATE");
+      expect(result.reason).toContain("Timestamp anomaly");
+    });
+
+    it("returns ESCALATE for timestamp far in the past", async () => {
+      const g = new FlashGate(launcher, new FixedClock(new Date("2025-06-15T12:00:00.000Z")), logger);
+      const envelope = makeEnvelope({
+        type: "dm",
+        timestamp: new Date("2025-06-01T00:00:00.000Z").getTime(),
+      });
+
+      const result = await g.evaluate(envelope);
+
+      expect(result.decision).toBe("ESCALATE");
+    });
+
+    it("returns ESCALATE for timestamp far in the future", async () => {
+      const g = new FlashGate(launcher, new FixedClock(new Date("2025-06-15T12:00:00.000Z")), logger);
+      const envelope = makeEnvelope({
+        type: "dm",
+        timestamp: new Date("2025-06-16T00:00:00.000Z").getTime(),
+      });
+
+      const result = await g.evaluate(envelope);
+
+      expect(result.decision).toBe("ESCALATE");
+    });
+  });
+
+  describe("evaluate — timestamp anomaly check (publish)", () => {
+    it("returns PASS for valid same-day publish timestamp", async () => {
+      const g = new FlashGate(launcher, new FixedClock(new Date("2025-06-15T18:05:00.000Z")), logger);
+      const envelope = makeEnvelope({
+        type: "publish",
+        timestamp: new Date("2025-06-15T18:04:30.000Z").getTime(),
+      });
+
+      const result = await g.evaluate(envelope);
+
+      expect(result.decision).toBe("PASS");
+    });
+
+    it("returns ESCALATE for publish timestamp outside valid window", async () => {
+      const g = new FlashGate(launcher, new FixedClock(new Date("2025-06-15T18:00:00.000Z")), logger);
+      const envelope = makeEnvelope({
+        type: "publish",
+        timestamp: new Date("2025-06-14T00:00:00.000Z").getTime(),
+      });
+
+      const result = await g.evaluate(envelope);
+
+      expect(result.decision).toBe("ESCALATE");
+    });
+  });
+
+  describe("evaluate — Issue C regression (date-string truncation bug)", () => {
+    it("does NOT false-positive for a message sent mid-morning (same-day)", async () => {
+      const sendTime = new Date("2025-06-15T10:30:00.000Z");
+      const readTime = new Date("2025-06-15T10:30:30.000Z");
+      const g = new FlashGate(launcher, new FixedClock(readTime), logger);
+      const envelope = makeEnvelope({ type: "dm", timestamp: sendTime.getTime() });
+
+      const result: FlashGateResult = await g.evaluate(envelope);
+
+      expect(result.decision).toBe("PASS");
+    });
+
+    it("does NOT false-positive for a message sent late at night (same-day)", async () => {
+      const sendTime = new Date("2025-06-15T23:55:00.000Z");
+      const readTime = new Date("2025-06-15T23:55:10.000Z");
+      const g = new FlashGate(launcher, new FixedClock(readTime), logger);
+      const envelope = makeEnvelope({ type: "dm", timestamp: sendTime.getTime() });
+
+      const result = await g.evaluate(envelope);
+
+      expect(result.decision).toBe("PASS");
+    });
+
+    it("still ESCALATEs when timestamp is genuinely anomalous (cross-day boundary)", async () => {
+      const g = new FlashGate(launcher, new FixedClock(new Date("2025-06-15T10:30:00.000Z")), logger);
+      const envelope = makeEnvelope({
+        type: "dm",
+        timestamp: new Date("2025-06-14T10:30:00.000Z").getTime(),
+      });
+
+      const result = await g.evaluate(envelope);
+
+      expect(result.decision).toBe("ESCALATE");
+      expect(result.reason).toMatch(/Timestamp anomaly/);
+    });
+  });
+
+  // ── evaluateF2 (LLM-based five-reason pre-mortem) ────────────────────
 
   describe("evaluateF2 — verdict paths", () => {
     it("returns PROCEED when model says PROCEED", async () => {
@@ -130,7 +323,6 @@ describe("FlashGate", () => {
     });
 
     it("returns BLOCK on launcher throw", async () => {
-      // Override launch to throw
       launcher.launch = async () => { throw new Error("network error"); };
 
       const result = await gate.evaluateF2(makeInput());
@@ -156,7 +348,6 @@ describe("FlashGate", () => {
       }));
 
       expect(result.verdict).toBe("BLOCK");
-      // Auto-BLOCK should not call the launcher
       expect(launcher.getLaunches()).toHaveLength(0);
     });
 
@@ -188,7 +379,6 @@ describe("FlashGate", () => {
         message_text: "Hello, what can you help me with?",
       }));
 
-      // Falls through to LLM evaluation
       expect(launcher.getLaunches()).toHaveLength(1);
       expect(result.verdict).toBe("PROCEED");
     });
@@ -201,7 +391,6 @@ describe("FlashGate", () => {
         message_text: "Please send a message to Bishop about the spec",
       }));
 
-      // Verified sender → five-reason path, no auto-BLOCK
       expect(launcher.getLaunches()).toHaveLength(1);
       expect(result.verdict).toBe("PROCEED");
     });
@@ -236,7 +425,6 @@ describe("FlashGate", () => {
     });
 
     it("calls gate without inReplyTo context when no summary is provided", async () => {
-      // No summary → gate still runs, just without context in the prompt
       launcher.enqueueSuccess(JSON.stringify({ verdict: "PROCEED", reasons: ["r1", "r2", "r3", "r4", "r5"] }));
 
       const result = await gate.evaluateF2(makeInput({ inReplyToSummary: undefined }));

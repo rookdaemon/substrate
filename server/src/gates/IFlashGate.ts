@@ -1,4 +1,21 @@
+import type { Envelope } from "@rookdaemon/agora" with { "resolution-mode": "import" };
+
 export type FlashGateVerdict = "PROCEED" | "BLOCK" | "ESCALATE";
+
+/**
+ * F2 FlashGate decision — outcome of the lightweight pre-check (timestamp anomaly, etc.)
+ *
+ * - PASS:     message is clean; proceed normally.
+ * - ESCALATE: anomaly detected; let the message through but flag it for review.
+ * - BLOCK:    hard anomaly; drop the message without further processing.
+ */
+export type FlashGateDecision = "PASS" | "ESCALATE" | "BLOCK";
+
+export interface FlashGateResult {
+  decision: FlashGateDecision;
+  /** Human-readable reason for non-PASS decisions. */
+  reason?: string;
+}
 
 /**
  * Summary of a parent envelope, used to provide inReplyTo chain context
@@ -36,6 +53,13 @@ export interface F2GateResult {
 }
 
 export interface IFlashGate {
+  /**
+   * Lightweight pre-check on a raw envelope (timestamp anomaly, etc.).
+   * Runs before the full LLM-based evaluation.
+   * Currently scoped to `dm` and `publish` envelope types.
+   */
+  evaluate(envelope: Envelope): Promise<FlashGateResult>;
+
   /**
    * Evaluate an inbound Agora message through the F2 (Healthy Paranoia) gate.
    *

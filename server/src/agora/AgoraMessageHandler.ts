@@ -457,7 +457,20 @@ export class AgoraMessageHandler {
       return;
     }
 
-    // F2 Gate (Healthy Paranoia) — evaluate dm/publish messages before injection.
+    // F2 FlashGate: lightweight pre-check (timestamp anomaly, etc.)
+    if (this.flashGate) {
+      const preCheck = await this.flashGate.evaluate(envelope);
+      if (preCheck.decision === "BLOCK") {
+        this.logger.debug(`[AGORA] FlashGate BLOCK: envelopeId=${envelope.id} reason=${preCheck.reason ?? "(none)"}`);
+        return;
+      }
+      if (preCheck.decision === "ESCALATE") {
+        this.logger.debug(`[AGORA] FlashGate ESCALATE: envelopeId=${envelope.id} reason=${preCheck.reason ?? "(none)"}`);
+        // Continue processing but the reason is logged for operator review.
+      }
+    }
+
+    // F2 Gate (Healthy Paranoia) — LLM-based evaluation for dm/publish messages.
     // Skips announce and heartbeat (infrastructure noise).
     // Only runs when a FlashGate is wired (optional dependency).
     const isF2Scope = (envelope.type as string) === "dm" || envelope.type === "publish";
