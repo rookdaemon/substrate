@@ -8,7 +8,7 @@ import { LoopState } from "../../src/loop/types";
 import { AgentRole } from "../../src/agents/types";
 import type { Envelope } from "@rookdaemon/agora" with { "resolution-mode": "import" };
 import type { ILogger } from "../../src/logging";
-import type { IFlashGate, F2Context, F1Context, FlashGateVerdict } from "../../src/gates/IFlashGate";
+import type { IFlashGate, F2GateInput, F2GateResult } from "../../src/gates/IFlashGate";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -65,34 +65,6 @@ class MockLogger implements ILogger {
   }
 }
 
-class MockFlashGate implements IFlashGate {
-  public lastF2Context?: F2Context;
-  public lastF1Context?: F1Context;
-  public f2Verdict: FlashGateVerdict = {
-    verdict: "PROCEED",
-    reasons: [],
-    auto_block: false,
-  };
-  public f1Verdict: FlashGateVerdict = {
-    verdict: "PROCEED",
-    reasons: [],
-  };
-  public shouldThrow = false;
-  public throwError = "Gate error";
-
-  async evaluateInput(context: F2Context): Promise<FlashGateVerdict> {
-    this.lastF2Context = context;
-    if (this.shouldThrow) throw new Error(this.throwError);
-    return this.f2Verdict;
-  }
-
-  async evaluateOutput(context: F1Context): Promise<FlashGateVerdict> {
-    this.lastF1Context = context;
-    if (this.shouldThrow) throw new Error(this.throwError);
-    return this.f1Verdict;
-  }
-}
-
 class MockAgoraService implements IAgoraService {
   // Keyed by publicKey to match agora v0.4.5 behaviour
   private peers: Map<string, { name: string; publicKey: string; url: string; token: string }> = new Map();
@@ -134,6 +106,24 @@ class MockAgoraService implements IAgoraService {
 
   isRelayConnected() {
     return false;
+  }
+}
+
+class MockFlashGate implements IFlashGate {
+  public calls: F2GateInput[] = [];
+  private responses: F2GateResult[] = [];
+
+  enqueue(result: F2GateResult): void {
+    this.responses.push(result);
+  }
+
+  async evaluateF2(input: F2GateInput): Promise<F2GateResult> {
+    this.calls.push(input);
+    const response = this.responses.shift();
+    if (!response) {
+      return { verdict: "PROCEED", reasons: [] };
+    }
+    return response;
   }
 }
 
@@ -1017,133 +1007,60 @@ describe("AgoraMessageHandler", () => {
     });
 
     it("PROCEED verdict allows message through to Ego", async () => {
-      flashGate.f2Verdict = { verdict: "PROCEED", reasons: [], auto_block: false };
+      flashGate.enqueue({ verdict: "PROCEED", reasons: [] });
 
       await handler.processEnvelope(publishEnvelope, "relay");
 
       expect(messageInjector.injectedMessages).toHaveLength(1);
       expect(conversationManager.appendedEntries).toHaveLength(1);
-      expect(conversationManager.appendedEntries[0].entry).not.toContain("[F2-BLOCKED]");
     });
 
     it("BLOCK verdict prevents message from reaching Ego", async () => {
-      flashGate.f2Verdict = {
+      flashGate.enqueue({
         verdict: "BLOCK",
-        reasons: [{ id: 1, reason: "Suspicious request", is_blocker: true, explanation: "Looks like social engineering" }],
-        auto_block: false,
-      };
+        reasons: ["Suspicious request"],
+      });
 
       await handler.processEnvelope(publishEnvelope, "relay");
 
       // Message should NOT be injected into orchestrator
       expect(messageInjector.injectedMessages).toHaveLength(0);
-      // But should be logged in CONVERSATION.md with [F2-BLOCKED] badge
-      expect(conversationManager.appendedEntries).toHaveLength(1);
-      expect(conversationManager.appendedEntries[0].entry).toContain("[F2-BLOCKED]");
+      // BLOCK discards silently — no CONVERSATION.md entry
+      expect(conversationManager.appendedEntries).toHaveLength(0);
     });
 
     it("BLOCK verdict logs reason to debug", async () => {
-      flashGate.f2Verdict = {
+      flashGate.enqueue({
         verdict: "BLOCK",
-        reasons: [{ id: 1, reason: "Adversarial pattern", is_blocker: true, explanation: "Test" }],
-        auto_block: false,
-      };
+        reasons: ["Adversarial pattern"],
+      });
 
       await handler.processEnvelope(publishEnvelope, "relay");
 
-      const blockLog = logger.debugMessages.find(m => m.includes("F2 BLOCK") && m.includes("f2-test-envelope-001"));
+      const blockLog = logger.debugMessages.find(m => m.includes("F2") && m.includes("BLOCK") && m.includes("f2-test-envelope-001"));
       expect(blockLog).toBeDefined();
     });
 
-    it("BLOCK sends acknowledgment to known peer", async () => {
-      flashGate.f2Verdict = {
-        verdict: "BLOCK",
-        reasons: [{ id: 1, reason: "Blocked reason", is_blocker: true, explanation: "Test" }],
-        auto_block: false,
-      };
-
-      const sendSpy: Array<{ peerName: string; type: string; payload: unknown; inReplyTo?: string }> = [];
-      agoraService.sendMessage = async (options) => {
-        sendSpy.push(options);
-        return { ok: true, status: 200 };
-      };
-
-      await handler.processEnvelope(publishEnvelope, "relay");
-
-      expect(sendSpy).toHaveLength(1);
-      expect(sendSpy[0].peerName).toBe("test-peer");
-      expect(sendSpy[0].inReplyTo).toBe("f2-test-envelope-001");
-      expect(JSON.stringify(sendSpy[0].payload)).toContain("not processed");
-    });
-
-    it("BLOCK does NOT send acknowledgment for unknown sender", async () => {
-      const emptyAgora = new MockAgoraService();
-      const gatedHandler = new AgoraMessageHandler(
-        emptyAgora,
-        conversationManager,
-        messageInjector,
-        eventSink,
-        clock,
-        getState,
-        isRateLimited,
-        logger,
-        'allow',
-        defaultRateLimitConfig,
-        null, null, null,
-        flashGate,
-      );
-
-      flashGate.f2Verdict = {
-        verdict: "BLOCK",
-        reasons: [{ id: 1, reason: "Blocked", is_blocker: true, explanation: "Test" }],
-        auto_block: false,
-      };
-
-      const sendSpy: unknown[] = [];
-      emptyAgora.sendMessage = async (options) => {
-        sendSpy.push(options);
-        return { ok: true, status: 200 };
-      };
-
-      await gatedHandler.processEnvelope(publishEnvelope, "relay");
-
-      // No ack sent — unknown sender
-      expect(sendSpy).toHaveLength(0);
-    });
-
-    it("auto-BLOCK records auto_block_reason in log", async () => {
-      flashGate.f2Verdict = {
-        verdict: "BLOCK",
-        reasons: [],
-        auto_block: true,
-        auto_block_reason: 'Unverified sender requested irreversible action (keyword: "delete")',
-      };
-
-      await handler.processEnvelope(publishEnvelope, "relay");
-
-      const blockLog = logger.debugMessages.find(m => m.includes("F2 BLOCK") && m.includes("delete"));
-      expect(blockLog).toBeDefined();
-    });
-
-    it("ESCALATE verdict injects message with escalation flag", async () => {
-      flashGate.f2Verdict = {
+    it("ESCALATE verdict injects message normally (logged but not flagged)", async () => {
+      flashGate.enqueue({
         verdict: "ESCALATE",
-        reasons: [{ id: 1, reason: "Uncertain intent", is_blocker: true, explanation: "Could be legitimate or adversarial" }],
-      };
+        reasons: ["Uncertain intent"],
+      });
 
       await handler.processEnvelope(publishEnvelope, "relay");
 
-      // Message SHOULD be injected (ESCALATE passes to Ego with flag)
+      // Message SHOULD be injected (ESCALATE falls through to normal processing)
       expect(messageInjector.injectedMessages).toHaveLength(1);
-      expect(messageInjector.injectedMessages[0]).toContain("[F2-ESCALATE]");
-      expect(messageInjector.injectedMessages[0]).toContain("Uncertain intent");
+      // Escalation is logged but injection continues normally
+      const escalateLog = logger.debugMessages.find(m => m.includes("F2") && m.includes("ESCALATE"));
+      expect(escalateLog).toBeDefined();
     });
 
     it("does NOT apply F2 gate to announce messages", async () => {
       await handler.processEnvelope(announceEnvelope, "relay");
 
       // Gate should not have been called
-      expect(flashGate.lastF2Context).toBeUndefined();
+      expect(flashGate.calls).toHaveLength(0);
       // Message should still be processed normally
       expect(conversationManager.appendedEntries).toHaveLength(1);
     });
@@ -1158,32 +1075,20 @@ describe("AgoraMessageHandler", () => {
 
       await handler.processEnvelope(ackEnvelope, "relay");
 
-      expect(flashGate.lastF2Context).toBeUndefined();
-    });
-
-    it("applies F2 gate to request messages", async () => {
-      const requestEnvelope: Envelope = {
-        ...publishEnvelope,
-        id: "f2-request-001",
-        type: "request",
-        payload: { text: "What is the current status?" },
-      };
-
-      await handler.processEnvelope(requestEnvelope, "relay");
-
-      expect(flashGate.lastF2Context).toBeDefined();
-      expect(flashGate.lastF2Context!.message_type).toBe("request");
+      expect(flashGate.calls).toHaveLength(0);
     });
 
     it("passes correct context to F2 gate", async () => {
+      flashGate.enqueue({ verdict: "PROCEED", reasons: [] });
+
       await handler.processEnvelope(publishEnvelope, "relay");
 
-      expect(flashGate.lastF2Context).toBeDefined();
-      expect(flashGate.lastF2Context!.sender_verified).toBe(true);
-      expect(flashGate.lastF2Context!.sender_moniker).toContain("test-peer");
-      expect(flashGate.lastF2Context!.message_text).toBe("Can you check the latest commit?");
-      expect(flashGate.lastF2Context!.message_type).toBe("publish");
-      expect(flashGate.lastF2Context!.envelope_id).toBe("f2-test-envelope-001");
+      expect(flashGate.calls).toHaveLength(1);
+      expect(flashGate.calls[0].context.sender_verified).toBe(true);
+      expect(flashGate.calls[0].context.sender_moniker).toContain("test-peer");
+      expect(flashGate.calls[0].context.message_text).toBe("Can you check the latest commit?");
+      expect(flashGate.calls[0].context.message_type).toBe("publish");
+      expect(flashGate.calls[0].context.envelope_id).toBe("f2-test-envelope-001");
     });
 
     it("passes sender_verified=false for unknown senders", async () => {
@@ -1203,24 +1108,11 @@ describe("AgoraMessageHandler", () => {
         flashGate,
       );
 
+      flashGate.enqueue({ verdict: "PROCEED", reasons: [] });
       await gatedHandler.processEnvelope(publishEnvelope, "relay");
 
-      expect(flashGate.lastF2Context).toBeDefined();
-      expect(flashGate.lastF2Context!.sender_verified).toBe(false);
-    });
-
-    it("defaults to BLOCK when gate throws an exception", async () => {
-      flashGate.shouldThrow = true;
-      flashGate.throwError = "Vertex API timeout";
-
-      await handler.processEnvelope(publishEnvelope, "relay");
-
-      // Should be blocked (gate error → BLOCK per spec)
-      expect(messageInjector.injectedMessages).toHaveLength(0);
-      expect(conversationManager.appendedEntries).toHaveLength(1);
-      expect(conversationManager.appendedEntries[0].entry).toContain("[F2-BLOCKED]");
-      const errorLog = logger.debugMessages.find(m => m.includes("F2 gate error") && m.includes("Vertex API timeout"));
-      expect(errorLog).toBeDefined();
+      expect(flashGate.calls).toHaveLength(1);
+      expect(flashGate.calls[0].context.sender_verified).toBe(false);
     });
 
     it("works without F2 gate (null — backward compatible)", async () => {
@@ -1252,12 +1144,13 @@ describe("AgoraMessageHandler", () => {
         payload: { data: [1, 2, 3], nested: { key: "value" } },
       };
 
+      flashGate.enqueue({ verdict: "PROCEED", reasons: [] });
       await handler.processEnvelope(complexEnvelope, "relay");
 
-      expect(flashGate.lastF2Context).toBeDefined();
+      expect(flashGate.calls).toHaveLength(1);
       // No .text field → should JSON.stringify the payload
-      expect(flashGate.lastF2Context!.message_text).toContain("data");
-      expect(flashGate.lastF2Context!.message_text).toContain("nested");
+      expect(flashGate.calls[0].context.message_text).toContain("data");
+      expect(flashGate.calls[0].context.message_text).toContain("nested");
     });
   });
 
@@ -1421,6 +1314,282 @@ describe("AgoraMessageHandler", () => {
       await handler2.processEnvelope(testEnvelope, "webhook");
       await handler2.processEnvelope(env2, "webhook");
       expect(conversationManager.appendedEntries.length).toBe(before);
+    });
+  });
+
+  describe("F2 FlashGate integration", () => {
+    const defaultRateLimitConfig = { enabled: true, maxMessages: 10, windowMs: 60000 };
+
+    function makeGatedHandler(flashGate: MockFlashGate): AgoraMessageHandler {
+      const conversationMgr = new MockConversationManager();
+      const injector = new MockMessageInjector();
+      const sink = new MockEventSink();
+      const clk = new MockClock(new Date("2026-03-07T14:48:00Z"));
+      const svc = new MockAgoraService();
+      const log = new MockLogger();
+      const testFrom = "302a300506032b6570032100abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd";
+      svc.addPeer("nova", testFrom);
+
+      return new AgoraMessageHandler(
+        svc,
+        conversationMgr,
+        injector,
+        sink,
+        clk,
+        () => LoopState.RUNNING,
+        () => false,
+        log,
+        'quarantine',
+        defaultRateLimitConfig,
+        null,
+        null,
+        null,
+        flashGate,
+      );
+    }
+
+    const dmEnvelope: Envelope = {
+      id: "env-dm-001",
+      type: "dm",
+      from: "302a300506032b6570032100abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd",
+      to: ["302a300506032b6570032100dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"],
+      timestamp: 1741355280000,
+      payload: { text: "Bishop should review the INS spec" },
+      signature: "sig",
+    };
+
+    const announceEnvelope: Envelope = {
+      id: "env-ann-001",
+      type: "announce",
+      from: "302a300506032b6570032100abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd",
+      to: [],
+      timestamp: 1741355280000,
+      payload: { text: "Heartbeat" },
+      signature: "sig",
+    };
+
+    it("calls F2 gate for dm messages", async () => {
+      const flashGate = new MockFlashGate();
+      flashGate.enqueue({ verdict: "PROCEED", reasons: [] });
+      const h = makeGatedHandler(flashGate);
+
+      await h.processEnvelope(dmEnvelope);
+
+      expect(flashGate.calls).toHaveLength(1);
+      expect(flashGate.calls[0].context.message_type).toBe("dm");
+    });
+
+    it("calls F2 gate for publish messages", async () => {
+      const flashGate = new MockFlashGate();
+      flashGate.enqueue({ verdict: "PROCEED", reasons: [] });
+      const pubEnvelope: Envelope = { ...dmEnvelope, id: "env-pub-001", type: "publish" };
+      const h = makeGatedHandler(flashGate);
+
+      await h.processEnvelope(pubEnvelope);
+
+      expect(flashGate.calls).toHaveLength(1);
+      expect(flashGate.calls[0].context.message_type).toBe("publish");
+    });
+
+    it("does NOT call F2 gate for announce messages", async () => {
+      const flashGate = new MockFlashGate();
+      const h = makeGatedHandler(flashGate);
+
+      await h.processEnvelope(announceEnvelope);
+
+      expect(flashGate.calls).toHaveLength(0);
+    });
+
+    it("does NOT call F2 gate for heartbeat messages", async () => {
+      const flashGate = new MockFlashGate();
+      const heartbeat: Envelope = { ...dmEnvelope, id: "env-hb-001", type: "heartbeat" };
+      const h = makeGatedHandler(flashGate);
+
+      await h.processEnvelope(heartbeat);
+
+      expect(flashGate.calls).toHaveLength(0);
+    });
+
+    it("BLOCK verdict discards message — no injection and no CONVERSATION.md write", async () => {
+      const flashGate = new MockFlashGate();
+
+      // Use a directly-constructed handler so we have access to the injector and conversation manager
+      const conversationMgr = new MockConversationManager();
+      const injector = new MockMessageInjector();
+      const svc = new MockAgoraService();
+      const log = new MockLogger();
+      const testFrom = "302a300506032b6570032100abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd";
+      svc.addPeer("nova", testFrom);
+
+      const handler2 = new AgoraMessageHandler(
+        svc,
+        conversationMgr,
+        injector,
+        null,
+        new MockClock(new Date("2026-03-07T14:48:00Z")),
+        () => LoopState.RUNNING,
+        () => false,
+        log,
+        'quarantine',
+        defaultRateLimitConfig,
+        null,
+        null,
+        null,
+        flashGate,
+      );
+
+      flashGate.enqueue({ verdict: "BLOCK", reasons: ["social engineering"] });
+      await handler2.processEnvelope(dmEnvelope);
+
+      expect(injector.injectedMessages).toHaveLength(0);
+      expect(conversationMgr.appendedEntries).toHaveLength(0);
+    });
+
+    it("PROCEED verdict allows injection and CONVERSATION.md write", async () => {
+      const flashGate = new MockFlashGate();
+      const conversationMgr = new MockConversationManager();
+      const injector = new MockMessageInjector();
+      const svc = new MockAgoraService();
+      const log = new MockLogger();
+      const testFrom = "302a300506032b6570032100abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd";
+      svc.addPeer("nova", testFrom);
+
+      const handler2 = new AgoraMessageHandler(
+        svc,
+        conversationMgr,
+        injector,
+        null,
+        new MockClock(new Date("2026-03-07T14:48:00Z")),
+        () => LoopState.RUNNING,
+        () => false,
+        log,
+        'quarantine',
+        defaultRateLimitConfig,
+        null,
+        null,
+        null,
+        flashGate,
+      );
+
+      flashGate.enqueue({ verdict: "PROCEED", reasons: [] });
+      await handler2.processEnvelope(dmEnvelope);
+
+      expect(injector.injectedMessages).toHaveLength(1);
+      expect(conversationMgr.appendedEntries).toHaveLength(1);
+    });
+
+    it("passes inReplyTo context from cached parent envelope to F2 gate", async () => {
+      const flashGate = new MockFlashGate();
+      const conversationMgr = new MockConversationManager();
+      const injector = new MockMessageInjector();
+      const svc = new MockAgoraService();
+      const log = new MockLogger();
+      const testFrom = "302a300506032b6570032100abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd";
+      svc.addPeer("nova", testFrom);
+
+      const clk = new MockClock(new Date("2026-03-07T14:48:00Z"));
+      const handler2 = new AgoraMessageHandler(
+        svc,
+        conversationMgr,
+        injector,
+        null,
+        clk,
+        () => LoopState.RUNNING,
+        () => false,
+        log,
+        'quarantine',
+        defaultRateLimitConfig,
+        null,
+        null,
+        null,
+        flashGate,
+      );
+
+      // First, process the parent envelope (dm) so it gets cached
+      const parentEnvelope: Envelope = {
+        id: "env-parent-001",
+        type: "dm",
+        from: testFrom,
+        to: [],
+        timestamp: 1741355270000,
+        payload: { text: "fill Bishop in on what has happened" },
+        signature: "sig",
+      };
+      flashGate.enqueue({ verdict: "PROCEED", reasons: [] });
+      await handler2.processEnvelope(parentEnvelope);
+
+      // Now process a child envelope that references the parent
+      const childEnvelope = {
+        ...dmEnvelope,
+        id: "env-child-001",
+        inReplyTo: "env-parent-001",
+      } as Envelope & { inReplyTo?: string };
+
+      flashGate.enqueue({ verdict: "PROCEED", reasons: [] });
+      await handler2.processEnvelope(childEnvelope as Envelope);
+
+      // The second F2 call should have inReplyToSummary populated
+      const childCall = flashGate.calls[1];
+      expect(childCall.context.inReplyToSummary).toBeDefined();
+      expect(childCall.context.inReplyToSummary?.envelopeId).toBe("env-parent-001");
+      expect(childCall.context.inReplyToSummary?.text).toContain("fill Bishop in on what has happened");
+    });
+
+    it("proceeds without context when inReplyTo envelope is not in cache (non-blocking)", async () => {
+      const flashGate = new MockFlashGate();
+      flashGate.enqueue({ verdict: "PROCEED", reasons: [] });
+
+      const envelopeWithUnknownReply = {
+        ...dmEnvelope,
+        id: "env-reply-001",
+        inReplyTo: "env-unknown-parent",
+      } as Envelope & { inReplyTo?: string };
+
+      const h = makeGatedHandler(flashGate);
+      await h.processEnvelope(envelopeWithUnknownReply as Envelope);
+
+      // Gate is still called, just without context
+      expect(flashGate.calls).toHaveLength(1);
+      expect(flashGate.calls[0].context.inReplyToSummary).toBeUndefined();
+    });
+
+    it("passes sender_verified=true for known peer", async () => {
+      const flashGate = new MockFlashGate();
+      flashGate.enqueue({ verdict: "PROCEED", reasons: [] });
+      const h = makeGatedHandler(flashGate);
+
+      await h.processEnvelope(dmEnvelope);
+
+      expect(flashGate.calls[0].context.sender_verified).toBe(true);
+    });
+
+    it("does not call F2 gate when no gate is wired (backward compatible)", async () => {
+      // Handler without flash gate (last param defaults to null)
+      const conversationMgr = new MockConversationManager();
+      const injector = new MockMessageInjector();
+      const svc = new MockAgoraService();
+      const testFrom = "302a300506032b6570032100abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd";
+      svc.addPeer("nova", testFrom);
+      const log = new MockLogger();
+
+      const noGateHandler = new AgoraMessageHandler(
+        svc,
+        conversationMgr,
+        injector,
+        null,
+        new MockClock(new Date("2026-03-07T14:48:00Z")),
+        () => LoopState.RUNNING,
+        () => false,
+        log,
+        'quarantine',
+        defaultRateLimitConfig,
+      );
+
+      await noGateHandler.processEnvelope(dmEnvelope);
+
+      // Message should be processed normally
+      expect(injector.injectedMessages).toHaveLength(1);
+      expect(conversationMgr.appendedEntries).toHaveLength(1);
     });
   });
 });

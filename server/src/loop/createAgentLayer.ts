@@ -52,6 +52,8 @@ export interface AgentLayerResult {
   subconscious: Subconscious;
   superego: Superego;
   id: Id;
+  /** VertexSessionLauncher for subprocess tasks (compaction, gates). Undefined if not configured. */
+  vertexSubprocessLauncher: VertexSessionLauncher | undefined;
 }
 
 /**
@@ -179,7 +181,7 @@ export async function createAgentLayer(
   // Only enabled when vertexSubprocessLauncher is available (requires valid API key).
   let flashGate: IFlashGate | null = null;
   if (vertexSubprocessLauncher) {
-    flashGate = new FlashGate(vertexSubprocessLauncher, logger);
+    flashGate = new FlashGate(vertexSubprocessLauncher, clock, logger);
     logger.debug("agent-layer: FlashGate enabled (F1/F2 behavioral filter gates via Vertex)");
   } else {
     logger.debug("agent-layer: FlashGate disabled — no Vertex subprocess launcher available");
@@ -222,5 +224,6 @@ export async function createAgentLayer(
     taskMetrics, sizeTracker, delegationTracker, taskClassifier,
     conversationManager, driveQualityTracker, flashGate,
     ego, subconscious, superego, id,
+    vertexSubprocessLauncher,
   };
 }

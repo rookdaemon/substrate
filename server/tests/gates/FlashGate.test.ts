@@ -1,387 +1,247 @@
-import { FlashGate } from "../../src/gates/FlashGate";
-import type { F2Context, F1Context } from "../../src/gates/IFlashGate";
-import type {
-  ISessionLauncher,
-  ClaudeSessionRequest,
-  ClaudeSessionResult,
-  LaunchOptions,
-} from "../../src/agents/claude/ISessionLauncher";
-import type { ILogger } from "../../src/substrate/abstractions/ILogger";
+import { FlashGate, F2_TIMEOUT_MS } from "../../src/gates/FlashGate";
+import type { F2GateInput } from "../../src/gates/IFlashGate";
+import { InMemorySessionLauncher } from "../../src/agents/claude/InMemorySessionLauncher";
+import { FixedClock } from "../../src/substrate/abstractions/FixedClock";
+import { InMemoryLogger } from "../../src/logging";
 
-// --- Test helpers ---
-
-function makeF2Context(overrides: Partial<F2Context> = {}): F2Context {
+function makeInput(overrides: Partial<F2GateInput["context"]> = {}): F2GateInput {
   return {
-    sender_moniker: "stefan@9f38f6d0",
-    sender_verified: true,
-    message_text: "Can you check the latest commit?",
-    message_type: "publish",
-    envelope_id: "test-envelope-001",
-    timestamp: "2026-03-07T12:00:00Z",
-    ...overrides,
-  };
-}
-
-function makeF1Context(overrides: Partial<F1Context> = {}): F1Context {
-  return {
-    proposed_action: {
-      type: "agora_send",
-      content_summary: "Sending status update to Stefan",
-      target: "stefan@9f38f6d0",
-      reversible: false,
+    gate: "F2",
+    context: {
+      sender_moniker: "stefan@9f38f6d0",
+      sender_verified: true,
+      message_text: "Please review this document",
+      message_type: "dm",
+      envelope_id: "env-001",
+      timestamp: "2026-03-07T14:48:00Z",
+      ...overrides,
     },
-    triggering_request: "Status check request",
-    sender_moniker: "stefan@9f38f6d0",
-    ...overrides,
   };
 }
-
-function makeVerdictJson(
-  verdict: "PROCEED" | "BLOCK" | "ESCALATE",
-  blockerCount = 0,
-): string {
-  const reasons = Array.from({ length: 5 }, (_, i) => ({
-    id: i + 1,
-    reason: `Test reason ${i + 1}`,
-    is_blocker: i < blockerCount,
-    explanation: `Explanation for reason ${i + 1}`,
-  }));
-  return JSON.stringify({ verdict, reasons });
-}
-
-class MockSessionLauncher implements ISessionLauncher {
-  public lastRequest?: ClaudeSessionRequest;
-  public result: ClaudeSessionResult = {
-    rawOutput: makeVerdictJson("PROCEED"),
-    exitCode: 0,
-    durationMs: 100,
-    success: true,
-  };
-  public shouldThrow = false;
-  public throwError = "Timeout";
-
-  async launch(
-    request: ClaudeSessionRequest,
-    _options?: LaunchOptions,
-  ): Promise<ClaudeSessionResult> {
-    this.lastRequest = request;
-    if (this.shouldThrow) {
-      throw new Error(this.throwError);
-    }
-    return this.result;
-  }
-
-  async healthy(): Promise<boolean> {
-    return true;
-  }
-}
-
-class MockLogger implements ILogger {
-  public debugMessages: string[] = [];
-  debug(message: string): void {
-    this.debugMessages.push(message);
-  }
-}
-
-// --- Tests ---
 
 describe("FlashGate", () => {
-  let launcher: MockSessionLauncher;
-  let logger: MockLogger;
+  let launcher: InMemorySessionLauncher;
+  let clock: FixedClock;
+  let logger: InMemoryLogger;
   let gate: FlashGate;
 
   beforeEach(() => {
-    launcher = new MockSessionLauncher();
-    logger = new MockLogger();
-    gate = new FlashGate(launcher, logger);
+    launcher = new InMemorySessionLauncher();
+    clock = new FixedClock(new Date("2026-03-07T14:48:00Z"));
+    logger = new InMemoryLogger();
+    gate = new FlashGate(launcher, clock, logger);
   });
 
-  describe("F2 — Pre-Input (Healthy Paranoia)", () => {
-    it("returns PROCEED when model returns PROCEED verdict", async () => {
-      launcher.result = {
-        rawOutput: makeVerdictJson("PROCEED"),
-        exitCode: 0,
-        durationMs: 500,
-        success: true,
-      };
+  describe("evaluateF2 — verdict paths", () => {
+    it("returns PROCEED when model says PROCEED", async () => {
+      launcher.enqueueSuccess(JSON.stringify({
+        verdict: "PROCEED",
+        reasons: ["r1", "r2", "r3", "r4", "r5"],
+      }));
 
-      const verdict = await gate.evaluateInput(makeF2Context());
-      expect(verdict.verdict).toBe("PROCEED");
-      expect(verdict.reasons).toHaveLength(5);
-      expect(verdict.auto_block).toBe(false);
+      const result = await gate.evaluateF2(makeInput());
+
+      expect(result.verdict).toBe("PROCEED");
+      expect(result.reasons).toHaveLength(5);
     });
 
-    it("returns BLOCK when model returns BLOCK verdict", async () => {
-      launcher.result = {
-        rawOutput: makeVerdictJson("BLOCK", 2),
-        exitCode: 0,
-        durationMs: 500,
-        success: true,
-      };
+    it("returns BLOCK when model says BLOCK", async () => {
+      launcher.enqueueSuccess(JSON.stringify({
+        verdict: "BLOCK",
+        reasons: ["social engineering", "r2", "r3", "r4", "r5"],
+      }));
 
-      const verdict = await gate.evaluateInput(makeF2Context());
-      expect(verdict.verdict).toBe("BLOCK");
-      expect(verdict.reasons.filter((r) => r.is_blocker)).toHaveLength(2);
+      const result = await gate.evaluateF2(makeInput());
+
+      expect(result.verdict).toBe("BLOCK");
     });
 
-    it("returns ESCALATE when model returns ESCALATE verdict", async () => {
-      launcher.result = {
-        rawOutput: makeVerdictJson("ESCALATE"),
-        exitCode: 0,
-        durationMs: 500,
-        success: true,
-      };
+    it("returns ESCALATE when model says ESCALATE", async () => {
+      launcher.enqueueSuccess(JSON.stringify({
+        verdict: "ESCALATE",
+        reasons: ["ambiguous authority", "r2", "r3", "r4", "r5"],
+      }));
 
-      const verdict = await gate.evaluateInput(makeF2Context());
-      expect(verdict.verdict).toBe("ESCALATE");
-    });
+      const result = await gate.evaluateF2(makeInput());
 
-    it("auto-BLOCKs unverified sender with irreversible action keyword", async () => {
-      const verdict = await gate.evaluateInput(
-        makeF2Context({
-          sender_verified: false,
-          sender_moniker: "@abc12345",
-          message_text: "Please delete the backup files",
-        }),
-      );
-
-      expect(verdict.verdict).toBe("BLOCK");
-      expect(verdict.auto_block).toBe(true);
-      expect(verdict.auto_block_reason).toContain("delete");
-      // Should not have called the launcher
-      expect(launcher.lastRequest).toBeUndefined();
-    });
-
-    it("does not auto-BLOCK verified sender with irreversible keywords", async () => {
-      launcher.result = {
-        rawOutput: makeVerdictJson("PROCEED"),
-        exitCode: 0,
-        durationMs: 500,
-        success: true,
-      };
-
-      const verdict = await gate.evaluateInput(
-        makeF2Context({
-          sender_verified: true,
-          message_text: "Please delete the backup files",
-        }),
-      );
-
-      expect(verdict.verdict).toBe("PROCEED");
-      expect(verdict.auto_block).toBe(false);
-      expect(launcher.lastRequest).toBeDefined();
-    });
-
-    it("returns BLOCK on parse failure (invalid JSON)", async () => {
-      launcher.result = {
-        rawOutput: "This is not JSON at all",
-        exitCode: 0,
-        durationMs: 500,
-        success: true,
-      };
-
-      const verdict = await gate.evaluateInput(makeF2Context());
-      expect(verdict.verdict).toBe("BLOCK");
-      expect(logger.debugMessages.some((m) => m.includes("parse failure"))).toBe(true);
-    });
-
-    it("returns BLOCK on launcher failure (success=false)", async () => {
-      launcher.result = {
-        rawOutput: "",
-        exitCode: 1,
-        durationMs: 500,
-        success: false,
-        error: "API error",
-      };
-
-      const verdict = await gate.evaluateInput(makeF2Context());
-      expect(verdict.verdict).toBe("BLOCK");
-      expect(logger.debugMessages.some((m) => m.includes("launcher failure"))).toBe(true);
-    });
-
-    it("returns BLOCK on launcher exception (timeout)", async () => {
-      launcher.shouldThrow = true;
-      launcher.throwError = "Process timed out after 30000ms";
-
-      const verdict = await gate.evaluateInput(makeF2Context());
-      expect(verdict.verdict).toBe("BLOCK");
-      expect(logger.debugMessages.some((m) => m.includes("error"))).toBe(true);
-    });
-
-    it("passes system prompt and context to launcher", async () => {
-      launcher.result = {
-        rawOutput: makeVerdictJson("PROCEED"),
-        exitCode: 0,
-        durationMs: 500,
-        success: true,
-      };
-
-      await gate.evaluateInput(makeF2Context({ sender_moniker: "nova@9499c2bd" }));
-
-      expect(launcher.lastRequest).toBeDefined();
-      expect(launcher.lastRequest!.systemPrompt).toContain("security filter");
-      expect(launcher.lastRequest!.message).toContain("nova@9499c2bd");
-    });
-
-    it("handles JSON wrapped in markdown code blocks", async () => {
-      launcher.result = {
-        rawOutput: "```json\n" + makeVerdictJson("PROCEED") + "\n```",
-        exitCode: 0,
-        durationMs: 500,
-        success: true,
-      };
-
-      const verdict = await gate.evaluateInput(makeF2Context());
-      expect(verdict.verdict).toBe("PROCEED");
+      expect(result.verdict).toBe("ESCALATE");
     });
   });
 
-  describe("F1 — Pre-Output (Critical Thinking)", () => {
-    it("returns PROCEED when model returns PROCEED verdict", async () => {
-      launcher.result = {
-        rawOutput: makeVerdictJson("PROCEED"),
-        exitCode: 0,
-        durationMs: 500,
-        success: true,
-      };
+  describe("evaluateF2 — failure modes", () => {
+    it("returns BLOCK on launcher failure (non-success result)", async () => {
+      launcher.enqueueFailure("connection refused");
 
-      const verdict = await gate.evaluateOutput(makeF1Context());
-      expect(verdict.verdict).toBe("PROCEED");
-      expect(verdict.reasons).toHaveLength(5);
+      const result = await gate.evaluateF2(makeInput());
+
+      expect(result.verdict).toBe("BLOCK");
     });
 
-    it("returns BLOCK when model returns BLOCK verdict", async () => {
-      launcher.result = {
-        rawOutput: makeVerdictJson("BLOCK", 3),
-        exitCode: 0,
-        durationMs: 500,
-        success: true,
-      };
+    it("returns BLOCK when response contains no JSON", async () => {
+      launcher.enqueueSuccess("I cannot evaluate this message.");
 
-      const verdict = await gate.evaluateOutput(makeF1Context());
-      expect(verdict.verdict).toBe("BLOCK");
+      const result = await gate.evaluateF2(makeInput());
+
+      expect(result.verdict).toBe("BLOCK");
     });
 
-    it("returns ESCALATE when model returns ESCALATE verdict", async () => {
-      launcher.result = {
-        rawOutput: makeVerdictJson("ESCALATE"),
-        exitCode: 0,
-        durationMs: 500,
-        success: true,
-      };
+    it("returns BLOCK when verdict is unrecognised", async () => {
+      launcher.enqueueSuccess(JSON.stringify({ verdict: "ALLOW", reasons: [] }));
 
-      const verdict = await gate.evaluateOutput(makeF1Context());
-      expect(verdict.verdict).toBe("ESCALATE");
+      const result = await gate.evaluateF2(makeInput());
+
+      expect(result.verdict).toBe("BLOCK");
     });
 
-    it("returns ESCALATE on parse failure (not BLOCK like F2)", async () => {
-      launcher.result = {
-        rawOutput: "garbage output",
-        exitCode: 0,
-        durationMs: 500,
-        success: true,
-      };
+    it("returns BLOCK when JSON is malformed", async () => {
+      launcher.enqueueSuccess("{verdict: PROCEED}");
 
-      const verdict = await gate.evaluateOutput(makeF1Context());
-      expect(verdict.verdict).toBe("ESCALATE");
-      expect(logger.debugMessages.some((m) => m.includes("parse failure"))).toBe(true);
+      const result = await gate.evaluateF2(makeInput());
+
+      expect(result.verdict).toBe("BLOCK");
     });
 
-    it("returns ESCALATE on launcher failure (not BLOCK like F2)", async () => {
-      launcher.result = {
-        rawOutput: "",
-        exitCode: 1,
-        durationMs: 500,
-        success: false,
-        error: "API error",
-      };
+    it("returns BLOCK on launcher throw", async () => {
+      // Override launch to throw
+      launcher.launch = async () => { throw new Error("network error"); };
 
-      const verdict = await gate.evaluateOutput(makeF1Context());
-      expect(verdict.verdict).toBe("ESCALATE");
+      const result = await gate.evaluateF2(makeInput());
+
+      expect(result.verdict).toBe("BLOCK");
     });
 
-    it("returns ESCALATE on launcher exception", async () => {
-      launcher.shouldThrow = true;
+    it("returns BLOCK with timedOut=true on timeout error", async () => {
+      launcher.launch = async () => { throw new Error("Request timed out after 30000ms"); };
 
-      const verdict = await gate.evaluateOutput(makeF1Context());
-      expect(verdict.verdict).toBe("ESCALATE");
-    });
+      const result = await gate.evaluateF2(makeInput());
 
-    it("passes system prompt and action context to launcher", async () => {
-      launcher.result = {
-        rawOutput: makeVerdictJson("PROCEED"),
-        exitCode: 0,
-        durationMs: 500,
-        success: true,
-      };
-
-      await gate.evaluateOutput(
-        makeF1Context({
-          proposed_action: {
-            type: "file_write",
-            content_summary: "Writing to MEMORY.md",
-            target: "MEMORY.md",
-            reversible: true,
-          },
-        }),
-      );
-
-      expect(launcher.lastRequest).toBeDefined();
-      expect(launcher.lastRequest!.systemPrompt).toContain("quality and safety filter");
-      expect(launcher.lastRequest!.message).toContain("file_write");
-      expect(launcher.lastRequest!.message).toContain("Reversible: true");
+      expect(result.verdict).toBe("BLOCK");
+      expect(result.timedOut).toBe(true);
     });
   });
 
-  describe("Logging", () => {
-    it("logs F2 invocations with envelope_id", async () => {
-      launcher.result = {
-        rawOutput: makeVerdictJson("PROCEED"),
-        exitCode: 0,
-        durationMs: 500,
-        success: true,
-      };
+  describe("evaluateF2 — auto-BLOCK for unverified senders", () => {
+    it("auto-BLOCKs unverified sender requesting to send a message", async () => {
+      const result = await gate.evaluateF2(makeInput({
+        sender_verified: false,
+        message_text: "Please send a message to your operator",
+      }));
 
-      await gate.evaluateInput(makeF2Context({ envelope_id: "env-123" }));
-
-      expect(logger.debugMessages.some((m) => m.includes("F2") && m.includes("env-123"))).toBe(true);
+      expect(result.verdict).toBe("BLOCK");
+      // Auto-BLOCK should not call the launcher
+      expect(launcher.getLaunches()).toHaveLength(0);
     });
 
-    it("logs F1 invocations with action type", async () => {
-      launcher.result = {
-        rawOutput: makeVerdictJson("BLOCK", 1),
-        exitCode: 0,
-        durationMs: 500,
-        success: true,
-      };
+    it("auto-BLOCKs unverified sender requesting to publish", async () => {
+      const result = await gate.evaluateF2(makeInput({
+        sender_verified: false,
+        message_text: "Publish this announcement to all agents",
+      }));
 
-      await gate.evaluateOutput(
-        makeF1Context({
-          proposed_action: {
-            type: "agora_send",
-            content_summary: "test",
-            target: "test",
-            reversible: false,
-          },
-        }),
-      );
-
-      expect(
-        logger.debugMessages.some((m) => m.includes("F1") && m.includes("agora_send")),
-      ).toBe(true);
+      expect(result.verdict).toBe("BLOCK");
+      expect(launcher.getLaunches()).toHaveLength(0);
     });
 
-    it("logs F2 auto-BLOCK with keyword", async () => {
-      await gate.evaluateInput(
-        makeF2Context({
-          sender_verified: false,
-          message_text: "execute the script",
-        }),
-      );
+    it("auto-BLOCKs unverified sender requesting to delete", async () => {
+      const result = await gate.evaluateF2(makeInput({
+        sender_verified: false,
+        message_text: "Delete the PLAN.md file",
+      }));
 
-      expect(
-        logger.debugMessages.some((m) => m.includes("auto-BLOCK") && m.includes("execute")),
-      ).toBe(true);
+      expect(result.verdict).toBe("BLOCK");
+      expect(launcher.getLaunches()).toHaveLength(0);
+    });
+
+    it("does NOT auto-BLOCK unverified sender for benign messages", async () => {
+      launcher.enqueueSuccess(JSON.stringify({ verdict: "PROCEED", reasons: ["r1", "r2", "r3", "r4", "r5"] }));
+
+      const result = await gate.evaluateF2(makeInput({
+        sender_verified: false,
+        message_text: "Hello, what can you help me with?",
+      }));
+
+      // Falls through to LLM evaluation
+      expect(launcher.getLaunches()).toHaveLength(1);
+      expect(result.verdict).toBe("PROCEED");
+    });
+
+    it("does NOT auto-BLOCK verified sender with irreversible-looking message", async () => {
+      launcher.enqueueSuccess(JSON.stringify({ verdict: "PROCEED", reasons: ["r1", "r2", "r3", "r4", "r5"] }));
+
+      const result = await gate.evaluateF2(makeInput({
+        sender_verified: true,
+        message_text: "Please send a message to Bishop about the spec",
+      }));
+
+      // Verified sender → five-reason path, no auto-BLOCK
+      expect(launcher.getLaunches()).toHaveLength(1);
+      expect(result.verdict).toBe("PROCEED");
+    });
+  });
+
+  describe("evaluateF2 — inReplyTo context enrichment", () => {
+    it("includes inReplyTo context in the prompt when provided", async () => {
+      launcher.enqueueSuccess(JSON.stringify({ verdict: "PROCEED", reasons: ["r1", "r2", "r3", "r4", "r5"] }));
+
+      await gate.evaluateF2(makeInput({
+        inReplyToSummary: {
+          envelopeId: "env-000",
+          senderMoniker: "stefan@9f38f6d0",
+          text: "fill Bishop in on what has happened",
+        },
+      }));
+
+      const launch = launcher.getLaunches()[0];
+      expect(launch.request.message).toContain("[CONTEXT]");
+      expect(launch.request.message).toContain("env-000");
+      expect(launch.request.message).toContain("stefan@9f38f6d0");
+      expect(launch.request.message).toContain("fill Bishop in on what has happened");
+    });
+
+    it("does NOT include [CONTEXT] section when no inReplyTo summary is provided", async () => {
+      launcher.enqueueSuccess(JSON.stringify({ verdict: "PROCEED", reasons: ["r1", "r2", "r3", "r4", "r5"] }));
+
+      await gate.evaluateF2(makeInput());
+
+      const launch = launcher.getLaunches()[0];
+      expect(launch.request.message).not.toContain("[CONTEXT]");
+    });
+
+    it("calls gate without inReplyTo context when no summary is provided", async () => {
+      // No summary → gate still runs, just without context in the prompt
+      launcher.enqueueSuccess(JSON.stringify({ verdict: "PROCEED", reasons: ["r1", "r2", "r3", "r4", "r5"] }));
+
+      const result = await gate.evaluateF2(makeInput({ inReplyToSummary: undefined }));
+
+      expect(result.verdict).toBe("PROCEED");
+      expect(launcher.getLaunches()).toHaveLength(1);
+    });
+  });
+
+  describe("evaluateF2 — model and options", () => {
+    it("passes the configured model to the launcher", async () => {
+      const customGate = new FlashGate(launcher, clock, logger, "gemini-2.0-flash-exp");
+      launcher.enqueueSuccess(JSON.stringify({ verdict: "PROCEED", reasons: [] }));
+
+      await customGate.evaluateF2(makeInput());
+
+      expect(launcher.getLaunches()[0].options?.model).toBe("gemini-2.0-flash-exp");
+    });
+
+    it("uses default model when none is specified", async () => {
+      launcher.enqueueSuccess(JSON.stringify({ verdict: "PROCEED", reasons: [] }));
+
+      await gate.evaluateF2(makeInput());
+
+      expect(launcher.getLaunches()[0].options?.model).toBe("gemini-2.5-flash");
+    });
+
+    it("passes F2_TIMEOUT_MS as timeoutMs", async () => {
+      launcher.enqueueSuccess(JSON.stringify({ verdict: "PROCEED", reasons: [] }));
+
+      await gate.evaluateF2(makeInput());
+
+      expect(launcher.getLaunches()[0].options?.timeoutMs).toBe(F2_TIMEOUT_MS);
     });
   });
 });
