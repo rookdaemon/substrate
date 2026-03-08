@@ -29,6 +29,8 @@ import { TaskClassificationMetrics } from "../evaluation/TaskClassificationMetri
 import { SubstrateSizeTracker } from "../evaluation/SubstrateSizeTracker";
 import { DelegationTracker } from "../evaluation/DelegationTracker";
 import { DriveQualityTracker } from "../evaluation/DriveQualityTracker";
+import { FlashGate } from "../gates/FlashGate";
+import type { IFlashGate } from "../gates/IFlashGate";
 import type { ApplicationConfig } from "./applicationTypes";
 import type { SubstrateLayerResult } from "./createSubstrateLayer";
 
@@ -45,6 +47,7 @@ export interface AgentLayerResult {
   taskClassifier: TaskClassifier;
   conversationManager: ConversationManager;
   driveQualityTracker: DriveQualityTracker;
+  flashGate: IFlashGate | null;
   ego: Ego;
   subconscious: Subconscious;
   superego: Superego;
@@ -172,6 +175,16 @@ export async function createAgentLayer(
     }
   }
 
+  // FlashGate — F1/F2 behavioral filter gates via Vertex (gemini-2.5-flash)
+  // Only enabled when vertexSubprocessLauncher is available (requires valid API key).
+  let flashGate: IFlashGate | null = null;
+  if (vertexSubprocessLauncher) {
+    flashGate = new FlashGate(vertexSubprocessLauncher, logger);
+    logger.debug("agent-layer: FlashGate enabled (F1/F2 behavioral filter gates via Vertex)");
+  } else {
+    logger.debug("agent-layer: FlashGate disabled — no Vertex subprocess launcher available");
+  }
+
   // Conversation manager with compaction and optional archiving
   const compactor = new ConversationCompactor(gatedLauncher, cwd, ollamaOffloadService, logger, vertexSubprocessLauncher);
 
@@ -207,7 +220,7 @@ export async function createAgentLayer(
   return {
     checker, promptBuilder, launcher, gatedLauncher, apiSemaphore, processTracker,
     taskMetrics, sizeTracker, delegationTracker, taskClassifier,
-    conversationManager, driveQualityTracker,
+    conversationManager, driveQualityTracker, flashGate,
     ego, subconscious, superego, id,
   };
 }

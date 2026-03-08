@@ -4,7 +4,7 @@ import type { BackendType } from "./types";
 import type { BackendResult, ICodeBackend, SubstrateSlice } from "./ICodeBackend";
 import { buildPrompt } from "./prompt";
 
-const DEFAULT_MODEL = "gemini-2.5-pro";
+const DEFAULT_MODEL = "gemini-2.5-flash";
 
 /**
  * ICodeBackend implementation that invokes the Gemini CLI for code dispatch
@@ -13,6 +13,7 @@ const DEFAULT_MODEL = "gemini-2.5-pro";
  * CLI mapping (from `gemini --help`, v0.30.0):
  *   prompt  → -p "<CODING_CONTEXT + spec>"
  *   model   → -m <model>
+ *   yolo    → --yolo (auto-approve all tool actions in headless mode)
  *   cwd     → process working directory
  */
 export class GeminiCliBackend implements ICodeBackend {
@@ -32,7 +33,7 @@ export class GeminiCliBackend implements ICodeBackend {
     try {
       const result = await this.processRunner.run(
         "gemini",
-        ["-p", prompt, "-m", model],
+        ["-p", prompt, "-m", model, "--yolo"],
         { cwd: context.cwd },
       );
       return {

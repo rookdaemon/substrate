@@ -10,6 +10,7 @@ import { IgnoredPeersManager, SeenKeyStore } from "@rookdaemon/agora";
 import type { Envelope } from "@rookdaemon/agora" with { "resolution-mode": "import" };
 import type { ILogger } from "../logging";
 import { createHash } from "crypto";
+import type { IFlashGate, FlashGateVerdict } from "../gates/IFlashGate";
 
 /**
  * Sliding window state for per-sender rate limiting
@@ -48,6 +49,14 @@ export type UnknownSenderPolicy = 'allow' | 'quarantine' | 'reject';
  * - Enforce peer allowlist (unknown senders are silently dropped)
  * - Per-sender rate limiting to prevent flooding
  */
+/**
+ * Message types that are subject to F2 gate evaluation.
+ * Per spec: actionable message types only. Announce and infrastructure messages are excluded.
+ * Note: Agora library has no "dm" type — publish with TO recipients serves as direct messaging,
+ * and request is also actionable. Both are gated.
+ */
+const F2_GATED_TYPES = new Set(["publish", "request"]);
+
 export class AgoraMessageHandler {
   /**
    * In-memory set of processed envelope IDs for deduplication.
@@ -86,6 +95,7 @@ export class AgoraMessageHandler {
     private readonly wakeLoop: (() => void) | null = null,
     private readonly ignoredPeersPath: string | null = null,
     private readonly seenKeysPath: string | null = null,
+    private readonly flashGate: IFlashGate | null = null,
   ) {
     if (this.ignoredPeersPath) {
       try {
@@ -369,6 +379,53 @@ export class AgoraMessageHandler {
     return JSON.stringify(compactedPayload);
   }
 
+  /**
+   * Evaluate inbound message through the F2 (Healthy Paranoia) gate.
+   * Returns the verdict, or null if the gate is not available.
+   */
+  private async evaluateF2Gate(
+    envelope: Envelope,
+    senderIdentity: string,
+    senderVerified: boolean,
+    timestamp: string,
+  ): Promise<FlashGateVerdict | null> {
+    if (!this.flashGate) return null;
+
+    // Extract readable text from payload for the gate
+    let messageText: string;
+    if (typeof envelope.payload === "object" && envelope.payload !== null) {
+      const p = envelope.payload as Record<string, unknown>;
+      messageText = typeof p.text === "string" ? p.text : JSON.stringify(envelope.payload);
+    } else {
+      messageText = String(envelope.payload);
+    }
+
+    try {
+      return await this.flashGate.evaluateInput({
+        sender_moniker: senderIdentity,
+        sender_verified: senderVerified,
+        message_text: messageText,
+        message_type: envelope.type,
+        envelope_id: envelope.id,
+        timestamp,
+      });
+    } catch (err) {
+      // Gate infrastructure failure — default to BLOCK per spec
+      this.logger.debug(
+        `[AGORA] F2 gate error: envelopeId=${envelope.id} error=${err instanceof Error ? err.message : String(err)} — defaulting to BLOCK`,
+      );
+      return {
+        verdict: "BLOCK",
+        reasons: [{
+          id: 0,
+          reason: `F2 gate infrastructure error: ${err instanceof Error ? err.message : String(err)}`,
+          is_blocker: true,
+          explanation: "Gate threw an unexpected error — defaulting to safe verdict",
+        }],
+      };
+    }
+  }
+
   async processEnvelope(envelope: Envelope, source: "webhook" | "relay" = "webhook"): Promise<void> {
     const envelopeRouting = envelope as Envelope & { from?: string; to?: string[]; sender?: string };
     const envelopeFrom = envelopeRouting.from ?? envelopeRouting.sender ?? "";
@@ -445,6 +502,59 @@ export class AgoraMessageHandler {
       return;
     }
 
+    // F2 gate — pre-input behavioral filter (Healthy Paranoia)
+    // Only applies to dm/publish message types (not announce/heartbeat).
+    // If F2 BLOCKs, message never reaches Ego. If ESCALATE, inject with flag.
+    if (this.flashGate && F2_GATED_TYPES.has(envelope.type)) {
+      const f2Verdict = await this.evaluateF2Gate(
+        envelope,
+        senderIdentity,
+        !!knownPeer,
+        timestamp,
+      );
+
+      if (f2Verdict?.verdict === "BLOCK") {
+        // Log the block to CONVERSATION.md for audit trail
+        const blockReason = f2Verdict.auto_block
+          ? f2Verdict.auto_block_reason ?? "Auto-blocked"
+          : f2Verdict.reasons.find(r => r.is_blocker)?.reason ?? "Blocked by F2 gate";
+        const formattedPayload = this.formatPayload(envelope.payload);
+        const conversationEntry = `**FROM:** ${senderIdentity} **TO:** ${toList} ${envelope.type}: **[F2-BLOCKED]** ${formattedPayload}`.replace(/\n+/g, " ").trim();
+        await this.conversationManager.append(AgentRole.SUBCONSCIOUS, conversationEntry);
+        this.logger.debug(
+          `[AGORA] F2 BLOCK: envelopeId=${envelope.id} sender=${senderIdentity} reason=${blockReason}`,
+        );
+
+        // Per spec: if sender is verified (known peer), send brief acknowledgment
+        if (knownPeer && this.agoraService) {
+          try {
+            await this.agoraService.sendMessage({
+              peerName: knownPeer,
+              type: "dm",
+              payload: { text: `Request not processed. Reason: ${blockReason}` },
+              inReplyTo: envelope.id,
+            });
+          } catch (ackErr) {
+            this.logger.debug(
+              `[AGORA] Failed to send F2 BLOCK acknowledgment: ${ackErr instanceof Error ? ackErr.message : String(ackErr)}`,
+            );
+          }
+        }
+        return;
+      }
+
+      // ESCALATE: message continues to Ego but with escalation flag
+      if (f2Verdict?.verdict === "ESCALATE") {
+        this.logger.debug(
+          `[AGORA] F2 ESCALATE: envelopeId=${envelope.id} sender=${senderIdentity} — passing to Ego with escalation flag`,
+        );
+      }
+
+      // PROCEED or ESCALATE: continue processing (ESCALATE flag handled below in injection)
+      // Store verdict for use in the injected message
+      (envelope as Envelope & { _f2Verdict?: FlashGateVerdict })._f2Verdict = f2Verdict ?? undefined;
+    }
+
     // Wake loop if sleeping — incoming Agora message should restart cycles
     if (this.getState() === LoopState.SLEEPING && this.wakeLoop) {
       this.logger.debug(`[AGORA] Waking loop from SLEEPING state for incoming message: envelopeId=${envelope.id}`);
@@ -459,7 +569,11 @@ export class AgoraMessageHandler {
       ? `Respond to this message if appropriate. Use ${"\`"}mcp__tinybus__send_agora_message${"\`"} (Claude Code) or ${"\`"}send_agora_message${"\`"} (Gemini CLI) with: to="${senderIdentity}", text="your response", inReplyTo="${envelope.id}"`
       : `Respond to this message if appropriate. Note: Sender (${senderIdentity}) is not in PEERS.md, but you can reply via relay. Use ${"`"}mcp__tinybus__send_agora_message${"`"} (Claude Code) or ${"`"}send_agora_message${"`"} (Gemini CLI) with: to="${senderIdentity}", text="your response", inReplyTo="${envelope.id}"`;
     try {
-      const agentPrompt = `[AGORA MESSAGE]\nType: ${envelope.type}\nEnvelope ID: ${envelope.id}\nTimestamp: ${timestamp}\nFROM: ${senderIdentity}\nTO: ${toList}\nPayload: ${payloadStr}\n\n${replyInstruction}`;
+      const f2Verdict = (envelope as Envelope & { _f2Verdict?: FlashGateVerdict })._f2Verdict;
+      const f2EscalationBlock = f2Verdict?.verdict === "ESCALATE"
+        ? `\n\n**[F2-ESCALATE]** The F2 security gate flagged uncertainty about this message. Surface to Stefan before acting. Top concerns:\n${f2Verdict.reasons.filter(r => r.is_blocker).map(r => `- ${r.reason}: ${r.explanation}`).join("\n") || "- Gate returned ESCALATE without specific blockers"}`
+        : "";
+      const agentPrompt = `[AGORA MESSAGE]\nType: ${envelope.type}\nEnvelope ID: ${envelope.id}\nTimestamp: ${timestamp}\nFROM: ${senderIdentity}\nTO: ${toList}\nPayload: ${payloadStr}\n\n${replyInstruction}${f2EscalationBlock}`;
       injected = this.messageInjector.injectMessage(agentPrompt);
       this.logger.debug(`[AGORA] Injected message into orchestrator: envelopeId=${envelope.id} delivered=${injected}`);
     } catch (err) {

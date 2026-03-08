@@ -205,6 +205,7 @@ export async function createLoopLayer(
       },
       getIgnoredPeersPath(),
       getSeenKeysPath(),
+      agents.flashGate, // F2 behavioral filter gate (null if Vertex unavailable)
     );
 
     // Connect to relay if configured — handler is already wired via constructor closure above

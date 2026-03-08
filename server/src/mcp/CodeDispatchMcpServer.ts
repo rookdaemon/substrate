@@ -15,7 +15,7 @@ export function addCodeDispatchTools(server: McpServer, dispatcher: CodeDispatch
     "Dispatch a coding task to an external backend with scoped coding context",
     {
       spec: z.string().describe("Task specification in natural language"),
-      backend: z.enum(["copilot", "claude", "auto"]).default("auto").describe("Backend to use"),
+      backend: z.enum(["copilot", "claude", "gemini", "auto"]).default("auto").describe("Backend to use"),
       files: z.array(z.string()).describe("Source file paths to include as context"),
       testCommand: z.string().optional().describe("Test gate command (default: npm test)"),
       model: z.string().optional().describe("Model override (claude backend only)"),

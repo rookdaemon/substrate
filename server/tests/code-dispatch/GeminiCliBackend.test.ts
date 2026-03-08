@@ -69,7 +69,15 @@ describe("GeminiCliBackend", () => {
 
     const args = runner.getCalls()[0].args;
     const modelIdx = args.indexOf("-m");
-    expect(args[modelIdx + 1]).toBe("gemini-2.5-pro");
+    expect(args[modelIdx + 1]).toBe("gemini-2.5-flash");
+  });
+
+  it("passes --yolo flag for headless auto-approval", async () => {
+    runner.enqueue({ stdout: "", stderr: "", exitCode: 0 });
+    await backend.invoke("task", makeContext());
+
+    const args = runner.getCalls()[0].args;
+    expect(args).toContain("--yolo");
   });
 
   it("returns success=true on exit code 0", async () => {
