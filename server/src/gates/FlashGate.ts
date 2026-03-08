@@ -119,12 +119,16 @@ export class FlashGate implements IFlashGate {
       }
     }
 
-    const userMessage = [
+    const userMessageParts = [
       `Sender: ${context.sender_moniker} (verified: ${context.sender_verified})`,
       `Message type: ${context.message_type}`,
       `Timestamp: ${context.timestamp}`,
       `Content:\n${context.message_text}`,
-    ].join("\n");
+    ];
+    if (context.peer_context) {
+      userMessageParts.unshift(`[SENDER CONTEXT] This message is from: ${context.peer_context}`);
+    }
+    const userMessage = userMessageParts.join("\n");
 
     return this.invokeGate("F2", F2_SYSTEM_PROMPT, userMessage, context.envelope_id);
   }

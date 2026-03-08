@@ -1209,6 +1209,38 @@ describe("AgoraMessageHandler", () => {
       expect(flashGate.lastF2Context!.sender_verified).toBe(false);
     });
 
+    it("populates peer_context for known configured peers", async () => {
+      await handler.processEnvelope(publishEnvelope, "relay");
+
+      expect(flashGate.lastF2Context).toBeDefined();
+      expect(flashGate.lastF2Context!.peer_context).toBeDefined();
+      expect(flashGate.lastF2Context!.peer_context).toContain("test-peer");
+      expect(flashGate.lastF2Context!.peer_context).toContain("known configured peer");
+    });
+
+    it("does not set peer_context for unknown senders", async () => {
+      const emptyAgora = new MockAgoraService();
+      const gatedHandler = new AgoraMessageHandler(
+        emptyAgora,
+        conversationManager,
+        messageInjector,
+        eventSink,
+        clock,
+        getState,
+        isRateLimited,
+        logger,
+        'allow',
+        defaultRateLimitConfig,
+        null, null, null,
+        flashGate,
+      );
+
+      await gatedHandler.processEnvelope(publishEnvelope, "relay");
+
+      expect(flashGate.lastF2Context).toBeDefined();
+      expect(flashGate.lastF2Context!.peer_context).toBeUndefined();
+    });
+
     it("defaults to BLOCK when gate throws an exception", async () => {
       flashGate.shouldThrow = true;
       flashGate.throwError = "Vertex API timeout";

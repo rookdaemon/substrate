@@ -19,6 +19,7 @@ export interface F2Context {
   message_type: string;
   envelope_id: string;
   timestamp: string;
+  peer_context?: string;  // human-readable description of sender's role in the architecture
 }
 
 export interface F1Context {

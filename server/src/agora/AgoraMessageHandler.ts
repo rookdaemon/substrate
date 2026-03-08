@@ -388,6 +388,7 @@ export class AgoraMessageHandler {
     senderIdentity: string,
     senderVerified: boolean,
     timestamp: string,
+    peerContext?: string,
   ): Promise<FlashGateVerdict | null> {
     if (!this.flashGate) return null;
 
@@ -408,6 +409,7 @@ export class AgoraMessageHandler {
         message_type: envelope.type,
         envelope_id: envelope.id,
         timestamp,
+        peer_context: peerContext,
       });
     } catch (err) {
       // Gate infrastructure failure — default to BLOCK per spec
@@ -506,11 +508,13 @@ export class AgoraMessageHandler {
     // Only applies to dm/publish message types (not announce/heartbeat).
     // If F2 BLOCKs, message never reaches Ego. If ESCALATE, inject with flag.
     if (this.flashGate && F2_GATED_TYPES.has(envelope.type)) {
+      const peerContext = knownPeer ? `${senderIdentity} — known configured peer` : undefined;
       const f2Verdict = await this.evaluateF2Gate(
         envelope,
         senderIdentity,
         !!knownPeer,
         timestamp,
+        peerContext,
       );
 
       if (f2Verdict?.verdict === "BLOCK") {

@@ -234,6 +234,40 @@ describe("FlashGate", () => {
       const verdict = await gate.evaluateInput(makeF2Context());
       expect(verdict.verdict).toBe("PROCEED");
     });
+
+    it("prepends [SENDER CONTEXT] to user message when peer_context is provided", async () => {
+      launcher.result = {
+        rawOutput: makeVerdictJson("PROCEED"),
+        exitCode: 0,
+        durationMs: 500,
+        success: true,
+      };
+
+      await gate.evaluateInput(
+        makeF2Context({
+          peer_context: "stefan@9f38f6d0 — known configured peer",
+        }),
+      );
+
+      expect(launcher.lastRequest).toBeDefined();
+      expect(launcher.lastRequest!.message).toContain(
+        "[SENDER CONTEXT] This message is from: stefan@9f38f6d0 — known configured peer",
+      );
+    });
+
+    it("does not prepend [SENDER CONTEXT] when peer_context is absent", async () => {
+      launcher.result = {
+        rawOutput: makeVerdictJson("PROCEED"),
+        exitCode: 0,
+        durationMs: 500,
+        success: true,
+      };
+
+      await gate.evaluateInput(makeF2Context({ peer_context: undefined }));
+
+      expect(launcher.lastRequest).toBeDefined();
+      expect(launcher.lastRequest!.message).not.toContain("[SENDER CONTEXT]");
+    });
   });
 
   describe("F1 — Pre-Output (Critical Thinking)", () => {
