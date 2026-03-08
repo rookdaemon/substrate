@@ -49,6 +49,8 @@ export interface AgentLayerResult {
   subconscious: Subconscious;
   superego: Superego;
   id: Id;
+  /** VertexSessionLauncher for subprocess tasks (compaction, gates). Undefined if not configured. */
+  vertexSubprocessLauncher: VertexSessionLauncher | undefined;
 }
 
 /**
@@ -209,5 +211,6 @@ export async function createAgentLayer(
     taskMetrics, sizeTracker, delegationTracker, taskClassifier,
     conversationManager, driveQualityTracker,
     ego, subconscious, superego, id,
+    vertexSubprocessLauncher,
   };
 }

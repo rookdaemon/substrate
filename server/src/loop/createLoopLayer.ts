@@ -33,6 +33,7 @@ import { AgoraMessageHandler } from "../agora/AgoraMessageHandler";
 import { AgoraOutboundProvider } from "../agora/AgoraOutboundProvider";
 import { IAgoraService } from "../agora/IAgoraService";
 import { buildPeerReferenceDirectory } from "../agora/utils";
+import { FlashGate } from "../gates/FlashGate";
 import { FileWatcher } from "../substrate/watcher/FileWatcher";
 import { SubstrateFileType } from "../substrate/types";
 import { CodeDispatcher } from "../code-dispatch/CodeDispatcher";
@@ -68,7 +69,7 @@ export async function createLoopLayer(
 ): Promise<LoopLayerResult> {
   const { fs, clock, substrateConfig, reader, appendWriter, lock, writer, logger, metaManager } = substrate;
   const { ego, subconscious, superego, id, conversationManager, launcher, gatedLauncher,
-    taskMetrics, sizeTracker, delegationTracker, driveQualityTracker } = agents;
+    taskMetrics, sizeTracker, delegationTracker, driveQualityTracker, vertexSubprocessLauncher } = agents;
 
   // Loop layer — build httpServer first for the underlying http.Server,
   // then wsServer, then orchestrator, then wire orchestrator back into httpServer
@@ -189,6 +190,16 @@ export async function createLoopLayer(
     };
     const unknownSenderPolicy = config.agora?.security?.unknownSenderPolicy ?? 'quarantine';
 
+    // Wire F2 FlashGate if VertexSessionLauncher is available
+    const flashGate = vertexSubprocessLauncher
+      ? new FlashGate(vertexSubprocessLauncher, clock, logger, config.vertexModel)
+      : null;
+    if (flashGate) {
+      logger.debug("[AGORA] F2 FlashGate enabled (VertexSessionLauncher wired)");
+    } else {
+      logger.debug("[AGORA] F2 FlashGate disabled (no VertexSessionLauncher configured)");
+    }
+
     agoraMessageHandler = new AgoraMessageHandler(
       agoraService,
       conversationManager,
@@ -205,6 +216,7 @@ export async function createLoopLayer(
       },
       getIgnoredPeersPath(),
       getSeenKeysPath(),
+      flashGate,
     );
 
     // Connect to relay if configured — handler is already wired via constructor closure above

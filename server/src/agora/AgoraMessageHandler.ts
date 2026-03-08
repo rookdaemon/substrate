@@ -10,6 +10,7 @@ import { IgnoredPeersManager, SeenKeyStore } from "@rookdaemon/agora";
 import type { Envelope } from "@rookdaemon/agora" with { "resolution-mode": "import" };
 import type { ILogger } from "../logging";
 import { createHash } from "crypto";
+import type { IFlashGate, EnvelopeSummary } from "../gates/IFlashGate";
 
 /**
  * Sliding window state for per-sender rate limiting
@@ -47,6 +48,7 @@ export type UnknownSenderPolicy = 'allow' | 'quarantine' | 'reject';
  * - Deduplicate envelopes to prevent replay attacks
  * - Enforce peer allowlist (unknown senders are silently dropped)
  * - Per-sender rate limiting to prevent flooding
+ * - F2 gate evaluation (Healthy Paranoia) before message injection
  */
 export class AgoraMessageHandler {
   /**
@@ -72,6 +74,15 @@ export class AgoraMessageHandler {
   private readonly ignoredPeers: Set<string>;
   private readonly seenKeyStore: SeenKeyStore | null;
 
+  /**
+   * In-memory cache of recently processed envelope summaries for inReplyTo context lookup.
+   * When an inbound message has inReplyTo set, we look up the parent envelope here
+   * so the F2 gate can include authorization chain context in its evaluation.
+   * Bounded to MAX_ENVELOPE_CACHE_SIZE entries; oldest entries evicted when full.
+   */
+  private readonly envelopeCache: Map<string, EnvelopeSummary> = new Map();
+  private static readonly MAX_ENVELOPE_CACHE_SIZE = 200;
+
   constructor(
     private readonly agoraService: IAgoraService | null,
     private readonly conversationManager: IConversationManager,
@@ -86,6 +97,7 @@ export class AgoraMessageHandler {
     private readonly wakeLoop: (() => void) | null = null,
     private readonly ignoredPeersPath: string | null = null,
     private readonly seenKeysPath: string | null = null,
+    private readonly flashGate: IFlashGate | null = null,
   ) {
     if (this.ignoredPeersPath) {
       try {
@@ -445,6 +457,52 @@ export class AgoraMessageHandler {
       return;
     }
 
+    // F2 Gate (Healthy Paranoia) — evaluate dm/publish messages before injection.
+    // Skips announce and heartbeat (infrastructure noise).
+    // Only runs when a FlashGate is wired (optional dependency).
+    const isF2Scope = envelope.type === "dm" || envelope.type === "publish";
+    if (this.flashGate && isF2Scope) {
+      const envelopeWithReplyTo = envelope as Envelope & { inReplyTo?: string };
+      const inReplyToSummary = envelopeWithReplyTo.inReplyTo
+        ? this.envelopeCache.get(envelopeWithReplyTo.inReplyTo)
+        : undefined;
+
+      if (envelopeWithReplyTo.inReplyTo && !inReplyToSummary) {
+        this.logger.debug(
+          `[F2] inReplyTo envelope ${envelopeWithReplyTo.inReplyTo} not in cache — proceeding without context`,
+        );
+      }
+
+      const messageText = this.extractMessageText(envelope.payload);
+      const gateResult = await this.flashGate.evaluateF2({
+        gate: "F2",
+        context: {
+          sender_moniker: senderIdentity,
+          sender_verified: !!knownPeer,
+          message_text: messageText,
+          message_type: envelope.type,
+          envelope_id: envelope.id,
+          timestamp,
+          inReplyToSummary,
+        },
+      });
+
+      if (gateResult.verdict === "BLOCK") {
+        this.logger.debug(
+          `[F2] BLOCK — envelopeId=${envelope.id} sender=${senderIdentity} reasons=${JSON.stringify(gateResult.reasons)}`,
+        );
+        // Discard: do not inject and do not write to CONVERSATION.md
+        return;
+      }
+
+      if (gateResult.verdict === "ESCALATE") {
+        this.logger.debug(
+          `[F2] ESCALATE — envelopeId=${envelope.id} sender=${senderIdentity} reasons=${JSON.stringify(gateResult.reasons)}`,
+        );
+        // Fall through with escalation logged; injection continues normally
+      }
+    }
+
     // Wake loop if sleeping — incoming Agora message should restart cycles
     if (this.getState() === LoopState.SLEEPING && this.wakeLoop) {
       this.logger.debug(`[AGORA] Waking loop from SLEEPING state for incoming message: envelopeId=${envelope.id}`);
@@ -518,6 +576,45 @@ export class AgoraMessageHandler {
     } else {
       this.logger.debug(`[AGORA] No eventSink configured, skipping WebSocket event`);
     }
+
+    // Cache this envelope for future inReplyTo context lookups.
+    // Stored after successful processing so the cache only contains legitimate messages.
+    this.cacheEnvelope(envelope.id, senderIdentity, envelope.payload);
+  }
+
+  /**
+   * Extract a human-readable text excerpt from an envelope payload.
+   * Used for F2 gate evaluation and envelope cache summaries.
+   */
+  private extractMessageText(payload: unknown): string {
+    if (typeof payload === "string") {
+      return payload.slice(0, 500);
+    }
+    if (payload && typeof payload === "object" && !Array.isArray(payload)) {
+      const obj = payload as Record<string, unknown>;
+      if (typeof obj.text === "string") {
+        return obj.text.slice(0, 500);
+      }
+    }
+    return JSON.stringify(payload).slice(0, 500);
+  }
+
+  /**
+   * Add an envelope summary to the cache for inReplyTo context lookups.
+   * Evicts the oldest entry when the cache is full.
+   */
+  private cacheEnvelope(envelopeId: string, senderMoniker: string, payload: unknown): void {
+    if (this.envelopeCache.size >= AgoraMessageHandler.MAX_ENVELOPE_CACHE_SIZE) {
+      const oldestKey = this.envelopeCache.keys().next().value;
+      if (oldestKey !== undefined) {
+        this.envelopeCache.delete(oldestKey);
+      }
+    }
+    this.envelopeCache.set(envelopeId, {
+      envelopeId,
+      senderMoniker,
+      text: this.extractMessageText(payload),
+    });
   }
 
 }

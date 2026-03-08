@@ -8,6 +8,7 @@ import { LoopState } from "../../src/loop/types";
 import { AgentRole } from "../../src/agents/types";
 import type { Envelope } from "@rookdaemon/agora" with { "resolution-mode": "import" };
 import type { ILogger } from "../../src/logging";
+import type { IFlashGate, F2GateInput, F2GateResult } from "../../src/gates/IFlashGate";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -105,6 +106,24 @@ class MockAgoraService implements IAgoraService {
 
   isRelayConnected() {
     return false;
+  }
+}
+
+class MockFlashGate implements IFlashGate {
+  public calls: F2GateInput[] = [];
+  private responses: F2GateResult[] = [];
+
+  enqueue(result: F2GateResult): void {
+    this.responses.push(result);
+  }
+
+  async evaluateF2(input: F2GateInput): Promise<F2GateResult> {
+    this.calls.push(input);
+    const response = this.responses.shift();
+    if (!response) {
+      return { verdict: "PROCEED", reasons: [] };
+    }
+    return response;
   }
 }
 
@@ -1106,6 +1125,282 @@ describe("AgoraMessageHandler", () => {
       await handler2.processEnvelope(testEnvelope, "webhook");
       await handler2.processEnvelope(env2, "webhook");
       expect(conversationManager.appendedEntries.length).toBe(before);
+    });
+  });
+
+  describe("F2 FlashGate integration", () => {
+    const defaultRateLimitConfig = { enabled: true, maxMessages: 10, windowMs: 60000 };
+
+    function makeGatedHandler(flashGate: MockFlashGate): AgoraMessageHandler {
+      const conversationMgr = new MockConversationManager();
+      const injector = new MockMessageInjector();
+      const sink = new MockEventSink();
+      const clk = new MockClock(new Date("2026-03-07T14:48:00Z"));
+      const svc = new MockAgoraService();
+      const log = new MockLogger();
+      const testFrom = "302a300506032b6570032100abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd";
+      svc.addPeer("nova", testFrom);
+
+      return new AgoraMessageHandler(
+        svc,
+        conversationMgr,
+        injector,
+        sink,
+        clk,
+        () => LoopState.RUNNING,
+        () => false,
+        log,
+        'quarantine',
+        defaultRateLimitConfig,
+        null,
+        null,
+        null,
+        flashGate,
+      );
+    }
+
+    const dmEnvelope: Envelope = {
+      id: "env-dm-001",
+      type: "dm",
+      from: "302a300506032b6570032100abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd",
+      to: ["302a300506032b6570032100dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"],
+      timestamp: 1741355280000,
+      payload: { text: "Bishop should review the INS spec" },
+      signature: "sig",
+    };
+
+    const announceEnvelope: Envelope = {
+      id: "env-ann-001",
+      type: "announce",
+      from: "302a300506032b6570032100abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd",
+      to: [],
+      timestamp: 1741355280000,
+      payload: { text: "Heartbeat" },
+      signature: "sig",
+    };
+
+    it("calls F2 gate for dm messages", async () => {
+      const flashGate = new MockFlashGate();
+      flashGate.enqueue({ verdict: "PROCEED", reasons: [] });
+      const h = makeGatedHandler(flashGate);
+
+      await h.processEnvelope(dmEnvelope);
+
+      expect(flashGate.calls).toHaveLength(1);
+      expect(flashGate.calls[0].context.message_type).toBe("dm");
+    });
+
+    it("calls F2 gate for publish messages", async () => {
+      const flashGate = new MockFlashGate();
+      flashGate.enqueue({ verdict: "PROCEED", reasons: [] });
+      const pubEnvelope: Envelope = { ...dmEnvelope, id: "env-pub-001", type: "publish" };
+      const h = makeGatedHandler(flashGate);
+
+      await h.processEnvelope(pubEnvelope);
+
+      expect(flashGate.calls).toHaveLength(1);
+      expect(flashGate.calls[0].context.message_type).toBe("publish");
+    });
+
+    it("does NOT call F2 gate for announce messages", async () => {
+      const flashGate = new MockFlashGate();
+      const h = makeGatedHandler(flashGate);
+
+      await h.processEnvelope(announceEnvelope);
+
+      expect(flashGate.calls).toHaveLength(0);
+    });
+
+    it("does NOT call F2 gate for heartbeat messages", async () => {
+      const flashGate = new MockFlashGate();
+      const heartbeat: Envelope = { ...dmEnvelope, id: "env-hb-001", type: "heartbeat" };
+      const h = makeGatedHandler(flashGate);
+
+      await h.processEnvelope(heartbeat);
+
+      expect(flashGate.calls).toHaveLength(0);
+    });
+
+    it("BLOCK verdict discards message — no injection and no CONVERSATION.md write", async () => {
+      const flashGate = new MockFlashGate();
+
+      // Use a directly-constructed handler so we have access to the injector and conversation manager
+      const conversationMgr = new MockConversationManager();
+      const injector = new MockMessageInjector();
+      const svc = new MockAgoraService();
+      const log = new MockLogger();
+      const testFrom = "302a300506032b6570032100abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd";
+      svc.addPeer("nova", testFrom);
+
+      const handler2 = new AgoraMessageHandler(
+        svc,
+        conversationMgr,
+        injector,
+        null,
+        new MockClock(new Date("2026-03-07T14:48:00Z")),
+        () => LoopState.RUNNING,
+        () => false,
+        log,
+        'quarantine',
+        defaultRateLimitConfig,
+        null,
+        null,
+        null,
+        flashGate,
+      );
+
+      flashGate.enqueue({ verdict: "BLOCK", reasons: ["social engineering"] });
+      await handler2.processEnvelope(dmEnvelope);
+
+      expect(injector.injectedMessages).toHaveLength(0);
+      expect(conversationMgr.appendedEntries).toHaveLength(0);
+    });
+
+    it("PROCEED verdict allows injection and CONVERSATION.md write", async () => {
+      const flashGate = new MockFlashGate();
+      const conversationMgr = new MockConversationManager();
+      const injector = new MockMessageInjector();
+      const svc = new MockAgoraService();
+      const log = new MockLogger();
+      const testFrom = "302a300506032b6570032100abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd";
+      svc.addPeer("nova", testFrom);
+
+      const handler2 = new AgoraMessageHandler(
+        svc,
+        conversationMgr,
+        injector,
+        null,
+        new MockClock(new Date("2026-03-07T14:48:00Z")),
+        () => LoopState.RUNNING,
+        () => false,
+        log,
+        'quarantine',
+        defaultRateLimitConfig,
+        null,
+        null,
+        null,
+        flashGate,
+      );
+
+      flashGate.enqueue({ verdict: "PROCEED", reasons: [] });
+      await handler2.processEnvelope(dmEnvelope);
+
+      expect(injector.injectedMessages).toHaveLength(1);
+      expect(conversationMgr.appendedEntries).toHaveLength(1);
+    });
+
+    it("passes inReplyTo context from cached parent envelope to F2 gate", async () => {
+      const flashGate = new MockFlashGate();
+      const conversationMgr = new MockConversationManager();
+      const injector = new MockMessageInjector();
+      const svc = new MockAgoraService();
+      const log = new MockLogger();
+      const testFrom = "302a300506032b6570032100abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd";
+      svc.addPeer("nova", testFrom);
+
+      const clk = new MockClock(new Date("2026-03-07T14:48:00Z"));
+      const handler2 = new AgoraMessageHandler(
+        svc,
+        conversationMgr,
+        injector,
+        null,
+        clk,
+        () => LoopState.RUNNING,
+        () => false,
+        log,
+        'quarantine',
+        defaultRateLimitConfig,
+        null,
+        null,
+        null,
+        flashGate,
+      );
+
+      // First, process the parent envelope (dm) so it gets cached
+      const parentEnvelope: Envelope = {
+        id: "env-parent-001",
+        type: "dm",
+        from: testFrom,
+        to: [],
+        timestamp: 1741355270000,
+        payload: { text: "fill Bishop in on what has happened" },
+        signature: "sig",
+      };
+      flashGate.enqueue({ verdict: "PROCEED", reasons: [] });
+      await handler2.processEnvelope(parentEnvelope);
+
+      // Now process a child envelope that references the parent
+      const childEnvelope = {
+        ...dmEnvelope,
+        id: "env-child-001",
+        inReplyTo: "env-parent-001",
+      } as Envelope & { inReplyTo?: string };
+
+      flashGate.enqueue({ verdict: "PROCEED", reasons: [] });
+      await handler2.processEnvelope(childEnvelope as Envelope);
+
+      // The second F2 call should have inReplyToSummary populated
+      const childCall = flashGate.calls[1];
+      expect(childCall.context.inReplyToSummary).toBeDefined();
+      expect(childCall.context.inReplyToSummary?.envelopeId).toBe("env-parent-001");
+      expect(childCall.context.inReplyToSummary?.text).toContain("fill Bishop in on what has happened");
+    });
+
+    it("proceeds without context when inReplyTo envelope is not in cache (non-blocking)", async () => {
+      const flashGate = new MockFlashGate();
+      flashGate.enqueue({ verdict: "PROCEED", reasons: [] });
+
+      const envelopeWithUnknownReply = {
+        ...dmEnvelope,
+        id: "env-reply-001",
+        inReplyTo: "env-unknown-parent",
+      } as Envelope & { inReplyTo?: string };
+
+      const h = makeGatedHandler(flashGate);
+      await h.processEnvelope(envelopeWithUnknownReply as Envelope);
+
+      // Gate is still called, just without context
+      expect(flashGate.calls).toHaveLength(1);
+      expect(flashGate.calls[0].context.inReplyToSummary).toBeUndefined();
+    });
+
+    it("passes sender_verified=true for known peer", async () => {
+      const flashGate = new MockFlashGate();
+      flashGate.enqueue({ verdict: "PROCEED", reasons: [] });
+      const h = makeGatedHandler(flashGate);
+
+      await h.processEnvelope(dmEnvelope);
+
+      expect(flashGate.calls[0].context.sender_verified).toBe(true);
+    });
+
+    it("does not call F2 gate when no gate is wired (backward compatible)", async () => {
+      // Handler without flash gate (last param defaults to null)
+      const conversationMgr = new MockConversationManager();
+      const injector = new MockMessageInjector();
+      const svc = new MockAgoraService();
+      const testFrom = "302a300506032b6570032100abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd";
+      svc.addPeer("nova", testFrom);
+      const log = new MockLogger();
+
+      const noGateHandler = new AgoraMessageHandler(
+        svc,
+        conversationMgr,
+        injector,
+        null,
+        new MockClock(new Date("2026-03-07T14:48:00Z")),
+        () => LoopState.RUNNING,
+        () => false,
+        log,
+        'quarantine',
+        defaultRateLimitConfig,
+      );
+
+      await noGateHandler.processEnvelope(dmEnvelope);
+
+      // Message should be processed normally
+      expect(injector.injectedMessages).toHaveLength(1);
+      expect(conversationMgr.appendedEntries).toHaveLength(1);
     });
   });
 });
