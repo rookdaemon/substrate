@@ -10,6 +10,7 @@ import { IgnoredPeersManager, SeenKeyStore } from "@rookdaemon/agora";
 import type { Envelope } from "@rookdaemon/agora" with { "resolution-mode": "import" };
 import type { ILogger } from "../logging";
 import { createHash } from "crypto";
+import type { IFlashGate } from "../gates/IFlashGate";
 
 /**
  * Sliding window state for per-sender rate limiting
@@ -86,6 +87,7 @@ export class AgoraMessageHandler {
     private readonly wakeLoop: (() => void) | null = null,
     private readonly ignoredPeersPath: string | null = null,
     private readonly seenKeysPath: string | null = null,
+    private readonly flashGate: IFlashGate | null = null,
   ) {
     if (this.ignoredPeersPath) {
       try {
@@ -443,6 +445,19 @@ export class AgoraMessageHandler {
       this.logger.debug(`[AGORA] Dropping rate-limited message: envelopeId=${envelope.id} from=${senderIdentity}`);
       // Silently drop the message - don't reveal rate limit state to potential spammers
       return;
+    }
+
+    // F2 FlashGate: pre-input behavioral check (timestamp anomaly, etc.)
+    if (this.flashGate) {
+      const gateResult = await this.flashGate.evaluate(envelope);
+      if (gateResult.decision === "BLOCK") {
+        this.logger.debug(`[AGORA] FlashGate BLOCK: envelopeId=${envelope.id} reason=${gateResult.reason ?? "(none)"}`);
+        return;
+      }
+      if (gateResult.decision === "ESCALATE") {
+        this.logger.debug(`[AGORA] FlashGate ESCALATE: envelopeId=${envelope.id} reason=${gateResult.reason ?? "(none)"}`);
+        // Continue processing but the reason is logged for operator review.
+      }
     }
 
     // Wake loop if sleeping — incoming Agora message should restart cycles
