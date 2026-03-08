@@ -1,8 +1,8 @@
-import { FlashGate, FlashGateConfig, EvaluationContext, GateDecision } from "../../src/gates/FlashGate";
+import { FlashGate, FlashGateConfig, EvaluationContext } from "../../src/gates/FlashGate";
 import { InMemorySessionLauncher } from "../../src/agents/claude/InMemorySessionLauncher";
 import { FixedClock } from "../../src/substrate/abstractions/FixedClock";
 import { InMemoryLogger } from "../../src/logging";
-import { writeFileSync, readFileSync, unlinkSync, existsSync } from "fs";
+import { readFileSync, unlinkSync, existsSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 
