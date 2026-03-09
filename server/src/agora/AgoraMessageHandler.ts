@@ -470,10 +470,12 @@ export class AgoraMessageHandler {
       }
     }
 
-    // F2 Gate (Healthy Paranoia) — LLM-based evaluation for dm/publish messages.
+    // F2 Gate (Healthy Paranoia) — LLM-based evaluation for untrusted dm/publish messages.
     // Skips announce and heartbeat (infrastructure noise).
+    // DMs from known, configured peers are trusted channels — skip F2 to avoid false positives.
+    // Publish messages always go through F2 (broadcast relay could be compromised).
     // Only runs when a FlashGate is wired (optional dependency).
-    const isF2Scope = (envelope.type as string) === "dm" || envelope.type === "publish";
+    const isF2Scope = ((envelope.type as string) === "dm" && !knownPeer) || envelope.type === "publish";
     if (this.flashGate && isF2Scope) {
       const envelopeWithReplyTo = envelope as Envelope & { inReplyTo?: string };
       const inReplyToSummary = envelopeWithReplyTo.inReplyTo

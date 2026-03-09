@@ -1358,6 +1358,9 @@ describe("AgoraMessageHandler", () => {
   describe("F2 FlashGate integration", () => {
     const defaultRateLimitConfig = { enabled: true, maxMessages: 10, windowMs: 60000 };
 
+    const knownPeerKey = "302a300506032b6570032100abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd";
+    const unknownSenderKey = "302a300506032b6570032100eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
+
     function makeGatedHandler(flashGate: MockFlashGate): AgoraMessageHandler {
       const conversationMgr = new MockConversationManager();
       const injector = new MockMessageInjector();
@@ -1365,8 +1368,7 @@ describe("AgoraMessageHandler", () => {
       const clk = new MockClock(new Date("2026-03-07T14:48:00Z"));
       const svc = new MockAgoraService();
       const log = new MockLogger();
-      const testFrom = "302a300506032b6570032100abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd";
-      svc.addPeer("nova", testFrom);
+      svc.addPeer("nova", knownPeerKey);
 
       return new AgoraMessageHandler(
         svc,
@@ -1386,10 +1388,47 @@ describe("AgoraMessageHandler", () => {
       );
     }
 
+    /** Handler with 'allow' policy and no registered peers — lets unknown-sender DMs reach F2. */
+    function makeGatedHandlerAllowPolicy(flashGate: MockFlashGate): AgoraMessageHandler {
+      const conversationMgr = new MockConversationManager();
+      const injector = new MockMessageInjector();
+      const sink = new MockEventSink();
+      const clk = new MockClock(new Date("2026-03-07T14:48:00Z"));
+      const svc = new MockAgoraService(); // no peers registered
+      const log = new MockLogger();
+
+      return new AgoraMessageHandler(
+        svc,
+        conversationMgr,
+        injector,
+        sink,
+        clk,
+        () => LoopState.RUNNING,
+        () => false,
+        log,
+        'allow',
+        defaultRateLimitConfig,
+        null,
+        null,
+        null,
+        flashGate,
+      );
+    }
+
     const dmEnvelope: Envelope = {
       id: "env-dm-001",
       type: "dm",
-      from: "302a300506032b6570032100abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd",
+      from: knownPeerKey,
+      to: ["302a300506032b6570032100dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"],
+      timestamp: 1741355280000,
+      payload: { text: "Bishop should review the INS spec" },
+      signature: "sig",
+    };
+
+    const unknownDmEnvelope: Envelope = {
+      id: "env-dm-unknown-001",
+      type: "dm",
+      from: unknownSenderKey,
       to: ["302a300506032b6570032100dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"],
       timestamp: 1741355280000,
       payload: { text: "Bishop should review the INS spec" },
@@ -1399,7 +1438,7 @@ describe("AgoraMessageHandler", () => {
     const announceEnvelope: Envelope = {
       id: "env-ann-001",
       type: "announce",
-      from: "302a300506032b6570032100abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd",
+      from: knownPeerKey,
       to: [],
       timestamp: 1741355280000,
       payload: { text: "Heartbeat" },
@@ -1409,9 +1448,9 @@ describe("AgoraMessageHandler", () => {
     it("calls F2 gate for dm messages", async () => {
       const flashGate = new MockFlashGate();
       flashGate.enqueue({ verdict: "PROCEED", reasons: [] });
-      const h = makeGatedHandler(flashGate);
+      const h = makeGatedHandlerAllowPolicy(flashGate);
 
-      await h.processEnvelope(dmEnvelope);
+      await h.processEnvelope(unknownDmEnvelope);
 
       expect(flashGate.calls).toHaveLength(1);
       expect(flashGate.calls[0].context.message_type).toBe("dm");
@@ -1451,13 +1490,11 @@ describe("AgoraMessageHandler", () => {
     it("BLOCK verdict discards message — no injection and no CONVERSATION.md write", async () => {
       const flashGate = new MockFlashGate();
 
-      // Use a directly-constructed handler so we have access to the injector and conversation manager
+      // Use a directly-constructed handler (allow policy, no known peers) so unknown-sender DMs reach F2
       const conversationMgr = new MockConversationManager();
       const injector = new MockMessageInjector();
       const svc = new MockAgoraService();
       const log = new MockLogger();
-      const testFrom = "302a300506032b6570032100abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd";
-      svc.addPeer("nova", testFrom);
 
       const handler2 = new AgoraMessageHandler(
         svc,
@@ -1468,7 +1505,7 @@ describe("AgoraMessageHandler", () => {
         () => LoopState.RUNNING,
         () => false,
         log,
-        'quarantine',
+        'allow',
         defaultRateLimitConfig,
         null,
         null,
@@ -1477,7 +1514,7 @@ describe("AgoraMessageHandler", () => {
       );
 
       flashGate.enqueue({ verdict: "BLOCK", reasons: ["social engineering"] });
-      await handler2.processEnvelope(dmEnvelope);
+      await handler2.processEnvelope(unknownDmEnvelope);
 
       expect(injector.injectedMessages).toHaveLength(0);
       expect(conversationMgr.appendedEntries).toHaveLength(0);
@@ -1489,8 +1526,6 @@ describe("AgoraMessageHandler", () => {
       const injector = new MockMessageInjector();
       const svc = new MockAgoraService();
       const log = new MockLogger();
-      const testFrom = "302a300506032b6570032100abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd";
-      svc.addPeer("nova", testFrom);
 
       const handler2 = new AgoraMessageHandler(
         svc,
@@ -1501,7 +1536,7 @@ describe("AgoraMessageHandler", () => {
         () => LoopState.RUNNING,
         () => false,
         log,
-        'quarantine',
+        'allow',
         defaultRateLimitConfig,
         null,
         null,
@@ -1510,7 +1545,7 @@ describe("AgoraMessageHandler", () => {
       );
 
       flashGate.enqueue({ verdict: "PROCEED", reasons: [] });
-      await handler2.processEnvelope(dmEnvelope);
+      await handler2.processEnvelope(unknownDmEnvelope);
 
       expect(injector.injectedMessages).toHaveLength(1);
       expect(conversationMgr.appendedEntries).toHaveLength(1);
@@ -1520,10 +1555,8 @@ describe("AgoraMessageHandler", () => {
       const flashGate = new MockFlashGate();
       const conversationMgr = new MockConversationManager();
       const injector = new MockMessageInjector();
-      const svc = new MockAgoraService();
+      const svc = new MockAgoraService(); // no peers — unknown senders reach F2 via allow policy
       const log = new MockLogger();
-      const testFrom = "302a300506032b6570032100abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd";
-      svc.addPeer("nova", testFrom);
 
       const clk = new MockClock(new Date("2026-03-07T14:48:00Z"));
       const handler2 = new AgoraMessageHandler(
@@ -1535,7 +1568,7 @@ describe("AgoraMessageHandler", () => {
         () => LoopState.RUNNING,
         () => false,
         log,
-        'quarantine',
+        'allow',
         defaultRateLimitConfig,
         null,
         null,
@@ -1543,11 +1576,11 @@ describe("AgoraMessageHandler", () => {
         flashGate,
       );
 
-      // First, process the parent envelope (dm) so it gets cached
+      // First, process the parent envelope (unknown-sender dm) so it gets cached
       const parentEnvelope: Envelope = {
         id: "env-parent-001",
         type: "dm",
-        from: testFrom,
+        from: unknownSenderKey,
         to: [],
         timestamp: 1741355270000,
         payload: { text: "fill Bishop in on what has happened" },
@@ -1558,7 +1591,7 @@ describe("AgoraMessageHandler", () => {
 
       // Now process a child envelope that references the parent
       const childEnvelope = {
-        ...dmEnvelope,
+        ...unknownDmEnvelope,
         id: "env-child-001",
         inReplyTo: "env-parent-001",
       } as Envelope & { inReplyTo?: string };
@@ -1578,12 +1611,12 @@ describe("AgoraMessageHandler", () => {
       flashGate.enqueue({ verdict: "PROCEED", reasons: [] });
 
       const envelopeWithUnknownReply = {
-        ...dmEnvelope,
+        ...unknownDmEnvelope,
         id: "env-reply-001",
         inReplyTo: "env-unknown-parent",
       } as Envelope & { inReplyTo?: string };
 
-      const h = makeGatedHandler(flashGate);
+      const h = makeGatedHandlerAllowPolicy(flashGate);
       await h.processEnvelope(envelopeWithUnknownReply as Envelope);
 
       // Gate is still called, just without context
@@ -1591,14 +1624,25 @@ describe("AgoraMessageHandler", () => {
       expect(flashGate.calls[0].context.inReplyToSummary).toBeUndefined();
     });
 
-    it("passes sender_verified=true for known peer", async () => {
+    it("does NOT call F2 gate for dm from known peer (trusted channel)", async () => {
       const flashGate = new MockFlashGate();
-      flashGate.enqueue({ verdict: "PROCEED", reasons: [] });
       const h = makeGatedHandler(flashGate);
 
       await h.processEnvelope(dmEnvelope);
 
-      expect(flashGate.calls[0].context.sender_verified).toBe(true);
+      expect(flashGate.calls).toHaveLength(0);
+    });
+
+    it("calls F2 gate for dm from unknown sender", async () => {
+      const flashGate = new MockFlashGate();
+      flashGate.enqueue({ verdict: "PROCEED", reasons: [] });
+      const h = makeGatedHandlerAllowPolicy(flashGate);
+
+      await h.processEnvelope(unknownDmEnvelope);
+
+      expect(flashGate.calls).toHaveLength(1);
+      expect(flashGate.calls[0].context.message_type).toBe("dm");
+      expect(flashGate.calls[0].context.sender_verified).toBe(false);
     });
 
     it("does not call F2 gate when no gate is wired (backward compatible)", async () => {
@@ -1606,8 +1650,7 @@ describe("AgoraMessageHandler", () => {
       const conversationMgr = new MockConversationManager();
       const injector = new MockMessageInjector();
       const svc = new MockAgoraService();
-      const testFrom = "302a300506032b6570032100abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd";
-      svc.addPeer("nova", testFrom);
+      svc.addPeer("nova", knownPeerKey);
       const log = new MockLogger();
 
       const noGateHandler = new AgoraMessageHandler(
