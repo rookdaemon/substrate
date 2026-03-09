@@ -24,9 +24,6 @@ const JACCARD_MIN_TOKENS = 10;
 /** Jaccard similarity threshold for semantic equivalence matching */
 const JACCARD_THRESHOLD = 0.6;
 
-/** TTL for acknowledgments (7 days in ms) */
-const ACK_TTL_MS = 7 * 24 * 60 * 60 * 1000;
-
 /** Re-trigger threshold for false_positive acknowledged patterns (half of normal threshold) */
 const FALSE_POSITIVE_RETRIGGER_DIVISOR = 2;
 
