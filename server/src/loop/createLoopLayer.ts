@@ -36,6 +36,7 @@ import { buildPeerReferenceDirectory } from "../agora/utils";
 import { FlashGate } from "../gates/FlashGate";
 import { FileWatcher } from "../substrate/watcher/FileWatcher";
 import { SubstrateFileType } from "../substrate/types";
+import { PeerAvailabilityMonitor } from "./PeerAvailabilityMonitor";
 import { CodeDispatcher } from "../code-dispatch/CodeDispatcher";
 import { ClaudeCliBackend } from "../code-dispatch/ClaudeCliBackend";
 import { CopilotBackend } from "../code-dispatch/CopilotBackend";
@@ -254,9 +255,19 @@ export async function createLoopLayer(
   );
   tinyBus.registerProvider(conversationProvider);
 
+  // Create PeerAvailabilityMonitor if peer config is provided
+  const peerMonitor = config.peers && config.peers.length > 0
+    ? new PeerAvailabilityMonitor(config.peers, orchestrator, logger)
+    : null;
+
   // 4. Agora outbound provider - handles outbound agora.send messages (if configured)
   if (agoraService) {
-    agoraOutboundProvider = new AgoraOutboundProvider(agoraService, logger, agoraMessageHandler?.getSeenKeyStore());
+    agoraOutboundProvider = new AgoraOutboundProvider(
+      agoraService,
+      logger,
+      agoraMessageHandler?.getSeenKeyStore(),
+      peerMonitor ? (name) => { peerMonitor.onContactFailed(name).catch(() => {}); } : undefined,
+    );
     tinyBus.registerProvider(agoraOutboundProvider);
   }
 
@@ -741,6 +752,13 @@ export async function createLoopLayer(
       agoraMessageHandler.setProcessedEnvelopeIds(ids);
       logger.debug(`createLoopLayer: restored ${ids.length} Agora dedup envelope IDs from disk`);
     } catch { /* file absent — no dedup state to restore */ }
+  }
+
+  // Peer availability startup scan — inject [PEER STATUS] for any rate-limited peer
+  if (peerMonitor) {
+    peerMonitor.scanAll().catch((err) => {
+      logger.debug(`[PEER-MONITOR] Startup scan failed: ${err instanceof Error ? err.message : String(err)}`);
+    });
   }
 
   return { orchestrator, httpServer, wsServer, fileWatcher, tinyBus, mode };

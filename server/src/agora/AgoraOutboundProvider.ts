@@ -29,6 +29,7 @@ export class AgoraOutboundProvider implements Provider {
     private readonly agoraService: IAgoraService | null,
     private readonly logger?: ILogger,
     private readonly seenKeyStore?: SeenKeyStore | null,
+    private readonly onSendFailed?: (peerName: string) => void,
   ) {}
 
   private isLikelyFullPublicKey(value: string): boolean {
@@ -152,6 +153,11 @@ export class AgoraOutboundProvider implements Provider {
 
     const errors: Array<{ recipient: string; error: string }> = [];
 
+    // Build reverse map: resolved pubkey/name → original reference (for onSendFailed callbacks)
+    const resolvedToOriginal = new Map<string, string>(
+      resolvedTargets.map((t) => [t.resolved, t.original])
+    );
+
     if (sendTargets.length > 0) {
       const sendResult = await this.agoraService.sendToAll({
         recipients: sendTargets,
@@ -162,6 +168,8 @@ export class AgoraOutboundProvider implements Provider {
 
       for (const err of sendResult.errors) {
         this.logger?.debug(`[AGORA-OUT] Failed to send to ${err.recipient}: ${err.error}`);
+        const original = resolvedToOriginal.get(err.recipient) ?? err.recipient;
+        this.onSendFailed?.(original);
       }
       errors.push(...sendResult.errors);
     }
