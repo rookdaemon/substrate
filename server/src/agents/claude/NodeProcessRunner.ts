@@ -22,10 +22,14 @@ export class NodeProcessRunner implements IProcessRunner {
         `${process.env.HOME}/.local/bin`,
         process.env.PATH ?? "",
       ].filter(Boolean).join(":");
+      // Strip CLAUDECODE so spawned subprocesses (e.g. claude CLI) don't
+      // see themselves as nested inside an existing Claude Code session.
+      const inheritedEnv = { ...process.env };
+      delete inheritedEnv.CLAUDECODE;
       const child = spawn(command, args, {
         stdio: ["ignore", "pipe", "pipe"],
         cwd: options?.cwd,
-        env: { ...process.env, PATH: augmentedPath },
+        env: { ...inheritedEnv, PATH: augmentedPath },
       });
 
       let stdout = "";
