@@ -113,11 +113,13 @@ describe("Router", () => {
       });
     });
 
-    describe("loopback exclusion for agora messages", () => {
+    describe("loopback and session-injection exclusion for agora messages", () => {
       let loopbackProvider: MemoryProvider;
+      let sessionInjectionProvider: MemoryProvider;
 
       beforeEach(() => {
         loopbackProvider = new MemoryProvider("loopback", [], true);
+        sessionInjectionProvider = new MemoryProvider("session-injection", []);
       });
 
       it("excludes loopback provider from agora.* broadcast messages", () => {
@@ -136,7 +138,23 @@ describe("Router", () => {
         expect(targets.map((t) => t.id)).toContain("provider-2");
       });
 
-      it("does not exclude loopback provider for non-agora broadcast messages", () => {
+      it("excludes session-injection provider from agora.* broadcast messages", () => {
+        const message = createMessage({
+          type: "agora.send",
+          source: "provider-1",
+        });
+
+        const targets = router.route(message, [
+          provider1,
+          provider2,
+          sessionInjectionProvider,
+        ]);
+
+        expect(targets.map((t) => t.id)).not.toContain("session-injection");
+        expect(targets.map((t) => t.id)).toContain("provider-2");
+      });
+
+      it("does not exclude loopback or session-injection for non-agora broadcast messages", () => {
         const message = createMessage({
           type: "system.health.ping",
           source: "provider-1",
@@ -146,9 +164,11 @@ describe("Router", () => {
           provider1,
           provider2,
           loopbackProvider,
+          sessionInjectionProvider,
         ]);
 
         expect(targets.map((t) => t.id)).toContain("loopback");
+        expect(targets.map((t) => t.id)).toContain("session-injection");
         expect(targets.map((t) => t.id)).toContain("provider-2");
       });
 
@@ -167,6 +187,23 @@ describe("Router", () => {
 
         expect(targets).toHaveLength(1);
         expect(targets[0].id).toBe("loopback");
+      });
+
+      it("still routes agora.* messages directly to session-injection if explicitly addressed", () => {
+        const message = createMessage({
+          type: "agora.send",
+          source: "provider-1",
+          destination: "session-injection",
+        });
+
+        const targets = router.route(message, [
+          provider1,
+          provider2,
+          sessionInjectionProvider,
+        ]);
+
+        expect(targets).toHaveLength(1);
+        expect(targets[0].id).toBe("session-injection");
       });
     });
   });

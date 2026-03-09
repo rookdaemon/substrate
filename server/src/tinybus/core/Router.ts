@@ -31,9 +31,11 @@ export class DefaultRouter implements Router {
 
     // Broadcast: deliver to all providers except source
     // Don't route agora.* messages to loopback to prevent duplicate outbound sends
+    // Don't route agora.* messages to session-injection: outbound agora.send must not
+    // loop back to the session, or the agent sees its own sends as incoming messages.
     return providers.filter((p) => {
       if (p.id === message.source) return false;
-      if (p.id === "loopback" && message.type.startsWith("agora.")) return false;
+      if (message.type.startsWith("agora.") && (p.id === "loopback" || p.id === "session-injection")) return false;
       return true;
     });
   }
