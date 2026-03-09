@@ -1,4 +1,4 @@
-import { AgentSdkLauncher, SdkQueryFn, SdkMessage } from "../../../src/agents/claude/AgentSdkLauncher";
+import { AgentSdkLauncher, SdkQueryFn, SdkMessage, SdkRateLimitEvent, buildRateLimitText } from "../../../src/agents/claude/AgentSdkLauncher";
 import { FixedClock } from "../../../src/substrate/abstractions/FixedClock";
 import { ProcessLogEntry } from "../../../src/agents/claude/ISessionLauncher";
 import { SdkUserMessage } from "../../../src/session/ISdkSession";
@@ -675,6 +675,79 @@ describe("AgentSdkLauncher", () => {
 
       expect(result.success).toBe(false);
       expect(result.error).toContain("Rate limit exceeded");
+    });
+  });
+
+  describe("rate_limit_event handling", () => {
+    it("synthesizes rate limit text in error when rate_limit_event is rejected with resetsAt", async () => {
+      // resetsAt: 2025-06-15 14:00:00 UTC → "resets Jun 15, 2pm (UTC)"
+      const resetsAt = Math.floor(new Date("2025-06-15T14:00:00Z").getTime() / 1000);
+      const rateLimitEvent: SdkRateLimitEvent = { type: "rate_limit_event", rate_limit_info: { status: "rejected", resetsAt } };
+      const messages: SdkMessage[] = [rateLimitEvent];
+      // Stream throws after yielding the rate limit event (simulating process exit code 1)
+      const queryFn = ((_params: { prompt: string; options?: Record<string, unknown> }) => {
+        return (async function* () {
+          for (const msg of messages) {
+            yield msg;
+          }
+          throw new Error("Claude Code process exited with code 1");
+        })();
+      }) as typeof queryFn;
+      const launcher = new AgentSdkLauncher(queryFn, clock);
+
+      const result = await launcher.launch({ systemPrompt: "test", message: "go" });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("resets Jun 15, 2pm (UTC)");
+      expect(result.rawOutput).toContain("resets Jun 15, 2pm (UTC)");
+    });
+
+    it("synthesizes midnight reset time correctly (12am)", async () => {
+      const resetsAt = Math.floor(new Date("2025-06-16T00:00:00Z").getTime() / 1000);
+      const rateLimitEvent: SdkRateLimitEvent = { type: "rate_limit_event", rate_limit_info: { status: "rejected", resetsAt } };
+      const queryFn = ((_params: { prompt: string; options?: Record<string, unknown> }) => {
+        return (async function* () {
+          yield rateLimitEvent as SdkMessage;
+          throw new Error("Claude Code process exited with code 1");
+        })();
+      }) as typeof queryFn;
+      const launcher = new AgentSdkLauncher(queryFn, clock);
+
+      const result = await launcher.launch({ systemPrompt: "test", message: "go" });
+
+      expect(result.error).toContain("resets Jun 16, 12am (UTC)");
+    });
+
+    it("does not override error for non-rejected rate limit status", async () => {
+      const rateLimitEvent: SdkRateLimitEvent = { type: "rate_limit_event", rate_limit_info: { status: "allowed_warning" } };
+      const queryFn = ((_params: { prompt: string; options?: Record<string, unknown> }) => {
+        return (async function* () {
+          yield rateLimitEvent as SdkMessage;
+          throw new Error("Claude Code process exited with code 1");
+        })();
+      }) as typeof queryFn;
+      const launcher = new AgentSdkLauncher(queryFn, clock);
+
+      const result = await launcher.launch({ systemPrompt: "test", message: "go" });
+
+      expect(result.error).toContain("Claude Code process exited with code 1");
+      expect(result.error).not.toContain("resets");
+    });
+  });
+
+  describe("buildRateLimitText", () => {
+    it("formats noon as 12pm", () => {
+      const resetsAt = Math.floor(new Date("2025-06-15T12:00:00Z").getTime() / 1000);
+      expect(buildRateLimitText(resetsAt)).toBe("You've hit your limit · resets Jun 15, 12pm (UTC)");
+    });
+
+    it("formats 1pm correctly", () => {
+      const resetsAt = Math.floor(new Date("2025-06-15T13:00:00Z").getTime() / 1000);
+      expect(buildRateLimitText(resetsAt)).toBe("You've hit your limit · resets Jun 15, 1pm (UTC)");
+    });
+
+    it("falls back gracefully when resetsAt is undefined", () => {
+      expect(buildRateLimitText(undefined)).toBe("You've hit your limit · rate limited");
     });
   });
 });

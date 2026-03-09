@@ -23,6 +23,7 @@ import { SessionManager, SessionConfig } from "../session/SessionManager";
 import { TickPromptBuilder } from "../session/TickPromptBuilder";
 import { SdkSessionFactory } from "../session/ISdkSession";
 import { parseRateLimitReset } from "./rateLimitParser";
+import { RateLimitError } from "./RateLimitError";
 import { RateLimitStateManager } from "./RateLimitStateManager";
 import { SchedulerCoordinator } from "./SchedulerCoordinator";
 import { LoopWatchdog } from "./LoopWatchdog";
@@ -103,6 +104,7 @@ export class LoopOrchestrator implements IMessageInjector {
 
   // INS (Involuntary Nervous System) — pre-cycle deterministic rule checks
   private insHook: INSHook | null = null;
+  private beforeCycleHook: (() => Promise<void>) | null = null;
   private lastINSResult: INSResult | null = null;
   private lastTaskResult: {
     result: string;
@@ -227,7 +229,7 @@ export class LoopOrchestrator implements IMessageInjector {
     this.watchdog?.stop();
     // Clear sleep state if sleeping
     if (this.state === LoopState.SLEEPING) {
-      this.onSleepExit?.().catch(() => {});
+      this.onSleepExit?.().catch(() => { });
     }
     this.transition(LoopState.STOPPED);
     if (this.shutdownFn && userInitiated) {
@@ -422,6 +424,15 @@ export class LoopOrchestrator implements IMessageInjector {
     // Drain deferred work from previous cycle before dispatching
     await this.deferredWork.drain();
 
+    // Optional pre-cycle hook for runtime checks that should run once per cycle start.
+    if (this.beforeCycleHook) {
+      try {
+        await this.beforeCycleHook();
+      } catch (err) {
+        this.logger.debug(`before-cycle hook failed — ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+
     // INS pre-cycle hook — deterministic rule checks
     if (this.insHook) {
       try {
@@ -479,6 +490,7 @@ export class LoopOrchestrator implements IMessageInjector {
           const egoResponse = await this.ego.respondToMessage(combined, this.createLogCallback("EGO"));
           if (egoResponse) await this.checkEndorsement(egoResponse);
         } catch (err) {
+          if (err instanceof RateLimitError) throw err;
           this.logger.debug(`cycle ${this.cycleNumber}: pending message response failed — ${err instanceof Error ? err.message : String(err)}`);
         }
         // Processing messages is real work — reset idle counter to avoid premature sleep
@@ -523,7 +535,7 @@ export class LoopOrchestrator implements IMessageInjector {
       );
       const apiCallDurationMs = this.clock.now().getTime() - apiCallStartMs;
       // Best-effort — fire-and-forget so metrics never block the loop
-      this.performanceMetrics?.recordApiCall(apiCallDurationMs, "SUBCONSCIOUS", "execute").catch(() => {});
+      this.performanceMetrics?.recordApiCall(apiCallDurationMs, "SUBCONSCIOUS", "execute").catch(() => { });
 
       const success = taskResult.result === "success";
 
@@ -617,7 +629,7 @@ export class LoopOrchestrator implements IMessageInjector {
       result.action,
       cycleDurationMs,
       result.success,
-    ).catch(() => {});
+    ).catch(() => { });
 
     // Record last cycle diagnostics for health reporting
     this.lastCycleAt = this.clock.now();
@@ -663,6 +675,7 @@ export class LoopOrchestrator implements IMessageInjector {
     }
 
     while (this.state === LoopState.RUNNING) {
+      try {
       // Guard: if still rate limited (timer was woken early), re-sleep for remaining duration
       if (this.rateLimitUntil) {
         const remaining = new Date(this.rateLimitUntil).getTime() - this.clock.now().getTime();
@@ -679,58 +692,38 @@ export class LoopOrchestrator implements IMessageInjector {
 
       const cycleResult = await this.runOneCycle();
 
-      if (this.metrics.consecutiveIdleCycles >= this.config.maxConsecutiveIdleCycles) {
-        if (this.idleHandler) {
-          this.logger.debug(`runLoop: idle threshold reached (${this.metrics.consecutiveIdleCycles}), invoking IdleHandler`);
-          const result = await this.idleHandler.handleIdle((role) => this.createLogCallback(role));
-          this.logger.debug(`runLoop: IdleHandler result: ${result.action} (goalCount: ${result.goalCount ?? 0})`);
-          this.eventSink.emit({
-            type: "idle_handler",
-            timestamp: this.clock.now().toISOString(),
-            data: { action: result.action, goalCount: result.goalCount },
-          });
-          if (result.action === "plan_created") {
-            this.metrics.consecutiveIdleCycles = 0;
-            continue;
-          }
-        }
-        this.logger.debug("runLoop: idle threshold exceeded with no plan created — sleeping");
-        this.enterSleep();
-        break;
-      }
-
-      if (this.state !== LoopState.RUNNING) {
-        this.logger.debug(`runLoop: exiting — state is ${this.state}`);
-        break;
-      }
-
-      // Check for rate limit backoff
+      // Check for rate limit backoff before idle threshold — rate limiting takes priority
+      // so we don't misclassify a rate-limited idle cycle as genuinely idle.
       const rateLimitReset = parseRateLimitReset(cycleResult.summary, this.clock.now());
       if (rateLimitReset) {
-        const waitMs = rateLimitReset.getTime() - this.clock.now().getTime();
-        this.rateLimitUntil = rateLimitReset.toISOString();
-        this.logger.debug(`runLoop: rate limited — backing off ${waitMs}ms until ${this.rateLimitUntil}`);
-        
-        // Save state before hibernation
-        if (this.rateLimitStateManager) {
-          const currentTaskId = cycleResult.action === "dispatch" ? cycleResult.taskId : undefined;
-          await this.rateLimitStateManager.saveStateBeforeSleep(rateLimitReset, currentTaskId);
-          this.logger.debug(`runLoop: state saved for rate limit hibernation`);
-        }
-        
-        this.eventSink.emit({
-          type: "idle",
-          timestamp: this.clock.now().toISOString(),
-          data: { rateLimitUntil: this.rateLimitUntil, waitMs },
-        });
-        await this.timer.delay(waitMs);
-        // Only clear rate limit if the backoff period has actually elapsed.
-        // timer.wake() can resolve early (e.g. from Agora messages or watchdog),
-        // and we must NOT clear the rate limit prematurely or we'll waste API calls.
-        if (this.rateLimitUntil && new Date(this.rateLimitUntil).getTime() <= this.clock.now().getTime()) {
-          this.rateLimitUntil = null;
-        }
+        const currentTaskId = cycleResult.action === "dispatch" ? cycleResult.taskId : undefined;
+        await this.applyRateLimitBackoff(rateLimitReset, currentTaskId);
       } else {
+        if (this.metrics.consecutiveIdleCycles >= this.config.maxConsecutiveIdleCycles) {
+          if (this.idleHandler) {
+            this.logger.debug(`runLoop: idle threshold reached (${this.metrics.consecutiveIdleCycles}), invoking IdleHandler`);
+            const result = await this.idleHandler.handleIdle((role) => this.createLogCallback(role));
+            this.logger.debug(`runLoop: IdleHandler result: ${result.action} (goalCount: ${result.goalCount ?? 0})`);
+            this.eventSink.emit({
+              type: "idle_handler",
+              timestamp: this.clock.now().toISOString(),
+              data: { action: result.action, goalCount: result.goalCount },
+            });
+            if (result.action === "plan_created") {
+              this.metrics.consecutiveIdleCycles = 0;
+              continue;
+            }
+          }
+          this.logger.debug("runLoop: idle threshold exceeded with no plan created — sleeping");
+          this.enterSleep();
+          break;
+        }
+
+        if (this.state !== LoopState.RUNNING) {
+          this.logger.debug(`runLoop: exiting — state is ${this.state}`);
+          break;
+        }
+
         // Skip the inter-cycle delay when messages are already waiting — process them immediately.
         if (this.pendingMessages.length > 0) {
           this.logger.debug("runLoop: pending messages detected, skipping cycle delay");
@@ -738,6 +731,13 @@ export class LoopOrchestrator implements IMessageInjector {
           this.logger.debug(`runLoop: delaying ${this.config.cycleDelayMs}ms before next cycle`);
           await this.timer.delay(this.config.cycleDelayMs);
         }
+      }
+      } catch (err) {
+        if (!(err instanceof RateLimitError)) throw err;
+        // Rate limit thrown from a non-dispatch path (idle handler, message response, etc.)
+        const rateLimitReset = parseRateLimitReset(err.message, this.clock.now())
+          ?? new Date(this.clock.now().getTime() + 60 * 60 * 1000);
+        await this.applyRateLimitBackoff(rateLimitReset, undefined);
       }
     }
     // Drain any remaining deferred work before exiting
@@ -751,6 +751,10 @@ export class LoopOrchestrator implements IMessageInjector {
   }): void {
     this.tickPromptBuilder = deps.tickPromptBuilder;
     this.sdkSessionFactory = deps.sdkSessionFactory;
+  }
+
+  setBeforeCycleHook(hook: (() => Promise<void>) | null): void {
+    this.beforeCycleHook = hook;
   }
 
   async runOneTick(): Promise<TickResult> {
@@ -935,7 +939,7 @@ export class LoopOrchestrator implements IMessageInjector {
 
     this.logger.debug("handleUserMessage: starting new conversation session");
     this.conversationSessionActive = true;
-    
+
     const sessionPromise = (async () => {
       let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
       try {
@@ -946,11 +950,11 @@ export class LoopOrchestrator implements IMessageInjector {
         const maxDuration = this.conversationSessionMaxDurationMs;
         const timeoutPromise: Promise<never> | null = maxDuration > 0
           ? new Promise<never>((_, reject) => {
-              timeoutHandle = setTimeout(
-                () => reject(new Error(`Conversation session exceeded max duration (${maxDuration}ms)`)),
-                maxDuration
-              );
-            })
+            timeoutHandle = setTimeout(
+              () => reject(new Error(`Conversation session exceeded max duration (${maxDuration}ms)`)),
+              maxDuration
+            );
+          })
           : null;
 
         for (const msg of messagesToProcess) {
@@ -1044,6 +1048,33 @@ export class LoopOrchestrator implements IMessageInjector {
     this.onSleepEnter?.().catch((err) => {
       this.logger.debug(`enterSleep: onSleepEnter failed — ${err instanceof Error ? err.message : String(err)}`);
     });
+  }
+
+  /**
+   * Applies a rate limit backoff: sets rateLimitUntil, saves hibernation state,
+   * emits the idle event, and waits. Used by both the summary-based detection
+   * path (dispatch cycle) and the thrown-RateLimitError path (idle handler, Ego).
+   */
+  private async applyRateLimitBackoff(rateLimitReset: Date, taskId: string | undefined): Promise<void> {
+    const waitMs = rateLimitReset.getTime() - this.clock.now().getTime();
+    this.rateLimitUntil = rateLimitReset.toISOString();
+    this.logger.debug(`runLoop: rate limited — backing off ${waitMs}ms until ${this.rateLimitUntil}`);
+
+    if (this.rateLimitStateManager) {
+      await this.rateLimitStateManager.saveStateBeforeSleep(rateLimitReset, taskId);
+      this.logger.debug("runLoop: state saved for rate limit hibernation");
+    }
+
+    this.eventSink.emit({
+      type: "idle",
+      timestamp: this.clock.now().toISOString(),
+      data: { rateLimitUntil: this.rateLimitUntil, waitMs },
+    });
+    await this.timer.delay(waitMs);
+    // Only clear after the backoff period has elapsed — timer.wake() can resolve early.
+    if (this.rateLimitUntil && new Date(this.rateLimitUntil).getTime() <= this.clock.now().getTime()) {
+      this.rateLimitUntil = null;
+    }
   }
 
   private createLogCallback(role: string, source: "cycle" | "conversation" = "cycle"): (entry: ProcessLogEntry) => void {
@@ -1163,17 +1194,17 @@ export class LoopOrchestrator implements IMessageInjector {
 
         const result = shouldReplyToUnknown
           ? await this.agoraService.replyToEnvelope({
-              targetPubkey: peerRef,
-              type: "publish",
-              payload: { text: reply.text },
-              inReplyTo: reply.inReplyTo!,
-            })
+            targetPubkey: peerRef,
+            type: "publish",
+            payload: { text: reply.text },
+            inReplyTo: reply.inReplyTo!,
+          })
           : await this.agoraService.sendMessage({
-              peerName: peerRef,
-              type: "publish",
-              payload: { text: reply.text },
-              inReplyTo: reply.inReplyTo,
-            });
+            peerName: peerRef,
+            type: "publish",
+            payload: { text: reply.text },
+            inReplyTo: reply.inReplyTo,
+          });
 
         if (result.ok) {
           this.logger.debug(`agoraReplies: sent to ${peerRef} (status=${result.status})`);

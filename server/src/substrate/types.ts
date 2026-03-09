@@ -1,4 +1,5 @@
 export enum SubstrateFileType {
+  BOUNDARIES = "BOUNDARIES",
   PLAN = "PLAN",
   MEMORY = "MEMORY",
   HABITS = "HABITS",
@@ -33,6 +34,7 @@ export interface SubstrateFileSpec {
 }
 
 export const SUBSTRATE_FILE_SPECS: Record<SubstrateFileType, SubstrateFileSpec> = {
+  [SubstrateFileType.BOUNDARIES]: { fileName: "BOUNDARIES.md", writeMode: WriteMode.OVERWRITE, required: false },
   [SubstrateFileType.PLAN]: { fileName: "PLAN.md", writeMode: WriteMode.OVERWRITE, required: true },
   [SubstrateFileType.MEMORY]: { fileName: "MEMORY.md", writeMode: WriteMode.OVERWRITE, required: true },
   [SubstrateFileType.HABITS]: { fileName: "HABITS.md", writeMode: WriteMode.OVERWRITE, required: true },

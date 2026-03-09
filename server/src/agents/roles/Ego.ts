@@ -12,6 +12,8 @@ import { extractJson } from "../parsers/extractJson";
 import { AgentRole } from "../types";
 import { TaskClassifier } from "../TaskClassifier";
 import { AgoraReply } from "./Subconscious";
+import { RateLimitError } from "../../loop/RateLimitError";
+import { isRateLimitText } from "../../loop/rateLimitParser";
 
 export interface EgoDecision {
   action: "dispatch" | "update_plan" | "converse" | "idle";
@@ -180,6 +182,7 @@ export class Ego {
       await this.appendConversation(response);
       return response;
     }
+    if (isRateLimitText(result.error)) throw new RateLimitError(result.error!);
     return null;
   }
 

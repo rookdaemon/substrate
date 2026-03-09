@@ -37,6 +37,7 @@ import { buildPeerReferenceDirectory } from "../agora/utils";
 import { FlashGate } from "../gates/FlashGate";
 import { FileWatcher } from "../substrate/watcher/FileWatcher";
 import { SubstrateFileType } from "../substrate/types";
+import { PeerAvailabilityMonitor } from "./PeerAvailabilityMonitor";
 import { CodeDispatcher } from "../code-dispatch/CodeDispatcher";
 import { ClaudeCliBackend } from "../code-dispatch/ClaudeCliBackend";
 import { CopilotBackend } from "../code-dispatch/CopilotBackend";
@@ -256,9 +257,53 @@ export async function createLoopLayer(
   );
   tinyBus.registerProvider(conversationProvider);
 
+  // Create PeerAvailabilityMonitor if peer config is provided
+  const monitoredPeers: Array<{ peerId: string; apiStatusUrl: string }> = [];
+
+  // Prefer Agora peer config URLs and derive /api/loop/status from each peer's webhook URL.
+  const agoraPeers = (agoraConfig as { peers?: unknown } | null)?.peers;
+  if (agoraPeers && typeof agoraPeers === "object") {
+    const entries = agoraPeers instanceof Map
+      ? Array.from(agoraPeers.entries())
+      : Object.entries(agoraPeers as Record<string, unknown>);
+    for (const [peerId, value] of entries) {
+      const url = (value as { url?: unknown } | undefined)?.url;
+      if (typeof url !== "string") {
+        continue;
+      }
+      const statusUrl = deriveApiStatusUrl(url);
+      if (!statusUrl) {
+        logger.debug(`[PEER-MONITOR] Skipping peer ${peerId}: invalid URL in Agora config (${url})`);
+        continue;
+      }
+      monitoredPeers.push({ peerId, apiStatusUrl: statusUrl });
+    }
+  }
+
+  // Backward compatibility: allow app-level peers when Agora config is unavailable.
+  if (monitoredPeers.length === 0 && config.peers && config.peers.length > 0) {
+    for (const peer of config.peers) {
+      monitoredPeers.push({
+        peerId: peer.name,
+        apiStatusUrl: `http://localhost:${peer.port}/api/loop/status`,
+      });
+    }
+  }
+
+  const peerMonitor = monitoredPeers.length > 0
+    ? new PeerAvailabilityMonitor(monitoredPeers, orchestrator, logger)
+    : null;
+  if (peerMonitor) {
+    orchestrator.setBeforeCycleHook(() => peerMonitor.scanAll(clock.now()));
+  }
+
   // 4. Agora outbound provider - handles outbound agora.send messages (if configured)
   if (agoraService) {
-    agoraOutboundProvider = new AgoraOutboundProvider(agoraService, logger, agoraMessageHandler?.getSeenKeyStore());
+    agoraOutboundProvider = new AgoraOutboundProvider(
+      agoraService,
+      logger,
+      agoraMessageHandler?.getSeenKeyStore(),
+    );
     tinyBus.registerProvider(agoraOutboundProvider);
   }
 
@@ -769,4 +814,16 @@ export async function createLoopLayer(
   }
 
   return { orchestrator, httpServer, wsServer, fileWatcher, tinyBus, mode };
+}
+
+function deriveApiStatusUrl(peerWebhookUrl: string): string | null {
+  try {
+    const parsed = new URL(peerWebhookUrl);
+    parsed.pathname = "/api/loop/status";
+    parsed.search = "";
+    parsed.hash = "";
+    return parsed.toString();
+  } catch {
+    return null;
+  }
 }

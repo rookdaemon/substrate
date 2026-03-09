@@ -139,6 +139,7 @@ export async function startServer(config: AppConfig, options?: StartServerOption
     ollamaOffload: config.ollamaOffload,
     vertexKeyPath: config.vertexKeyPath,
     vertexModel: config.vertexModel,
+    peers: config.peers,
   });
   appForCleanup = app;
 

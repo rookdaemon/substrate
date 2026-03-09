@@ -77,4 +77,13 @@ describe("parseRateLimitReset", () => {
     );
     expect(result).toEqual(new Date("2026-02-09T17:00:00Z"));
   });
+
+  it("returns 1-hour fallback when resetsAt is unknown", () => {
+    const now = new Date("2026-02-09T18:30:00Z");
+    const result = parseRateLimitReset(
+      "You've hit your limit · rate limited",
+      now,
+    );
+    expect(result).toEqual(new Date("2026-02-09T19:30:00Z"));
+  });
 });

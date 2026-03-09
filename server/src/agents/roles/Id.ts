@@ -9,6 +9,8 @@ import { extractJson } from "../parsers/extractJson";
 import { AgentRole, generateCorrelationId } from "../types";
 import { TaskClassifier } from "../TaskClassifier";
 import { DriveQualityTracker } from "../../evaluation/DriveQualityTracker";
+import { RateLimitError } from "../../loop/RateLimitError";
+import { isRateLimitText } from "../../loop/rateLimitParser";
 
 export interface GoalCandidate {
   title: string;
@@ -78,7 +80,10 @@ export class Id {
         message,
       }, { model, onLogEntry, cwd: this.workingDirectory, continueSession: true, persistSession: true });
 
-      if (!result.success) return [];
+      if (!result.success) {
+        if (isRateLimitText(result.error)) throw new RateLimitError(result.error!);
+        return [];
+      }
 
       const parsed = extractJson(result.rawOutput);
       if (!Array.isArray(parsed.goalCandidates)) return [];
@@ -87,7 +92,8 @@ export class Id {
         ...c,
         correlationId: generateCorrelationId(),
       }));
-    } catch {
+    } catch (err) {
+      if (err instanceof RateLimitError) throw err;
       return [];  // Id silently returns empty — errors surface through other agents
     }
   }

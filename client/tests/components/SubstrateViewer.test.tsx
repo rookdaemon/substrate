@@ -7,14 +7,14 @@ describe("SubstrateViewer", () => {
     vi.restoreAllMocks();
   });
 
-  it("renders dropdown with all 12 file types", () => {
+  it("renders dropdown with all 13 file types", () => {
     render(<SubstrateViewer />);
 
     const select = screen.getByTestId("substrate-select");
     expect(select).toBeInTheDocument();
 
     const options = select.querySelectorAll("option");
-    expect(options).toHaveLength(12);
+    expect(options).toHaveLength(13);
   });
 
   it("defaults to PLAN selection", () => {

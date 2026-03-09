@@ -17,6 +17,7 @@ import {
 } from "./templates";
 
 const TEMPLATE_MAP: Record<SubstrateFileType, string> = {
+  [SubstrateFileType.BOUNDARIES]: "# Boundaries\n\nOperational boundaries and constraints for this agent.\n",
   [SubstrateFileType.PLAN]: PLAN_TEMPLATE,
   [SubstrateFileType.MEMORY]: MEMORY_TEMPLATE,
   [SubstrateFileType.HABITS]: HABITS_TEMPLATE,

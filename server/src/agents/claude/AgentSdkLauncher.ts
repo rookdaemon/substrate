@@ -49,11 +49,22 @@ export interface SdkSystemMessage {
   claude_code_version: string;
 }
 
+export interface SdkRateLimitInfo {
+  status: "allowed" | "allowed_warning" | "rejected";
+  resetsAt?: number;
+}
+
+export interface SdkRateLimitEvent {
+  type: "rate_limit_event";
+  rate_limit_info: SdkRateLimitInfo;
+}
+
 export type SdkMessage =
   | SdkAssistantMessage
   | SdkResultSuccess
   | SdkResultError
   | SdkSystemMessage
+  | SdkRateLimitEvent
   | { type: string };
 
 export type SdkQueryFn = (params: {
@@ -173,6 +184,7 @@ export class AgentSdkLauncher implements ISessionLauncher {
     let resultOutput: string | null = null;
     let isError = false;
     let errorMessage: string | undefined;
+    let rateLimitText: string | null = null;
 
     const timeoutMs = options?.timeoutMs ?? DEFAULT_SESSION_TIMEOUT_MS;
     const idleTimeoutMs = options?.idleTimeoutMs;
@@ -238,6 +250,24 @@ export class AgentSdkLauncher implements ISessionLauncher {
                 isError = true;
                 const errMsg = resultMsg as SdkResultError;
                 errorMessage = errMsg.errors?.join("; ") ?? resultMsg.subtype;
+                // If a rate_limit_event was already received, prefer its text so
+                // the orchestrator's parseRateLimitReset can detect and handle it.
+                if (rateLimitText) {
+                  errorMessage = rateLimitText;
+                }
+              }
+            }
+
+            if (msg.type === "rate_limit_event") {
+              const evt = msg as SdkRateLimitEvent;
+              if (evt.rate_limit_info.status === "rejected") {
+                rateLimitText = buildRateLimitText(evt.rate_limit_info.resetsAt);
+                accumulatedText += `\n${rateLimitText}`;
+                // Set error immediately so the rate limit text is in result.error
+                // regardless of whether the result message arrived before or after.
+                isError = true;
+                errorMessage = rateLimitText;
+                this.logger.debug(`sdk-launch: rate limited — resetsAt=${evt.rate_limit_info.resetsAt ?? "unknown"}`);
               }
             }
           }
@@ -253,6 +283,11 @@ export class AgentSdkLauncher implements ISessionLauncher {
     } catch (err) {
       isError = true;
       errorMessage = err instanceof Error ? err.message : String(err);
+      // If a rate limit rejection was received before the process exited,
+      // use the rate limit text so the orchestrator can detect and parse it.
+      if (rateLimitText) {
+        errorMessage = rateLimitText;
+      }
       this.logger.debug(`sdk-launch: error — ${errorMessage}`);
       
       // If idle timeout or error, mark PID as abandoned for cleanup
@@ -403,4 +438,23 @@ export class AgentSdkLauncher implements ISessionLauncher {
         return { type: "status", content: block.type ?? "unknown_block" };
     }
   }
+}
+
+const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/**
+ * Builds a rate limit text string from a Unix timestamp (in seconds).
+ * Matches the format expected by parseRateLimitReset: "resets Feb 14, 10am (UTC)".
+ */
+export function buildRateLimitText(resetsAtSeconds: number | undefined): string {
+  if (!resetsAtSeconds) {
+    return "You've hit your limit · rate limited";
+  }
+  const d = new Date(resetsAtSeconds * 1000);
+  const month = MONTH_NAMES[d.getUTCMonth()];
+  const day = d.getUTCDate();
+  const h = d.getUTCHours();
+  const ampm = h >= 12 ? "pm" : "am";
+  const displayH = h % 12 || 12;
+  return `You've hit your limit · resets ${month} ${day}, ${displayH}${ampm} (UTC)`;
 }

@@ -10,6 +10,8 @@ import { extractJson } from "../parsers/extractJson";
 import { AgentRole } from "../types";
 import { TaskClassifier } from "../TaskClassifier";
 import { SuperegoFindingTracker } from "./SuperegoFindingTracker";
+import { RateLimitError } from "../../loop/RateLimitError";
+import { isRateLimitText } from "../../loop/rateLimitParser";
 
 export interface Finding {
   severity: "info" | "warning" | "critical";
@@ -124,6 +126,7 @@ export class Superego {
       }, { model, onLogEntry, cwd: this.workingDirectory, continueSession: true, persistSession: true });
 
       if (!result.success) {
+        if (isRateLimitText(result.error)) throw new RateLimitError(result.error!);
         return proposals.map(() => ({
           approved: false,
           reason: `Evaluation failed: ${result.error || "Claude session error"}`,
@@ -136,6 +139,7 @@ export class Superego {
         reason: "No evaluation returned",
       }));
     } catch (err) {
+      if (err instanceof RateLimitError) throw err;
       const msg = err instanceof Error ? err.message : String(err);
       return proposals.map(() => ({
         approved: false,

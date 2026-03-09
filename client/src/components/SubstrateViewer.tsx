@@ -3,9 +3,9 @@ import { apiGet } from "../hooks/useApi";
 import { LoopEvent } from "../hooks/useWebSocket";
 
 const FILE_TYPES = [
-  "PLAN", "MEMORY", "HABITS", "SKILLS", "VALUES",
-  "ID", "SECURITY", "CHARTER", "SUPEREGO", "CLAUDE",
-  "PROGRESS", "CONVERSATION",
+  "BOUNDARIES", "CHARTER", "CLAUDE", "CONVERSATION",
+  "HABITS", "ID", "MEMORY", "PLAN", "PROGRESS",
+  "SECURITY", "SKILLS", "SUPEREGO", "VALUES",
 ];
 
 interface SubstrateContent {
