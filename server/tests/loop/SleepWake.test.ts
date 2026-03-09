@@ -2,6 +2,7 @@ import { LoopOrchestrator } from "../../src/loop/LoopOrchestrator";
 import { IdleHandler } from "../../src/loop/IdleHandler";
 import { InMemoryEventSink } from "../../src/loop/InMemoryEventSink";
 import { ImmediateTimer } from "../../src/loop/ImmediateTimer";
+import { ITimer } from "../../src/loop/ITimer";
 import { LoopState, defaultLoopConfig } from "../../src/loop/types";
 import { InMemoryLogger } from "../../src/logging";
 import { Ego } from "../../src/agents/roles/Ego";
@@ -21,6 +22,16 @@ import { PromptBuilder } from "../../src/agents/prompts/PromptBuilder";
 import { TaskClassifier } from "../../src/agents/TaskClassifier";
 import { ConversationManager } from "../../src/conversation/ConversationManager";
 import { IConversationCompactor } from "../../src/conversation/IConversationCompactor";
+
+/** Timer that advances the injected clock by the requested delay amount, so rate-limit
+ *  expiration checks behave correctly in tests without spinning in a real timer loop. */
+class ClockAdvancingTimer implements ITimer {
+  constructor(private readonly clock: FixedClock) {}
+  async delay(ms: number): Promise<void> {
+    this.clock.advance(ms);
+  }
+  wake(): void {}
+}
 
 class MockCompactor implements IConversationCompactor {
   async compact(_currentContent: string, _oneHourAgo: string): Promise<string> {
@@ -56,6 +67,22 @@ function createDeps() {
 async function setupIdleSubstrate(fs: InMemoryFileSystem) {
   await fs.mkdir("/substrate", { recursive: true });
   await fs.writeFile("/substrate/PLAN.md", "# Plan\n\n## Current Goal\nDone\n\n## Tasks\n- [x] Task A");
+  await fs.writeFile("/substrate/MEMORY.md", "# Memory\n\nSome memories");
+  await fs.writeFile("/substrate/HABITS.md", "# Habits\n\nSome habits");
+  await fs.writeFile("/substrate/SKILLS.md", "# Skills\n\nSome skills");
+  await fs.writeFile("/substrate/VALUES.md", "# Values\n\nBe good");
+  await fs.writeFile("/substrate/ID.md", "# Id\n\nCore identity");
+  await fs.writeFile("/substrate/SECURITY.md", "# Security\n\nStay safe");
+  await fs.writeFile("/substrate/CHARTER.md", "# Charter\n\nOur mission");
+  await fs.writeFile("/substrate/SUPEREGO.md", "# Superego\n\nRules here");
+  await fs.writeFile("/substrate/CLAUDE.md", "# Claude\n\nConfig here");
+  await fs.writeFile("/substrate/PROGRESS.md", "# Progress\n\n");
+  await fs.writeFile("/substrate/CONVERSATION.md", "# Conversation\n\n");
+}
+
+async function setupActiveTaskSubstrate(fs: InMemoryFileSystem) {
+  await fs.mkdir("/substrate", { recursive: true });
+  await fs.writeFile("/substrate/PLAN.md", "# Plan\n\n## Current Goal\nTest\n\n## Tasks\n- [ ] Task A");
   await fs.writeFile("/substrate/MEMORY.md", "# Memory\n\nSome memories");
   await fs.writeFile("/substrate/HABITS.md", "# Habits\n\nSome habits");
   await fs.writeFile("/substrate/SKILLS.md", "# Skills\n\nSome skills");
@@ -344,5 +371,66 @@ describe("LoopOrchestrator: handleUserMessage wakes sleeping loop", () => {
     await orchestrator.handleUserMessage("Hello!");
     expect(orchestrator.getState()).toBe(LoopState.RUNNING);
     expect(resumeLoopCalled).toBe(true);
+  });
+});
+
+describe("LoopOrchestrator: rate limit priority over idle threshold", () => {
+  it("rate limit backoff takes priority over idle threshold — loop backs off instead of sleeping immediately", async () => {
+    const deps = createDeps();
+    // Clock at 10am UTC; rate limit text "resets 7pm (UTC)" resolves to 19:00 UTC (9 hours later)
+    deps.clock.setNow(new Date("2025-06-15T10:00:00.000Z"));
+    await setupActiveTaskSubstrate(deps.fs);
+
+    const logger = new InMemoryLogger();
+    const eventSink = new InMemoryEventSink();
+    // maxConsecutiveIdleCycles=0 means the idle check fires after every cycle (consecutiveIdleCycles
+    // starts at 0, and 0 >= 0 is always true).  In the old ordering this caused the loop to sleep
+    // even when a rate-limit message was present in the cycle result; the new ordering checks rate
+    // limit first so the backoff is honored before the idle threshold is evaluated.
+    const config = defaultLoopConfig({ maxConsecutiveIdleCycles: 0, idleSleepEnabled: true });
+    // Use a timer that advances the clock so rate-limit expiry checks resolve correctly.
+    const timer = new ClockAdvancingTimer(deps.clock);
+
+    const orchestrator = new LoopOrchestrator(
+      deps.ego, deps.subconscious, deps.superego, deps.id,
+      deps.appendWriter, deps.clock, timer, eventSink,
+      config, logger
+    );
+
+    // Cycle 1: task dispatch fails with a rate-limit message.
+    deps.launcher.enqueueFailure("You've hit your limit · resets 7pm (UTC)");
+    // Cycle 2 (after backoff): task dispatch succeeds — allows the loop to exit cleanly via the
+    // idle threshold (success resets consecutiveIdleCycles to 0, which still >= 0, so SLEEPING).
+    deps.launcher.enqueueSuccess(JSON.stringify({
+      result: "success",
+      summary: "Done",
+      progressEntry: "",
+      skillUpdates: null,
+      memoryUpdates: null,
+      proposals: [],
+      agoraReplies: [],
+    }));
+
+    orchestrator.start();
+    await orchestrator.runLoop();
+
+    // Loop should have backed off for the rate limit then entered SLEEPING via idle threshold.
+    expect(orchestrator.getState()).toBe(LoopState.SLEEPING);
+
+    const events = eventSink.getEvents();
+
+    // A rate-limit "idle" event must have been emitted.
+    const rateLimitEvent = events.find(
+      (e) => e.type === "idle" && e.data.rateLimitUntil !== undefined
+    );
+    expect(rateLimitEvent).toBeDefined();
+
+    // The rate-limit event must precede the SLEEPING state change — confirming that the backoff
+    // ran before the loop transitioned to sleep.
+    const sleepEvent = events.find(
+      (e) => e.type === "state_changed" && e.data.to === LoopState.SLEEPING
+    );
+    expect(sleepEvent).toBeDefined();
+    expect(events.indexOf(rateLimitEvent!)).toBeLessThan(events.indexOf(sleepEvent!));
   });
 });

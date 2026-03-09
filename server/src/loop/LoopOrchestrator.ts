@@ -689,32 +689,8 @@ export class LoopOrchestrator implements IMessageInjector {
 
       const cycleResult = await this.runOneCycle();
 
-      if (this.metrics.consecutiveIdleCycles >= this.config.maxConsecutiveIdleCycles) {
-        if (this.idleHandler) {
-          this.logger.debug(`runLoop: idle threshold reached (${this.metrics.consecutiveIdleCycles}), invoking IdleHandler`);
-          const result = await this.idleHandler.handleIdle((role) => this.createLogCallback(role));
-          this.logger.debug(`runLoop: IdleHandler result: ${result.action} (goalCount: ${result.goalCount ?? 0})`);
-          this.eventSink.emit({
-            type: "idle_handler",
-            timestamp: this.clock.now().toISOString(),
-            data: { action: result.action, goalCount: result.goalCount },
-          });
-          if (result.action === "plan_created") {
-            this.metrics.consecutiveIdleCycles = 0;
-            continue;
-          }
-        }
-        this.logger.debug("runLoop: idle threshold exceeded with no plan created — sleeping");
-        this.enterSleep();
-        break;
-      }
-
-      if (this.state !== LoopState.RUNNING) {
-        this.logger.debug(`runLoop: exiting — state is ${this.state}`);
-        break;
-      }
-
-      // Check for rate limit backoff
+      // Check for rate limit backoff before idle threshold — rate limiting takes priority
+      // so we don't misclassify a rate-limited idle cycle as genuinely idle.
       const rateLimitReset = parseRateLimitReset(cycleResult.summary, this.clock.now());
       if (rateLimitReset) {
         const waitMs = rateLimitReset.getTime() - this.clock.now().getTime();
@@ -741,6 +717,31 @@ export class LoopOrchestrator implements IMessageInjector {
           this.rateLimitUntil = null;
         }
       } else {
+        if (this.metrics.consecutiveIdleCycles >= this.config.maxConsecutiveIdleCycles) {
+          if (this.idleHandler) {
+            this.logger.debug(`runLoop: idle threshold reached (${this.metrics.consecutiveIdleCycles}), invoking IdleHandler`);
+            const result = await this.idleHandler.handleIdle((role) => this.createLogCallback(role));
+            this.logger.debug(`runLoop: IdleHandler result: ${result.action} (goalCount: ${result.goalCount ?? 0})`);
+            this.eventSink.emit({
+              type: "idle_handler",
+              timestamp: this.clock.now().toISOString(),
+              data: { action: result.action, goalCount: result.goalCount },
+            });
+            if (result.action === "plan_created") {
+              this.metrics.consecutiveIdleCycles = 0;
+              continue;
+            }
+          }
+          this.logger.debug("runLoop: idle threshold exceeded with no plan created — sleeping");
+          this.enterSleep();
+          break;
+        }
+
+        if (this.state !== LoopState.RUNNING) {
+          this.logger.debug(`runLoop: exiting — state is ${this.state}`);
+          break;
+        }
+
         // Skip the inter-cycle delay when messages are already waiting — process them immediately.
         if (this.pendingMessages.length > 0) {
           this.logger.debug("runLoop: pending messages detected, skipping cycle delay");
