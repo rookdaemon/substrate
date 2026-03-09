@@ -104,6 +104,12 @@ export interface ApplicationConfig {
     /** Milliseconds after stall reminder before force-restarting the process (default: 600000 — 10 min). Set to 0 to disable force-restart. */
     forceRestartThresholdMs?: number;
   };
+  /**
+   * Peer substrate instances to monitor for rate-limit availability.
+   * On startup and on first failed contact, the monitor polls each peer's
+   * /api/loop/status endpoint and injects a [PEER STATUS] note into the session.
+   */
+  peers?: Array<{ name: string; port: number }>;
 }
 
 export interface Application {
