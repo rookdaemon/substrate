@@ -12,6 +12,7 @@ import type { IFlashGate, F2GateInput, F2GateResult, FlashGateResult } from "../
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { PeerRateLimitStore } from "../../src/agora/PeerRateLimitStore";
 
 // Mock implementations
 class MockConversationManager implements IConversationManager {
@@ -1628,6 +1629,107 @@ describe("AgoraMessageHandler", () => {
       // Message should be processed normally
       expect(injector.injectedMessages).toHaveLength(1);
       expect(conversationMgr.appendedEntries).toHaveLength(1);
+    });
+  });
+
+  describe("peer rate-limit detection", () => {
+    let tmpDir: string;
+    let storePath: string;
+    let peerClock: MockClock;
+
+    beforeEach(() => {
+      tmpDir = mkdtempSync(join(tmpdir(), "peer-rl-amh-"));
+      storePath = join(tmpDir, ".peer-rate-limit-state");
+      peerClock = new MockClock(new Date("2026-03-09T10:00:00Z"));
+    });
+
+    afterEach(() => {
+      rmSync(tmpDir, { recursive: true, force: true });
+    });
+
+    function makeHandlerWithStore(store: PeerRateLimitStore): AgoraMessageHandler {
+      const svc = new MockAgoraService();
+      svc.addPeer("test-peer", testEnvelope.from);
+      return new AgoraMessageHandler(
+        svc,
+        new MockConversationManager(),
+        new MockMessageInjector(),
+        null,
+        peerClock,
+        () => LoopState.RUNNING,
+        () => false,
+        new MockLogger(),
+        'quarantine',
+        defaultRateLimitConfig,
+        null,
+        null,
+        null,
+        null,
+        store,
+      );
+    }
+
+    it("records peer rate limit when payload contains peerStatus.rateLimitedUntil", async () => {
+      const store = new PeerRateLimitStore(storePath, peerClock);
+      const h = makeHandlerWithStore(store);
+
+      const until = "2026-03-09T11:00:00Z";
+      const envelope: Envelope = {
+        ...testEnvelope,
+        payload: { text: "I'm rate limited", peerStatus: { rateLimitedUntil: until } },
+      };
+      await h.processEnvelope(envelope, "webhook");
+
+      const active = store.getActive();
+      expect(active).toHaveLength(1);
+      expect(active[0].identity).toBe("test-peer@cdefabcd");
+      expect(new Date(active[0].rateLimitUntil).getTime()).toBe(new Date(until).getTime());
+    });
+
+    it("does nothing when payload has no peerStatus field", async () => {
+      const store = new PeerRateLimitStore(storePath, peerClock);
+      const h = makeHandlerWithStore(store);
+
+      await h.processEnvelope({ ...testEnvelope, payload: { text: "hello" } }, "webhook");
+
+      expect(store.getActive()).toHaveLength(0);
+    });
+
+    it("does nothing when peerStatus.rateLimitedUntil is not a valid date", async () => {
+      const store = new PeerRateLimitStore(storePath, peerClock);
+      const h = makeHandlerWithStore(store);
+
+      const envelope: Envelope = {
+        ...testEnvelope,
+        payload: { peerStatus: { rateLimitedUntil: "not-a-date" } },
+      };
+      await h.processEnvelope(envelope, "webhook");
+
+      expect(store.getActive()).toHaveLength(0);
+    });
+
+    it("does nothing when no store is configured", async () => {
+      // Handler with no peerRateLimitStore — should not throw
+      const svc = new MockAgoraService();
+      svc.addPeer("test-peer", testEnvelope.from);
+      const h = new AgoraMessageHandler(
+        svc,
+        new MockConversationManager(),
+        new MockMessageInjector(),
+        null,
+        peerClock,
+        () => LoopState.RUNNING,
+        () => false,
+        new MockLogger(),
+        'quarantine',
+        defaultRateLimitConfig,
+      );
+
+      const envelope: Envelope = {
+        ...testEnvelope,
+        payload: { peerStatus: { rateLimitedUntil: "2026-03-09T11:00:00Z" } },
+      };
+      await expect(h.processEnvelope(envelope, "webhook")).resolves.not.toThrow();
     });
   });
 });

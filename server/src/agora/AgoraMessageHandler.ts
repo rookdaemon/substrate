@@ -11,6 +11,7 @@ import type { Envelope } from "@rookdaemon/agora" with { "resolution-mode": "imp
 import type { ILogger } from "../logging";
 import { createHash } from "crypto";
 import type { IFlashGate, EnvelopeSummary } from "../gates/IFlashGate";
+import type { PeerRateLimitStore } from "./PeerRateLimitStore";
 
 /**
  * Sliding window state for per-sender rate limiting
@@ -98,6 +99,7 @@ export class AgoraMessageHandler {
     private readonly ignoredPeersPath: string | null = null,
     private readonly seenKeysPath: string | null = null,
     private readonly flashGate: IFlashGate | null = null,
+    private readonly peerRateLimitStore: PeerRateLimitStore | null = null,
   ) {
     if (this.ignoredPeersPath) {
       try {
@@ -540,6 +542,9 @@ export class AgoraMessageHandler {
       throw err;
     }
 
+    // Record peer rate limit status if the payload signals one.
+    this.recordPeerRateLimitIfPresent(senderIdentity, envelope.payload);
+
     // Determine if we should add [UNPROCESSED] marker.
     // Mark as unprocessed when:
     // - message was NOT delivered to an active session (between cycles or between ticks), OR
@@ -595,6 +600,34 @@ export class AgoraMessageHandler {
     // Cache this envelope for future inReplyTo context lookups.
     // Stored after successful processing so the cache only contains legitimate messages.
     this.cacheEnvelope(envelope.id, senderIdentity, envelope.payload);
+  }
+
+  /**
+   * Check whether the payload contains a structured peer rate-limit signal
+   * (`peerStatus.rateLimitedUntil`) and record it in the store if so.
+   */
+  private recordPeerRateLimitIfPresent(senderIdentity: string, payload: unknown): void {
+    if (!this.peerRateLimitStore) return;
+    const until = this.extractPeerRateLimitUntil(payload);
+    if (!until) return;
+    this.peerRateLimitStore.record(senderIdentity, until);
+    this.logger.debug(`[AGORA] Recorded peer rate limit: ${senderIdentity} until ${until.toISOString()}`);
+  }
+
+  /**
+   * Extract a `rateLimitedUntil` Date from `payload.peerStatus.rateLimitedUntil`.
+   * Returns null if the field is absent or not a valid future-looking ISO string.
+   */
+  private extractPeerRateLimitUntil(payload: unknown): Date | null {
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
+    const obj = payload as Record<string, unknown>;
+    const peerStatus = obj.peerStatus;
+    if (!peerStatus || typeof peerStatus !== "object" || Array.isArray(peerStatus)) return null;
+    const ps = peerStatus as Record<string, unknown>;
+    if (typeof ps.rateLimitedUntil !== "string") return null;
+    const date = new Date(ps.rateLimitedUntil);
+    if (isNaN(date.getTime())) return null;
+    return date;
   }
 
   /**

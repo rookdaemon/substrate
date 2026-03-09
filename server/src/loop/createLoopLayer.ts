@@ -32,6 +32,7 @@ import { ConversationProvider } from "../tinybus/providers/ConversationProvider"
 import { AgoraMessageHandler } from "../agora/AgoraMessageHandler";
 import { AgoraOutboundProvider } from "../agora/AgoraOutboundProvider";
 import { IAgoraService } from "../agora/IAgoraService";
+import { PeerRateLimitStore } from "../agora/PeerRateLimitStore";
 import { buildPeerReferenceDirectory } from "../agora/utils";
 import { FlashGate } from "../gates/FlashGate";
 import { FileWatcher } from "../substrate/watcher/FileWatcher";
@@ -217,6 +218,7 @@ export async function createLoopLayer(
       getIgnoredPeersPath(),
       getSeenKeysPath(),
       flashGate, // F2 gate — null when VertexSessionLauncher is unavailable
+      peerRateLimitStore,
     );
 
     // Connect to relay if configured — handler is already wired via constructor closure above
@@ -368,6 +370,8 @@ export async function createLoopLayer(
 
   const rateLimitStatePath = path.resolve(config.substratePath, "..", ".rate-limit-state");
   const dedupStatePath = path.resolve(config.substratePath, "..", ".agora-dedup-state");
+  const peerRateLimitStatePath = path.resolve(config.substratePath, "..", ".peer-rate-limit-state");
+  const peerRateLimitStore = new PeerRateLimitStore(peerRateLimitStatePath, clock);
 
   orchestrator.setLauncher(launcher);
   // Set shutdown function that closes resources before exiting
@@ -388,6 +392,11 @@ export async function createLoopLayer(
       // Persist rate-limit timestamp so a restarted server honours the remaining backoff
       try {
         await fs.writeFile(rateLimitStatePath, orchestrator.getRateLimitUntil() ?? "");
+      } catch { /* ignore */ }
+
+      // Persist peer rate limit status so session-start scan survives restarts
+      try {
+        await peerRateLimitStore.save();
       } catch { /* ignore */ }
 
       // Persist Agora dedup envelope IDs to prevent replay across restarts
@@ -719,6 +728,22 @@ export async function createLoopLayer(
   } catch {
     // CONVERSATION.md may not exist yet (first run) — skip startup scan
     logger.debug("createApplication: startup scan skipped (CONVERSATION.md not readable)");
+  }
+
+  // Scan peer rate limit store — notify agent if any peer is currently rate-limited.
+  try {
+    await peerRateLimitStore.load();
+    const activePeerRateLimits = peerRateLimitStore.getActive();
+    if (activePeerRateLimits.length > 0) {
+      const lines = activePeerRateLimits
+        .map((r) => `- ${r.identity}: rate-limited until ${r.rateLimitUntil}`)
+        .join("\n");
+      const startupPrompt = `[PEER STATUS] The following peers are currently rate-limited:\n${lines}\n\nBe aware of this when planning any work that requires their involvement.`;
+      orchestrator.queueStartupMessage(startupPrompt);
+      logger.debug(`createLoopLayer: queued peer rate-limit notice for ${activePeerRateLimits.length} peer(s)`);
+    }
+  } catch {
+    logger.debug("createLoopLayer: peer rate-limit scan failed — skipping");
   }
 
   // Restore rate-limit state from before the last shutdown (prevents hammering the API on restart).
