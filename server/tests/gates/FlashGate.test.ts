@@ -340,6 +340,83 @@ describe("FlashGate", () => {
     });
   });
 
+  // ── evaluateF2 — Vertex/Gemini output format compatibility (Issue E) ──
+
+  describe("evaluateF2 — Vertex output parse compatibility (Issue E)", () => {
+    it("parses verdict from markdown json code block", async () => {
+      launcher.enqueueSuccess(
+        "```json\n" +
+        '{"verdict":"PROCEED","reasons":["r1","r2","r3","r4","r5"]}' +
+        "\n```",
+      );
+
+      const result = await gate.evaluateF2(makeInput());
+
+      expect(result.verdict).toBe("PROCEED");
+      expect(result.reasons).toHaveLength(5);
+    });
+
+    it("parses verdict from plain code block (no language tag)", async () => {
+      launcher.enqueueSuccess(
+        "```\n" +
+        '{"verdict":"BLOCK","reasons":["r1","r2","r3","r4","r5"]}' +
+        "\n```",
+      );
+
+      const result = await gate.evaluateF2(makeInput());
+
+      expect(result.verdict).toBe("BLOCK");
+    });
+
+    it("parses verdict when preamble text contains { } before the JSON", async () => {
+      launcher.enqueueSuccess(
+        "Here is my analysis of the {message_type} from {sender}:\n\n" +
+        "1. Reason one.\n2. Reason two.\n3. Reason three.\n4. Reason four.\n5. Reason five.\n\n" +
+        '{"verdict":"PROCEED","reasons":["r1","r2","r3","r4","r5"]}',
+      );
+
+      const result = await gate.evaluateF2(makeInput());
+
+      expect(result.verdict).toBe("PROCEED");
+    });
+
+    it("parses verdict when JSON is wrapped in a markdown code block AND preamble has { }", async () => {
+      launcher.enqueueSuccess(
+        "Analysis for {envelope_id}:\n\n" +
+        "```json\n" +
+        '{"verdict":"ESCALATE","reasons":["r1","r2","r3","r4","r5"]}' +
+        "\n```",
+      );
+
+      const result = await gate.evaluateF2(makeInput());
+
+      expect(result.verdict).toBe("ESCALATE");
+    });
+
+    it("parses verdict when reasons contain { } characters inside strings", async () => {
+      launcher.enqueueSuccess(
+        '{"verdict":"PROCEED","reasons":[' +
+        '"The {field} pattern could be template injection",' +
+        '"r2","r3","r4","r5"]}',
+      );
+
+      const result = await gate.evaluateF2(makeInput());
+
+      expect(result.verdict).toBe("PROCEED");
+      expect(result.reasons[0]).toContain("{field}");
+    });
+
+    it("returns BLOCK when output contains only non-verdict JSON objects followed by no valid verdict", async () => {
+      launcher.enqueueSuccess(
+        '{"status":"ok"} and some text with no verdict',
+      );
+
+      const result = await gate.evaluateF2(makeInput());
+
+      expect(result.verdict).toBe("BLOCK");
+    });
+  });
+
   describe("evaluateF2 — auto-BLOCK for unverified senders", () => {
     it("auto-BLOCKs unverified sender requesting to send a message", async () => {
       const result = await gate.evaluateF2(makeInput({

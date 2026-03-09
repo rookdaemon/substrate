@@ -223,29 +223,104 @@ export class FlashGate implements IFlashGate {
     return IRREVERSIBLE_PATTERNS.some((pattern) => pattern.test(text));
   }
 
+  /**
+   * Extract and parse the JSON verdict from raw model output.
+   *
+   * ## Issue E fix (45% FP rate on Vertex/Gemini output)
+   * The previous greedy `/\{[\s\S]*\}/` regex captured from the FIRST `{`
+   * to the LAST `}`, including any `{...}` references in preamble text
+   * (e.g., `{message_type}`, `{sender}`).  This produced an invalid JSON
+   * string that caused a parse error → BLOCK false-positive.
+   *
+   * The new approach:
+   * 1. Strip markdown code fences and try the inner content first.
+   * 2. Scan the raw string for all top-level JSON objects using a
+   *    string-aware stack scanner (so `{` inside quoted strings is ignored).
+   * 3. Try each candidate in order; return the first one whose `verdict`
+   *    field is a valid FlashGate verdict.
+   */
   private parseResponse(raw: string): F2GateResult {
+    // Strategy 1: extract from markdown code blocks (```json...``` or ```...```)
+    for (const match of raw.matchAll(/```(?:json)?\s*([\s\S]*?)\s*```/g)) {
+      const r = this.tryParseVerdict(match[1].trim());
+      if (r) return r;
+    }
+
+    // Strategy 2: scan for all top-level JSON objects and try each in order.
+    // Using a string-aware scanner so that `{` inside quoted strings is skipped.
+    for (const candidate of this.extractJsonObjects(raw)) {
+      const r = this.tryParseVerdict(candidate);
+      if (r) return r;
+    }
+
+    this.logger.debug("[F2] Parse failure: no JSON object found → BLOCK");
+    return { verdict: "BLOCK", reasons: ["Parse failure: no JSON found"] };
+  }
+
+  /**
+   * Attempt to parse a string as a JSON verdict object.
+   * Returns null if the string is not valid JSON or has no recognisable verdict.
+   */
+  private tryParseVerdict(candidate: string): F2GateResult | null {
     try {
-      const jsonMatch = raw.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) {
-        this.logger.debug("[F2] Parse failure: no JSON object found → BLOCK");
-        return { verdict: "BLOCK", reasons: ["Parse failure: no JSON found"] };
-      }
-
-      const parsed = JSON.parse(jsonMatch[0]) as {
-        verdict?: string;
-        reasons?: unknown[];
-      };
-
+      const parsed = JSON.parse(candidate) as { verdict?: string; reasons?: unknown[] };
+      if (typeof parsed.verdict !== "string") return null;
       const verdict = this.toVerdict(parsed.verdict);
       const reasons = Array.isArray(parsed.reasons)
         ? parsed.reasons.filter((r): r is string => typeof r === "string")
         : [];
-
       return { verdict, reasons };
     } catch {
-      this.logger.debug("[F2] Parse failure: JSON parse error → BLOCK");
-      return { verdict: "BLOCK", reasons: ["Parse failure: invalid JSON"] };
+      return null;
     }
+  }
+
+  /**
+   * Scan `raw` for top-level JSON objects, skipping `{` / `}` that appear
+   * inside quoted strings (handles escape sequences).  Returns all found
+   * objects in document order.
+   */
+  private extractJsonObjects(raw: string): string[] {
+    const objects: string[] = [];
+    let i = 0;
+    while (i < raw.length) {
+      if (raw[i] !== "{") {
+        i++;
+        continue;
+      }
+      // Walk forward tracking brace depth, skipping string contents.
+      let depth = 0;
+      let inString = false;
+      let escape = false;
+      let j = i;
+      while (j < raw.length) {
+        const ch = raw[j];
+        if (escape) {
+          escape = false;
+        } else if (ch === "\\" && inString) {
+          escape = true;
+        } else if (ch === '"') {
+          inString = !inString;
+        } else if (!inString) {
+          if (ch === "{") depth++;
+          else if (ch === "}") {
+            depth--;
+            if (depth === 0) {
+              objects.push(raw.slice(i, j + 1));
+              i = j + 1;
+              break;
+            }
+          }
+        }
+        j++;
+      }
+      if (depth > 0) {
+        // Unmatched opening brace — skip this `{` and continue scanning.
+        i++;
+        continue;
+      }
+    }
+    return objects;
   }
 
   private toVerdict(raw: unknown): FlashGateVerdict {
