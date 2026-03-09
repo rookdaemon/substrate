@@ -2,12 +2,12 @@ import type { IMessageInjector } from "./IMessageInjector";
 import type { ILogger } from "../logging";
 
 export interface PeerConfig {
-  name: string;
-  port: number;
+  peerId: string;
+  apiStatusUrl: string;
 }
 
 export interface PeerStatus {
-  name: string;
+  peerId: string;
   state: string;
   rateLimitUntil: string | null;
   online: boolean;
@@ -16,41 +16,60 @@ export interface PeerStatus {
 type FetchFn = (url: string, opts?: { signal?: AbortSignal }) => Promise<{ ok: boolean; json(): Promise<unknown> }>;
 
 /**
- * Monitors peer substrate availability by polling their /api/loop/status endpoints.
+ * Monitors peer substrate availability by polling each peer's API status URL.
  *
- * Trigger points:
- * 1. On startup via scanAll() — injects [PEER STATUS] for any rate-limited peer
- * 2. On first failed contact via onContactFailed(name) — injects current status
- *
- * Injection is deduplicated: the same (peer, rateLimitUntil) pair is never injected twice.
- * A new injection fires if rateLimitUntil changes (peer hit a new rate limit after recovery).
+ * On each scan, this class computes active peer rate limits and injects
+ * `rateLimitedUntil[peerId]=<iso timestamp>` updates for new/changed entries only.
  */
 export class PeerAvailabilityMonitor {
-  /** Maps peer name → last injected rateLimitUntil value (null = ACTIVE was last injected) */
-  private readonly lastInjected = new Map<string, string | null>();
+  /** Maps peerId -> last injected active rateLimitUntil value. */
+  private readonly lastInjectedActiveRateLimit = new Map<string, string>();
 
   constructor(
     private readonly peers: PeerConfig[],
     private readonly injector: IMessageInjector,
     private readonly logger: ILogger,
     private readonly fetchFn: FetchFn = defaultFetch,
-  ) {}
+  ) { }
 
-  /**
-   * Scan all configured peers. Called once on startup.
-   * Injects [PEER STATUS] for any peer that is currently rate-limited.
-   */
-  async scanAll(): Promise<void> {
+  /** Scan all configured peers and inject active rate-limit updates. */
+  async scanAll(now: Date = new Date()): Promise<void> {
+    const nowMs = now.getTime();
+    const activeThisScan = new Map<string, string>();
+
     for (const peer of this.peers) {
       try {
-        const status = await this.readPeerStatus(peer.port, peer.name);
-        if (status.rateLimitUntil !== null) {
-          this.maybeInject(status);
+        const status = await this.readPeerStatus(peer);
+        if (!status.online || status.rateLimitUntil === null) {
+          continue;
         }
+
+        const rateLimitUntilMs = Date.parse(status.rateLimitUntil);
+        if (!Number.isFinite(rateLimitUntilMs) || rateLimitUntilMs <= nowMs) {
+          continue;
+        }
+
+        activeThisScan.set(status.peerId, status.rateLimitUntil);
       } catch (err) {
         this.logger.debug(
-          `[PEER-MONITOR] Warning: could not reach ${peer.name} on port ${peer.port} during startup scan: ${err instanceof Error ? err.message : String(err)}`
+          `[PEER-MONITOR] Warning: could not read status for ${peer.peerId} at ${peer.apiStatusUrl}: ${err instanceof Error ? err.message : String(err)}`
         );
+      }
+    }
+
+    for (const [peerId, rateLimitUntil] of activeThisScan) {
+      const last = this.lastInjectedActiveRateLimit.get(peerId);
+      if (last === rateLimitUntil) {
+        continue;
+      }
+      this.lastInjectedActiveRateLimit.set(peerId, rateLimitUntil);
+      this.injectRateLimit(peerId, rateLimitUntil);
+    }
+
+    // Cleanup recovered/expired peers so a future rate-limit is reinjected.
+    for (const peerId of Array.from(this.lastInjectedActiveRateLimit.keys())) {
+      if (!activeThisScan.has(peerId)) {
+        this.lastInjectedActiveRateLimit.delete(peerId);
       }
     }
   }
@@ -59,18 +78,34 @@ export class PeerAvailabilityMonitor {
    * Called when a contact attempt to a named peer fails.
    * Looks up the peer's port, polls its status, and injects if rate-limited.
    */
-  async onContactFailed(peerName: string): Promise<void> {
-    const peer = this.peers.find((p) => p.name === peerName);
+  async onContactFailed(peerId: string, now: Date = new Date()): Promise<void> {
+    const peer = this.peers.find((p) => p.peerId === peerId);
     if (!peer) {
-      this.logger.debug(`[PEER-MONITOR] onContactFailed: unknown peer "${peerName}" — no ports configured`);
+      this.logger.debug(`[PEER-MONITOR] onContactFailed: unknown peer "${peerId}"`);
       return;
     }
+
     try {
-      const status = await this.readPeerStatus(peer.port, peer.name);
-      this.maybeInject(status);
+      const status = await this.readPeerStatus(peer);
+      if (!status.online || status.rateLimitUntil === null) {
+        return;
+      }
+
+      const nowMs = now.getTime();
+      const rateLimitUntilMs = Date.parse(status.rateLimitUntil);
+      if (!Number.isFinite(rateLimitUntilMs) || rateLimitUntilMs <= nowMs) {
+        return;
+      }
+
+      const last = this.lastInjectedActiveRateLimit.get(status.peerId);
+      if (last === status.rateLimitUntil) {
+        return;
+      }
+      this.lastInjectedActiveRateLimit.set(status.peerId, status.rateLimitUntil);
+      this.injectRateLimit(status.peerId, status.rateLimitUntil);
     } catch (err) {
       this.logger.debug(
-        `[PEER-MONITOR] Warning: could not reach ${peerName} on port ${peer.port} after failed contact: ${err instanceof Error ? err.message : String(err)}`
+        `[PEER-MONITOR] Warning: could not read status for ${peerId} at ${peer.apiStatusUrl} after failed contact: ${err instanceof Error ? err.message : String(err)}`
       );
     }
   }
@@ -79,53 +114,28 @@ export class PeerAvailabilityMonitor {
    * Read peer status from its /api/loop/status endpoint.
    * Returns an offline PeerStatus if the connection is refused or the request fails.
    */
-  async readPeerStatus(port: number, fallbackName: string): Promise<PeerStatus> {
-    const url = `http://localhost:${port}/api/loop/status`;
+  async readPeerStatus(peer: PeerConfig): Promise<PeerStatus> {
+    const url = peer.apiStatusUrl;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 3000);
     try {
       const res = await this.fetchFn(url, { signal: controller.signal });
       if (!res.ok) {
-        return { name: fallbackName, state: "UNKNOWN", rateLimitUntil: null, online: false };
+        return { peerId: peer.peerId, state: "UNKNOWN", rateLimitUntil: null, online: false };
       }
       const body = await res.json() as Record<string, unknown>;
-      const name = (body.meta as Record<string, unknown> | undefined)?.name as string | undefined ?? fallbackName;
       const state = typeof body.state === "string" ? body.state : "UNKNOWN";
       const rateLimitUntil = typeof body.rateLimitUntil === "string" ? body.rateLimitUntil : null;
-      return { name, state, rateLimitUntil, online: true };
+      return { peerId: peer.peerId, state, rateLimitUntil, online: true };
     } catch {
-      return { name: fallbackName, state: "OFFLINE", rateLimitUntil: null, online: false };
+      return { peerId: peer.peerId, state: "OFFLINE", rateLimitUntil: null, online: false };
     } finally {
       clearTimeout(timeout);
     }
   }
 
-  /**
-   * Inject a [PEER STATUS] note if this event hasn't already been reported.
-   * Deduplication key: (peer name, rateLimitUntil).
-   */
-  private maybeInject(status: PeerStatus): void {
-    const key = status.name;
-    const last = this.lastInjected.get(key);
-
-    // Skip if same rateLimitUntil was already injected for this peer
-    if (last !== undefined && last === status.rateLimitUntil) {
-      return;
-    }
-
-    this.lastInjected.set(key, status.rateLimitUntil);
-
-    let line: string;
-    if (!status.online) {
-      // Offline — log warning but don't inject (per acceptance criteria)
-      this.logger.debug(`[PEER-MONITOR] ${status.name} is offline (connection refused or timeout)`);
-      return;
-    } else if (status.rateLimitUntil !== null) {
-      line = `[PEER STATUS] ${status.name}: RATE_LIMITED until ${status.rateLimitUntil}`;
-    } else {
-      line = `[PEER STATUS] ${status.name}: ACTIVE`;
-    }
-
+  private injectRateLimit(peerId: string, rateLimitUntil: string): void {
+    const line = `[PEER RATE LIMIT] rateLimitedUntil[${peerId}]=${rateLimitUntil}`;
     this.logger.debug(`[PEER-MONITOR] Injecting: ${line}`);
     this.injector.injectMessage(line);
   }

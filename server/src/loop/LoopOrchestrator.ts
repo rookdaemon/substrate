@@ -103,6 +103,7 @@ export class LoopOrchestrator implements IMessageInjector {
 
   // INS (Involuntary Nervous System) — pre-cycle deterministic rule checks
   private insHook: INSHook | null = null;
+  private beforeCycleHook: (() => Promise<void>) | null = null;
   private lastINSResult: INSResult | null = null;
   private lastTaskResult: {
     result: string;
@@ -227,7 +228,7 @@ export class LoopOrchestrator implements IMessageInjector {
     this.watchdog?.stop();
     // Clear sleep state if sleeping
     if (this.state === LoopState.SLEEPING) {
-      this.onSleepExit?.().catch(() => {});
+      this.onSleepExit?.().catch(() => { });
     }
     this.transition(LoopState.STOPPED);
     if (this.shutdownFn && userInitiated) {
@@ -422,6 +423,15 @@ export class LoopOrchestrator implements IMessageInjector {
     // Drain deferred work from previous cycle before dispatching
     await this.deferredWork.drain();
 
+    // Optional pre-cycle hook for runtime checks that should run once per cycle start.
+    if (this.beforeCycleHook) {
+      try {
+        await this.beforeCycleHook();
+      } catch (err) {
+        this.logger.debug(`before-cycle hook failed — ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+
     // INS pre-cycle hook — deterministic rule checks
     if (this.insHook) {
       try {
@@ -523,7 +533,7 @@ export class LoopOrchestrator implements IMessageInjector {
       );
       const apiCallDurationMs = this.clock.now().getTime() - apiCallStartMs;
       // Best-effort — fire-and-forget so metrics never block the loop
-      this.performanceMetrics?.recordApiCall(apiCallDurationMs, "SUBCONSCIOUS", "execute").catch(() => {});
+      this.performanceMetrics?.recordApiCall(apiCallDurationMs, "SUBCONSCIOUS", "execute").catch(() => { });
 
       const success = taskResult.result === "success";
 
@@ -617,7 +627,7 @@ export class LoopOrchestrator implements IMessageInjector {
       result.action,
       cycleDurationMs,
       result.success,
-    ).catch(() => {});
+    ).catch(() => { });
 
     // Record last cycle diagnostics for health reporting
     this.lastCycleAt = this.clock.now();
@@ -710,14 +720,14 @@ export class LoopOrchestrator implements IMessageInjector {
         const waitMs = rateLimitReset.getTime() - this.clock.now().getTime();
         this.rateLimitUntil = rateLimitReset.toISOString();
         this.logger.debug(`runLoop: rate limited — backing off ${waitMs}ms until ${this.rateLimitUntil}`);
-        
+
         // Save state before hibernation
         if (this.rateLimitStateManager) {
           const currentTaskId = cycleResult.action === "dispatch" ? cycleResult.taskId : undefined;
           await this.rateLimitStateManager.saveStateBeforeSleep(rateLimitReset, currentTaskId);
           this.logger.debug(`runLoop: state saved for rate limit hibernation`);
         }
-        
+
         this.eventSink.emit({
           type: "idle",
           timestamp: this.clock.now().toISOString(),
@@ -751,6 +761,10 @@ export class LoopOrchestrator implements IMessageInjector {
   }): void {
     this.tickPromptBuilder = deps.tickPromptBuilder;
     this.sdkSessionFactory = deps.sdkSessionFactory;
+  }
+
+  setBeforeCycleHook(hook: (() => Promise<void>) | null): void {
+    this.beforeCycleHook = hook;
   }
 
   async runOneTick(): Promise<TickResult> {
@@ -935,7 +949,7 @@ export class LoopOrchestrator implements IMessageInjector {
 
     this.logger.debug("handleUserMessage: starting new conversation session");
     this.conversationSessionActive = true;
-    
+
     const sessionPromise = (async () => {
       let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
       try {
@@ -946,11 +960,11 @@ export class LoopOrchestrator implements IMessageInjector {
         const maxDuration = this.conversationSessionMaxDurationMs;
         const timeoutPromise: Promise<never> | null = maxDuration > 0
           ? new Promise<never>((_, reject) => {
-              timeoutHandle = setTimeout(
-                () => reject(new Error(`Conversation session exceeded max duration (${maxDuration}ms)`)),
-                maxDuration
-              );
-            })
+            timeoutHandle = setTimeout(
+              () => reject(new Error(`Conversation session exceeded max duration (${maxDuration}ms)`)),
+              maxDuration
+            );
+          })
           : null;
 
         for (const msg of messagesToProcess) {
@@ -1163,17 +1177,17 @@ export class LoopOrchestrator implements IMessageInjector {
 
         const result = shouldReplyToUnknown
           ? await this.agoraService.replyToEnvelope({
-              targetPubkey: peerRef,
-              type: "publish",
-              payload: { text: reply.text },
-              inReplyTo: reply.inReplyTo!,
-            })
+            targetPubkey: peerRef,
+            type: "publish",
+            payload: { text: reply.text },
+            inReplyTo: reply.inReplyTo!,
+          })
           : await this.agoraService.sendMessage({
-              peerName: peerRef,
-              type: "publish",
-              payload: { text: reply.text },
-              inReplyTo: reply.inReplyTo,
-            });
+            peerName: peerRef,
+            type: "publish",
+            payload: { text: reply.text },
+            inReplyTo: reply.inReplyTo,
+          });
 
         if (result.ok) {
           this.logger.debug(`agoraReplies: sent to ${peerRef} (status=${result.status})`);

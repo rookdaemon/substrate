@@ -269,8 +269,8 @@ export interface AppConfig {
   };
   /**
    * Peer substrate instances to monitor for rate-limit availability.
-   * On startup and on first failed Agora contact, the monitor polls each peer's
-   * /api/loop/status endpoint and injects a [PEER STATUS] note into the session.
+   * On each cycle start, the monitor polls each peer's /api/loop/status endpoint
+   * and injects active entries as rateLimitedUntil[peerId].
    */
   peers?: Array<{ name: string; port: number }>;
 }
@@ -295,9 +295,9 @@ export async function resolveConfig(
     workingDirectory: appPaths.data,
     sourceCodePath: options.cwd ?? appPaths.data,
     backupPath:
-    appPaths.data.startsWith("/") && !/^[a-zA-Z]:/.test(appPaths.data)
-      ? path.posix.join(path.posix.dirname(appPaths.data), "substrate-backups")
-      : path.join(path.dirname(appPaths.data), "substrate-backups"),
+      appPaths.data.startsWith("/") && !/^[a-zA-Z]:/.test(appPaths.data)
+        ? path.posix.join(path.posix.dirname(appPaths.data), "substrate-backups")
+        : path.join(path.dirname(appPaths.data), "substrate-backups"),
     port: 3000,
     model: "sonnet",
     strategicModel: "opus",
@@ -382,49 +382,49 @@ export async function resolveConfig(
     cycleDelayMs: fileConfig.cycleDelayMs ?? defaults.cycleDelayMs,
     evaluateOutcome: fileConfig.evaluateOutcome
       ? {
-          enabled: fileConfig.evaluateOutcome.enabled ?? defaults.evaluateOutcome!.enabled,
-          qualityThreshold: fileConfig.evaluateOutcome.qualityThreshold ?? defaults.evaluateOutcome!.qualityThreshold,
-        }
+        enabled: fileConfig.evaluateOutcome.enabled ?? defaults.evaluateOutcome!.enabled,
+        qualityThreshold: fileConfig.evaluateOutcome.qualityThreshold ?? defaults.evaluateOutcome!.qualityThreshold,
+      }
       : defaults.evaluateOutcome,
     conversationIdleTimeoutMs: fileConfig.conversationIdleTimeoutMs ?? defaults.conversationIdleTimeoutMs,
     conversationSessionMaxDurationMs: fileConfig.conversationSessionMaxDurationMs ?? defaults.conversationSessionMaxDurationMs,
     conversationArchive: fileConfig.conversationArchive
       ? {
-          enabled: fileConfig.conversationArchive.enabled ?? defaults.conversationArchive!.enabled,
-          linesToKeep: fileConfig.conversationArchive.linesToKeep ?? defaults.conversationArchive!.linesToKeep,
-          sizeThreshold: fileConfig.conversationArchive.sizeThreshold ?? defaults.conversationArchive!.sizeThreshold,
-          timeThresholdDays: fileConfig.conversationArchive.timeThresholdDays ?? defaults.conversationArchive!.timeThresholdDays,
-        }
+        enabled: fileConfig.conversationArchive.enabled ?? defaults.conversationArchive!.enabled,
+        linesToKeep: fileConfig.conversationArchive.linesToKeep ?? defaults.conversationArchive!.linesToKeep,
+        sizeThreshold: fileConfig.conversationArchive.sizeThreshold ?? defaults.conversationArchive!.sizeThreshold,
+        timeThresholdDays: fileConfig.conversationArchive.timeThresholdDays ?? defaults.conversationArchive!.timeThresholdDays,
+      }
       : defaults.conversationArchive,
     email: fileConfig.email
       ? {
-          enabled: fileConfig.email.enabled ?? defaults.email!.enabled,
-          intervalHours: fileConfig.email.intervalHours ?? defaults.email!.intervalHours,
-          sendTimeHour: fileConfig.email.sendTimeHour ?? defaults.email!.sendTimeHour,
-          sendTimeMinute: fileConfig.email.sendTimeMinute ?? defaults.email!.sendTimeMinute,
-        }
+        enabled: fileConfig.email.enabled ?? defaults.email!.enabled,
+        intervalHours: fileConfig.email.intervalHours ?? defaults.email!.intervalHours,
+        sendTimeHour: fileConfig.email.sendTimeHour ?? defaults.email!.sendTimeHour,
+        sendTimeMinute: fileConfig.email.sendTimeMinute ?? defaults.email!.sendTimeMinute,
+      }
       : defaults.email,
     agora: fileConfig.agora
       ? {
-          security: fileConfig.agora.security
-            ? {
-                unknownSenderPolicy: fileConfig.agora.security.unknownSenderPolicy ?? 'quarantine',
-                perSenderRateLimit: fileConfig.agora.security.perSenderRateLimit
-                  ? {
-                      enabled: fileConfig.agora.security.perSenderRateLimit.enabled ?? defaults.agora!.security!.perSenderRateLimit!.enabled,
-                      maxMessages: fileConfig.agora.security.perSenderRateLimit.maxMessages ?? defaults.agora!.security!.perSenderRateLimit!.maxMessages,
-                      windowMs: fileConfig.agora.security.perSenderRateLimit.windowMs ?? defaults.agora!.security!.perSenderRateLimit!.windowMs,
-                    }
-                  : defaults.agora!.security!.perSenderRateLimit,
+        security: fileConfig.agora.security
+          ? {
+            unknownSenderPolicy: fileConfig.agora.security.unknownSenderPolicy ?? 'quarantine',
+            perSenderRateLimit: fileConfig.agora.security.perSenderRateLimit
+              ? {
+                enabled: fileConfig.agora.security.perSenderRateLimit.enabled ?? defaults.agora!.security!.perSenderRateLimit!.enabled,
+                maxMessages: fileConfig.agora.security.perSenderRateLimit.maxMessages ?? defaults.agora!.security!.perSenderRateLimit!.maxMessages,
+                windowMs: fileConfig.agora.security.perSenderRateLimit.windowMs ?? defaults.agora!.security!.perSenderRateLimit!.windowMs,
               }
-            : defaults.agora!.security,
-        }
+              : defaults.agora!.security!.perSenderRateLimit,
+          }
+          : defaults.agora!.security,
+      }
       : defaults.agora,
     idleSleepConfig: fileConfig.idleSleepConfig
       ? {
-          enabled: fileConfig.idleSleepConfig.enabled ?? false,
-          idleCyclesBeforeSleep: fileConfig.idleSleepConfig.idleCyclesBeforeSleep ?? 5,
-        }
+        enabled: fileConfig.idleSleepConfig.enabled ?? false,
+        idleCyclesBeforeSleep: fileConfig.idleSleepConfig.idleCyclesBeforeSleep ?? 5,
+      }
       : undefined,
     shutdownGraceMs: fileConfig.shutdownGraceMs ?? defaults.shutdownGraceMs,
     logLevel: (fileConfig.logLevel ?? defaults.logLevel) as "info" | "debug",
@@ -437,18 +437,18 @@ export async function resolveConfig(
     defaultCodeBackend: fileConfig.defaultCodeBackend ?? defaults.defaultCodeBackend,
     ollamaOffload: fileConfig.ollamaOffload
       ? {
-          enabled: fileConfig.ollamaOffload.enabled ?? false,
-        }
+        enabled: fileConfig.ollamaOffload.enabled ?? false,
+      }
       : undefined,
     vertexKeyPath: fileConfig.vertexKeyPath,
     vertexModel: fileConfig.vertexModel,
     watchdog: fileConfig.watchdog
       ? {
-          disabled: fileConfig.watchdog.disabled ?? false,
-          stallThresholdMs: fileConfig.watchdog.stallThresholdMs ?? 20 * 60 * 1000,
-          checkIntervalMs: fileConfig.watchdog.checkIntervalMs ?? 5 * 60 * 1000,
-          forceRestartThresholdMs: fileConfig.watchdog.forceRestartThresholdMs ?? 10 * 60 * 1000,
-        }
+        disabled: fileConfig.watchdog.disabled ?? false,
+        stallThresholdMs: fileConfig.watchdog.stallThresholdMs ?? 20 * 60 * 1000,
+        checkIntervalMs: fileConfig.watchdog.checkIntervalMs ?? 5 * 60 * 1000,
+        forceRestartThresholdMs: fileConfig.watchdog.forceRestartThresholdMs ?? 10 * 60 * 1000,
+      }
       : undefined,
     peers: fileConfig.peers,
   };

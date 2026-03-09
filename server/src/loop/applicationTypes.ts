@@ -106,8 +106,8 @@ export interface ApplicationConfig {
   };
   /**
    * Peer substrate instances to monitor for rate-limit availability.
-   * On startup and on first failed contact, the monitor polls each peer's
-   * /api/loop/status endpoint and injects a [PEER STATUS] note into the session.
+   * On each cycle start, the monitor polls each peer's /api/loop/status endpoint
+   * and injects active entries as rateLimitedUntil[peerId].
    */
   peers?: Array<{ name: string; port: number }>;
 }
