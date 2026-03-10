@@ -4,6 +4,9 @@ import { IAgoraService } from "./IAgoraService";
 import { buildPeerReferenceDirectory, resolvePeerReference } from "./utils";
 import type { SeenKeyStore } from "@rookdaemon/agora";
 import type { ILogger } from "../logging";
+import type { IConversationManager } from "../conversation/IConversationManager";
+import type { IClock } from "../substrate/abstractions/IClock";
+import { AgentRole } from "../agents/types";
 
 /**
  * AgoraOutboundProvider - Handles outbound Agora messages via TinyBus
@@ -30,10 +33,36 @@ export class AgoraOutboundProvider implements Provider {
     private readonly logger?: ILogger,
     private readonly seenKeyStore?: SeenKeyStore | null,
     private readonly onSendFailed?: (peerName: string) => void,
+    private readonly conversationManager?: IConversationManager | null,
+    private readonly clock?: IClock,
   ) {}
 
   private isLikelyFullPublicKey(value: string): boolean {
     return /^[0-9a-fA-F]{16,}$/.test(value);
+  }
+
+  private formatOutboundPayload(payload: unknown): string {
+    if (typeof payload === "string") return payload.slice(0, 500);
+    if (payload && typeof payload === "object" && !Array.isArray(payload)) {
+      const obj = payload as Record<string, unknown>;
+      if (typeof obj.text === "string") return obj.text.slice(0, 500);
+    }
+    return JSON.stringify(payload).slice(0, 500);
+  }
+
+  // clock is always provided alongside conversationManager in production (injected from createLoopLayer).
+  // Both are optional here to preserve backward-compat for callers that don't need conversation logging.
+  private async logOutbound(recipients: string[], type: string, payload: unknown): Promise<void> {
+    if (!this.conversationManager) return;
+    try {
+      const iso = this.clock?.now().toISOString() ?? "";
+      const toList = recipients.join(", ");
+      const text = this.formatOutboundPayload(payload);
+      const entry = `[AGORA_OUT${iso ? ` ${iso}` : ""}] TO: ${toList} ${type}: ${text}`.replace(/\n+/g, " ").trim();
+      await this.conversationManager.append(AgentRole.SUBCONSCIOUS, entry);
+    } catch (err) {
+      this.logger?.debug(`[AGORA-OUT] Failed to log outbound message to CONVERSATION.md: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
   async isReady(): Promise<boolean> {
@@ -112,6 +141,7 @@ export class AgoraOutboundProvider implements Provider {
       this.logger?.debug(
         `[AGORA-OUT] Reply sent successfully: ${targetPubkey}`
       );
+      await this.logOutbound([payload.targetPubkey], payload.type, payload.payload);
       return;
     }
 
@@ -193,6 +223,8 @@ export class AgoraOutboundProvider implements Provider {
     if (total > 0 && errors.length >= total) {
       throw new Error(`All sends failed: ${errors.map((e) => e.error).join("; ")}`);
     }
+
+    await this.logOutbound(payload.to ?? [], payload.type, payload.payload);
   }
 
   onMessage(_handler: (message: Message) => Promise<void>): void {
