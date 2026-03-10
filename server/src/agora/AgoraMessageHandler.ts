@@ -83,6 +83,9 @@ export class AgoraMessageHandler {
   private readonly envelopeCache: Map<string, EnvelopeSummary> = new Map();
   private static readonly MAX_ENVELOPE_CACHE_SIZE = 200;
 
+  /** Optional callback invoked after each successfully processed inbound message. */
+  private onMessageProcessed: (() => void) | null = null;
+
   constructor(
     private readonly agoraService: IAgoraService | null,
     private readonly conversationManager: IConversationManager,
@@ -130,6 +133,14 @@ export class AgoraMessageHandler {
    */
   getProcessedEnvelopeIds(): string[] {
     return Array.from(this.processedEnvelopeIds);
+  }
+
+  /**
+   * Register a callback that is invoked after each successfully processed inbound message.
+   * Used by HeartbeatScheduler to detect the `when: agora_peer_message` condition.
+   */
+  setOnMessageProcessed(callback: () => void): void {
+    this.onMessageProcessed = callback;
   }
 
   /**
@@ -597,6 +608,13 @@ export class AgoraMessageHandler {
     // Cache this envelope for future inReplyTo context lookups.
     // Stored after successful processing so the cache only contains legitimate messages.
     this.cacheEnvelope(envelope.id, senderIdentity, envelope.payload);
+
+    // Notify heartbeat conditions (e.g. `when: agora_peer_message`) that a message arrived.
+    if (this.onMessageProcessed) {
+      try {
+        this.onMessageProcessed();
+      } catch { /* best-effort notification — never interrupt envelope processing */ }
+    }
   }
 
   /**
