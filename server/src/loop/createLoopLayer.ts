@@ -326,6 +326,9 @@ export async function createLoopLayer(
       agoraService,
       logger,
       agoraMessageHandler?.getSeenKeyStore(),
+      /* onSendFailed */ undefined,
+      conversationManager,
+      clock,
     );
     tinyBus.registerProvider(agoraOutboundProvider);
   }

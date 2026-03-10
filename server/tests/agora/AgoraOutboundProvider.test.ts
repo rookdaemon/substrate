@@ -1,6 +1,9 @@
 import { AgoraOutboundProvider } from "../../src/agora/AgoraOutboundProvider";
 import { IAgoraService } from "../../src/agora/IAgoraService";
 import { createMessage } from "../../src/tinybus/core/Message";
+import { IConversationManager } from "../../src/conversation/IConversationManager";
+import { AgentRole } from "../../src/agents/types";
+import { IClock } from "../../src/substrate/abstractions/IClock";
 
 class MockAgoraService implements IAgoraService {
   public sentMessages: Array<{ peerName: string; type: string; payload: unknown; inReplyTo?: string; allRecipients?: string[] }> = [];
@@ -78,6 +81,21 @@ class MockAgoraService implements IAgoraService {
   isRelayConnected() {
     return false;
   }
+}
+
+class MockConversationManager implements IConversationManager {
+  public appendedEntries: Array<{ role: AgentRole; entry: string }> = [];
+  public shouldThrow = false;
+
+  async append(role: AgentRole, entry: string): Promise<void> {
+    if (this.shouldThrow) throw new Error("Mock conversation error");
+    this.appendedEntries.push({ role, entry });
+  }
+}
+
+class MockClock implements IClock {
+  constructor(private readonly time: Date = new Date("2026-03-10T11:17:03.381Z")) {}
+  now(): Date { return this.time; }
 }
 
 describe("AgoraOutboundProvider", () => {
@@ -457,6 +475,96 @@ describe("AgoraOutboundProvider", () => {
   describe("getMessageTypes", () => {
     it("should return agora.send", () => {
       expect(provider.getMessageTypes()).toEqual(["agora.send"]);
+    });
+  });
+
+  describe("conversation logging (AGORA_OUT)", () => {
+    let conversationManager: MockConversationManager;
+    let clock: MockClock;
+
+    beforeEach(() => {
+      conversationManager = new MockConversationManager();
+      clock = new MockClock();
+    });
+
+    it("should write [AGORA_OUT] entry to CONVERSATION.md after successful send via to list", async () => {
+      const p = new AgoraOutboundProvider(agoraService, undefined, undefined, undefined, conversationManager, clock);
+      await p.start();
+
+      await p.send(createMessage({
+        type: "agora.send",
+        payload: { to: ["test-peer"], type: "request", payload: { text: "Hello?" } },
+      }));
+
+      expect(conversationManager.appendedEntries).toHaveLength(1);
+      const { role, entry } = conversationManager.appendedEntries[0];
+      expect(role).toBe(AgentRole.SUBCONSCIOUS);
+      expect(entry).toContain("[AGORA_OUT 2026-03-10T11:17:03.381Z]");
+      expect(entry).toContain("TO: test-peer");
+      expect(entry).toContain("request:");
+      expect(entry).toContain("Hello?");
+    });
+
+    it("should write [AGORA_OUT] entry after successful targetPubkey reply", async () => {
+      const p = new AgoraOutboundProvider(agoraService, undefined, undefined, undefined, conversationManager, clock);
+      await p.start();
+
+      await p.send(createMessage({
+        type: "agora.send",
+        payload: {
+          targetPubkey: "302a300506032b6570032100deadbeef",
+          type: "publish",
+          payload: { text: "reply text" },
+          inReplyTo: "env-abc",
+        },
+      }));
+
+      expect(conversationManager.appendedEntries).toHaveLength(1);
+      const { role, entry } = conversationManager.appendedEntries[0];
+      expect(role).toBe(AgentRole.SUBCONSCIOUS);
+      expect(entry).toContain("[AGORA_OUT");
+      expect(entry).toContain("TO: 302a300506032b6570032100deadbeef");
+      expect(entry).toContain("publish:");
+      expect(entry).toContain("reply text");
+    });
+
+    it("should NOT log when all sends fail", async () => {
+      agoraService.shouldFailSend = true;
+      const p = new AgoraOutboundProvider(agoraService, undefined, undefined, undefined, conversationManager, clock);
+      await p.start();
+
+      await expect(p.send(createMessage({
+        type: "agora.send",
+        payload: { to: ["test-peer"], type: "request", payload: {} },
+      }))).rejects.toThrow("All sends failed");
+
+      expect(conversationManager.appendedEntries).toHaveLength(0);
+    });
+
+    it("should not throw when conversation logging fails (best-effort)", async () => {
+      conversationManager.shouldThrow = true;
+      const p = new AgoraOutboundProvider(agoraService, undefined, undefined, undefined, conversationManager, clock);
+      await p.start();
+
+      // Send should succeed even though logging throws
+      await expect(p.send(createMessage({
+        type: "agora.send",
+        payload: { to: ["test-peer"], type: "request", payload: { text: "hi" } },
+      }))).resolves.toBeUndefined();
+
+      expect(agoraService.sentToAll).toHaveLength(1);
+    });
+
+    it("should work without conversationManager (no-op logging)", async () => {
+      const p = new AgoraOutboundProvider(agoraService);
+      await p.start();
+
+      await p.send(createMessage({
+        type: "agora.send",
+        payload: { to: ["test-peer"], type: "request", payload: { text: "hi" } },
+      }));
+
+      expect(agoraService.sentToAll).toHaveLength(1);
     });
   });
 });
