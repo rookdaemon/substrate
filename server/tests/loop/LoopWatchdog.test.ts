@@ -141,6 +141,92 @@ describe("LoopWatchdog", () => {
     expect(injected).toHaveLength(1);
   });
 
+  describe("sleep-awareness: pause/resume", () => {
+    it("check() is a no-op when paused", () => {
+      const { watchdog, clock, injected } = createWatchdog({ stallThresholdMs: 1000 });
+
+      watchdog.recordActivity();
+      watchdog.pause();
+
+      // Advance past stall threshold — should not inject because paused
+      clock.setNow(new Date(baseTime.getTime() + 2000));
+      watchdog.check();
+
+      expect(injected).toHaveLength(0);
+    });
+
+    it("check() fires again after resume()", () => {
+      const { watchdog, clock, injected } = createWatchdog({ stallThresholdMs: 1000 });
+
+      watchdog.recordActivity();
+      watchdog.pause();
+
+      // While paused, no injection even if threshold exceeded
+      clock.setNow(new Date(baseTime.getTime() + 2000));
+      watchdog.check();
+      expect(injected).toHaveLength(0);
+
+      // Resume resets the activity clock — stall timer restarts
+      watchdog.resume();
+      // Still within threshold from resume time
+      watchdog.check();
+      expect(injected).toHaveLength(0);
+
+      // Advance past threshold again from the resume point
+      clock.setNow(new Date(baseTime.getTime() + 4000));
+      watchdog.check();
+      expect(injected).toHaveLength(1);
+    });
+
+    it("forceRestart is not called while paused", () => {
+      let restartCalled = false;
+      const { watchdog, clock } = createWatchdog({
+        stallThresholdMs: 1000,
+        forceRestartThresholdMs: 500,
+        forceRestart: () => { restartCalled = true; },
+      });
+
+      watchdog.recordActivity();
+      watchdog.pause();
+
+      clock.setNow(new Date(baseTime.getTime() + 5000));
+      watchdog.check();
+
+      expect(restartCalled).toBe(false);
+    });
+
+    it("resume() resets activity time so stall starts fresh", () => {
+      const { watchdog, clock, injected } = createWatchdog({ stallThresholdMs: 2000 });
+
+      watchdog.recordActivity();
+      watchdog.pause();
+
+      // Long time passes while sleeping
+      clock.setNow(new Date(baseTime.getTime() + 10000));
+      watchdog.resume();
+
+      // Just after resume — within threshold from resume time
+      clock.setNow(new Date(baseTime.getTime() + 11000));
+      watchdog.check();
+      expect(injected).toHaveLength(0);
+
+      // Past threshold from resume time
+      clock.setNow(new Date(baseTime.getTime() + 13000));
+      watchdog.check();
+      expect(injected).toHaveLength(1);
+    });
+
+    it("logs when paused and resumed", () => {
+      const { watchdog, logger } = createWatchdog();
+
+      watchdog.pause();
+      expect(logger.getEntries().some(e => e.includes("paused"))).toBe(true);
+
+      watchdog.resume();
+      expect(logger.getEntries().some(e => e.includes("resumed"))).toBe(true);
+    });
+  });
+
   describe("force restart behavior", () => {
     it("calls forceRestart after forceRestartThresholdMs following a stall reminder", () => {
       let restartCalled = false;

@@ -31,6 +31,7 @@ export class LoopWatchdog {
   private reminderSent = false;
   private reminderSentAt: Date | null = null;
   private intervalHandle: ReturnType<typeof setInterval> | null = null;
+  private paused = false;
 
   constructor(config: LoopWatchdogConfig) {
     this.clock = config.clock;
@@ -47,7 +48,25 @@ export class LoopWatchdog {
     this.reminderSentAt = null;
   }
 
+  /** Pause watchdog checks — call when the loop enters SLEEPING state. */
+  pause(): void {
+    this.paused = true;
+    this.logger.debug("watchdog: paused (loop is sleeping)");
+  }
+
+  /** Resume watchdog checks — call when the loop wakes. Resets the activity timer. */
+  resume(): void {
+    this.paused = false;
+    this.lastActivityTime = this.clock.now();
+    this.reminderSent = false;
+    this.reminderSentAt = null;
+    this.logger.debug("watchdog: resumed (loop woke)");
+  }
+
   check(): void {
+    if (this.paused) {
+      return; // No-op while loop is sleeping
+    }
     if (!this.lastActivityTime) {
       return;
     }

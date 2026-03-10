@@ -1,4 +1,4 @@
-import { PeerAvailabilityMonitor, PeerConfig } from "../../src/loop/PeerAvailabilityMonitor";
+import { PeerAvailabilityMonitor, PeerConfig, IPeerMonitorFileSystem } from "../../src/loop/PeerAvailabilityMonitor";
 import type { IMessageInjector } from "../../src/loop/IMessageInjector";
 import type { ILogger } from "../../src/logging";
 
@@ -188,5 +188,122 @@ describe("PeerAvailabilityMonitor.onContactFailed", () => {
 
         await monitor.onContactFailed("bishop", now);
         expect(injector.messages).toHaveLength(0);
+    });
+});
+
+describe("PeerAvailabilityMonitor: state persistence", () => {
+    function makeFileSystem(initial?: Record<string, string>): IPeerMonitorFileSystem & { files: Map<string, string> } {
+        const files = new Map<string, string>(Object.entries(initial ?? {}));
+        return {
+            files,
+            async readFile(p: string): Promise<string> {
+                const content = files.get(p);
+                if (content === undefined) throw new Error(`ENOENT: ${p}`);
+                return content;
+            },
+            async writeFile(p: string, content: string): Promise<void> {
+                files.set(p, content);
+            },
+        };
+    }
+
+    const rlu = "2026-03-09T10:00:00.000Z";
+    const now = new Date("2026-03-09T09:00:00.000Z");
+    const STATE_PATH = "/state/.peer-monitor-state.json";
+
+    it("loadState() restores active rate limits from disk", async () => {
+        const fileSystem = makeFileSystem({
+            [STATE_PATH]: JSON.stringify({ bishop: rlu }),
+        });
+        const injector = makeInjector();
+        const monitor = new PeerAvailabilityMonitor([PEER_BISHOP], injector, makeLogger(), undefined, fileSystem, STATE_PATH);
+
+        await monitor.loadState(now);
+
+        // Simulate a scan that returns the same rate limit — should NOT re-inject
+        const responses = new Map([
+            [PEER_BISHOP.apiStatusUrl, { ok: true, body: { state: "RATE_LIMITED", rateLimitUntil: rlu } }],
+        ]);
+        const monitorWithFetch = new PeerAvailabilityMonitor([PEER_BISHOP], injector, makeLogger(), makeFetch(responses), fileSystem, STATE_PATH);
+        await monitorWithFetch.loadState(now);
+        await monitorWithFetch.scanAll(now);
+        expect(injector.messages).toHaveLength(0);
+    });
+
+    it("loadState() does not restore expired rate limits", async () => {
+        const expiredRlu = "2026-03-09T08:00:00.000Z"; // before `now`
+        const fileSystem = makeFileSystem({
+            [STATE_PATH]: JSON.stringify({ bishop: expiredRlu }),
+        });
+        const injector = makeInjector();
+        // After loading, the expired entry is discarded — a fresh scan should re-inject if active
+        const responses = new Map([
+            [PEER_BISHOP.apiStatusUrl, { ok: true, body: { state: "RATE_LIMITED", rateLimitUntil: rlu } }],
+        ]);
+        const monitor = new PeerAvailabilityMonitor([PEER_BISHOP], injector, makeLogger(), makeFetch(responses), fileSystem, STATE_PATH);
+        await monitor.loadState(now);
+        await monitor.scanAll(now);
+        // Should inject because expired entry was not restored, so it looks like a new rate limit
+        expect(injector.messages).toHaveLength(1);
+    });
+
+    it("scanAll() persists updated rate limits to disk", async () => {
+        const fileSystem = makeFileSystem();
+        const responses = new Map([
+            [PEER_BISHOP.apiStatusUrl, { ok: true, body: { state: "RATE_LIMITED", rateLimitUntil: rlu } }],
+        ]);
+        const injector = makeInjector();
+        const monitor = new PeerAvailabilityMonitor([PEER_BISHOP], injector, makeLogger(), makeFetch(responses), fileSystem, STATE_PATH);
+
+        await monitor.scanAll(now);
+
+        const saved = JSON.parse(fileSystem.files.get(STATE_PATH) ?? "{}") as Record<string, string>;
+        expect(saved["bishop"]).toBe(rlu);
+    });
+
+    it("scanAll() removes expired entry from persisted state when peer recovers", async () => {
+        const fileSystem = makeFileSystem({
+            [STATE_PATH]: JSON.stringify({ bishop: rlu }),
+        });
+        // Peer has recovered (no rate limit)
+        const responses = new Map([
+            [PEER_BISHOP.apiStatusUrl, { ok: true, body: { state: "RUNNING" } }],
+        ]);
+        const injector = makeInjector();
+        const monitor = new PeerAvailabilityMonitor([PEER_BISHOP], injector, makeLogger(), makeFetch(responses), fileSystem, STATE_PATH);
+        await monitor.loadState(now);
+        await monitor.scanAll(new Date("2026-03-09T11:00:00.000Z")); // after rlu expiry
+
+        const saved = JSON.parse(fileSystem.files.get(STATE_PATH) ?? "{}") as Record<string, string>;
+        expect(saved["bishop"]).toBeUndefined();
+    });
+
+    it("onContactFailed() persists state to disk", async () => {
+        const fileSystem = makeFileSystem();
+        const responses = new Map([
+            [PEER_BISHOP.apiStatusUrl, { ok: true, body: { state: "RATE_LIMITED", rateLimitUntil: rlu } }],
+        ]);
+        const injector = makeInjector();
+        const monitor = new PeerAvailabilityMonitor([PEER_BISHOP], injector, makeLogger(), makeFetch(responses), fileSystem, STATE_PATH);
+
+        await monitor.onContactFailed("bishop", now);
+
+        const saved = JSON.parse(fileSystem.files.get(STATE_PATH) ?? "{}") as Record<string, string>;
+        expect(saved["bishop"]).toBe(rlu);
+    });
+
+    it("loadState() is a no-op when statePath is not configured", async () => {
+        const injector = makeInjector();
+        const monitor = new PeerAvailabilityMonitor([PEER_BISHOP], injector, makeLogger());
+        // Should not throw
+        await expect(monitor.loadState(now)).resolves.toBeUndefined();
+    });
+
+    it("loadState() is a no-op when state file does not exist", async () => {
+        const fileSystem = makeFileSystem(); // empty — no state file
+        const injector = makeInjector();
+        const monitor = new PeerAvailabilityMonitor([PEER_BISHOP], injector, makeLogger(), undefined, fileSystem, STATE_PATH);
+        // Should not throw
+        await expect(monitor.loadState(now)).resolves.toBeUndefined();
     });
 });

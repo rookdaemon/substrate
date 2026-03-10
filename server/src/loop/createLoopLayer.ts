@@ -292,10 +292,14 @@ export async function createLoopLayer(
     }
   }
 
+  const peerMonitorStatePath = monitoredPeers.length > 0
+    ? path.resolve(config.substratePath, "..", ".peer-monitor-state.json")
+    : undefined;
   const peerMonitor = monitoredPeers.length > 0
-    ? new PeerAvailabilityMonitor(monitoredPeers, orchestrator, logger)
+    ? new PeerAvailabilityMonitor(monitoredPeers, orchestrator, logger, undefined, fs, peerMonitorStatePath)
     : null;
   if (peerMonitor) {
+    await peerMonitor.loadState(clock.now());
     orchestrator.setBeforeCycleHook(() => peerMonitor.scanAll(clock.now()));
   }
 
