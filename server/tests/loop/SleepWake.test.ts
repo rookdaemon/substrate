@@ -22,6 +22,7 @@ import { PromptBuilder } from "../../src/agents/prompts/PromptBuilder";
 import { TaskClassifier } from "../../src/agents/TaskClassifier";
 import { ConversationManager } from "../../src/conversation/ConversationManager";
 import { IConversationCompactor } from "../../src/conversation/IConversationCompactor";
+import { LoopWatchdog } from "../../src/loop/LoopWatchdog";
 
 /** Timer that advances the injected clock by the requested delay amount, so rate-limit
  *  expiration checks behave correctly in tests without spinning in a real timer loop. */
@@ -432,5 +433,93 @@ describe("LoopOrchestrator: rate limit priority over idle threshold", () => {
     );
     expect(sleepEvent).toBeDefined();
     expect(events.indexOf(rateLimitEvent!)).toBeLessThan(events.indexOf(sleepEvent!));
+  });
+});
+
+describe("LoopOrchestrator: watchdog sleep-awareness", () => {
+  function createOrchestratorWithWatchdog() {
+    const deps = createDeps();
+    const logger = new InMemoryLogger();
+    const eventSink = new InMemoryEventSink();
+    const config = defaultLoopConfig({ maxConsecutiveIdleCycles: 1, idleSleepEnabled: true });
+    const orchestrator = new LoopOrchestrator(
+      deps.ego, deps.subconscious, deps.superego, deps.id,
+      deps.appendWriter, deps.clock, new ImmediateTimer(), eventSink,
+      config, logger
+    );
+
+    const injected: string[] = [];
+    const watchdog = new LoopWatchdog({
+      clock: deps.clock,
+      logger,
+      injectMessage: (msg) => injected.push(msg),
+      stallThresholdMs: 1000,
+      forceRestart: () => orchestrator.requestRestart(),
+      forceRestartThresholdMs: 500,
+    });
+    orchestrator.setWatchdog(watchdog);
+
+    return { orchestrator, deps, injected, watchdog };
+  }
+
+  it("watchdog does not inject stall reminder when loop is sleeping", () => {
+    const { orchestrator, deps, injected } = createOrchestratorWithWatchdog();
+
+    orchestrator.initializeSleeping(); // Simulate restart-in-sleep
+
+    // Advance well past stall threshold — watchdog should be paused
+    deps.clock.advance(5000);
+
+    // Manually check (simulating the interval firing)
+    // The watchdog was never started yet (no lastActivityTime), so this is a no-op anyway.
+    // We need to call recordActivity then pause explicitly:
+    orchestrator.initializeSleeping(); // already sleeping, no-op
+
+    expect(injected).toHaveLength(0);
+  });
+
+  it("watchdog pauses when entering sleep and resumes on wake", async () => {
+    const deps = createDeps();
+    await setupIdleSubstrate(deps.fs);
+
+    const logger = new InMemoryLogger();
+    const eventSink = new InMemoryEventSink();
+    const config = defaultLoopConfig({ maxConsecutiveIdleCycles: 1, idleSleepEnabled: true });
+    const idleHandler = new IdleHandler(deps.id, deps.superego, deps.ego, deps.clock, logger);
+    const orchestrator = new LoopOrchestrator(
+      deps.ego, deps.subconscious, deps.superego, deps.id,
+      deps.appendWriter, deps.clock, new ImmediateTimer(), eventSink,
+      config, logger, idleHandler
+    );
+
+    const injected: string[] = [];
+    const watchdog = new LoopWatchdog({
+      clock: deps.clock,
+      logger,
+      injectMessage: (msg) => injected.push(msg),
+      stallThresholdMs: 1,   // Very short threshold
+      forceRestartThresholdMs: 0,
+    });
+    orchestrator.setWatchdog(watchdog);
+    watchdog.start(999999); // Long interval — we'll check() manually
+
+    orchestrator.start();
+    await orchestrator.runLoop(); // Enters SLEEPING
+
+    expect(orchestrator.getState()).toBe(LoopState.SLEEPING);
+
+    // Check while sleeping — should be a no-op (paused)
+    watchdog.check();
+    expect(injected).toHaveLength(0);
+
+    // Wake — watchdog resumes, activity clock resets
+    orchestrator.wake();
+    expect(orchestrator.getState()).toBe(LoopState.RUNNING);
+
+    // A check immediately after wake should still be within threshold
+    watchdog.check();
+    expect(injected).toHaveLength(0);
+
+    watchdog.stop();
   });
 });

@@ -32,13 +32,18 @@ export async function createApplication(config: ApplicationConfig): Promise<Appl
       fileWatcher.start();
       if (forceStart) {
         const previousState = orchestrator.getState();
-        orchestrator.start();
-        // Only start loop if transitioning from STOPPED — SLEEPING delegates to wake() internally
-        if (previousState === "STOPPED") {
-          if (mode === "tick") {
-            orchestrator.runTickLoop().catch(() => {});
-          } else {
-            orchestrator.runLoop().catch(() => {});
+        // Suppress forceStart when the loop was persisted in SLEEPING state — the supervisor
+        // restart should not break sleep continuity. The loop will wake naturally on the next
+        // incoming event (message, heartbeat, etc.).
+        if (previousState !== "SLEEPING") {
+          orchestrator.start();
+          // Only start loop if transitioning from STOPPED — SLEEPING delegates to wake() internally
+          if (previousState === "STOPPED") {
+            if (mode === "tick") {
+              orchestrator.runTickLoop().catch(() => {});
+            } else {
+              orchestrator.runLoop().catch(() => {});
+            }
           }
         }
       }

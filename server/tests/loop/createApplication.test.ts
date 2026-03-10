@@ -107,6 +107,41 @@ describe("createApplication", () => {
     expect(app.orchestrator.getState()).toBe(LoopState.STOPPED);
   });
 
+  describe("sleep-preservation: forceStart when sleeping", () => {
+    it("forceStart=true does not wake loop when initialized in SLEEPING state", async () => {
+      // Create app with idle sleep enabled so the sleep state is persisted
+      const app = await createApplication(baseConfig({
+        httpPort: 0,
+        idleSleepConfig: { enabled: true, idleCyclesBeforeSleep: 1 },
+        watchdog: { disabled: true },
+      }));
+      createdApps.push(app);
+
+      // Manually initialize the orchestrator in SLEEPING state (simulating a restart after sleep)
+      app.orchestrator.initializeSleeping();
+      expect(app.orchestrator.getState()).toBe(LoopState.SLEEPING);
+
+      // Start with forceStart=true — should NOT wake because we were sleeping
+      await app.start(0, true);
+      expect(app.orchestrator.getState()).toBe(LoopState.SLEEPING);
+    });
+
+    it("forceStart=true does start loop when initialized in STOPPED state", async () => {
+      const app = await createApplication(baseConfig({
+        httpPort: 0,
+        idleSleepConfig: { enabled: true, idleCyclesBeforeSleep: 1 },
+        watchdog: { disabled: true },
+      }));
+      createdApps.push(app);
+
+      expect(app.orchestrator.getState()).toBe(LoopState.STOPPED);
+
+      await app.start(0, true);
+      // Should have transitioned from STOPPED → RUNNING
+      expect(app.orchestrator.getState()).not.toBe(LoopState.STOPPED);
+    });
+  });
+
   describe("idLauncher config", () => {
     it("creates application with idLauncher: 'claude' (explicit default)", async () => {
       const app = await createApplication(baseConfig({

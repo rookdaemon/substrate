@@ -253,7 +253,7 @@ export class LoopOrchestrator implements IMessageInjector {
     this.resumeLoopFn?.().catch((err) => {
       this.logger.debug(`wake: resumeLoopFn failed — ${err instanceof Error ? err.message : String(err)}`);
     });
-    this.watchdog?.recordActivity();
+    this.watchdog?.resume();
   }
 
   /**
@@ -1044,6 +1044,7 @@ export class LoopOrchestrator implements IMessageInjector {
 
   private enterSleep(): void {
     this.logger.debug("enterSleep() — transitioning to SLEEPING state");
+    this.watchdog?.pause();
     this.transition(LoopState.SLEEPING);
     this.onSleepEnter?.().catch((err) => {
       this.logger.debug(`enterSleep: onSleepEnter failed — ${err instanceof Error ? err.message : String(err)}`);
