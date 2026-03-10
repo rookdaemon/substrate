@@ -93,6 +93,9 @@ export interface ApplicationConfig {
   vertexKeyPath?: string;
   /** Model name for Vertex subprocess tasks (default: "gemini-2.5-flash"). */
   vertexModel?: string;
+  /** Which session launcher to use for the Id cognitive role (default: "claude" — same as other roles).
+   *  Set to "vertex" to route Id through VertexSessionLauncher. Requires vertexKeyPath to be set. */
+  idLauncher?: "claude" | "vertex";
   /** Configuration for the loop watchdog that detects stalls and injects reminders */
   watchdog?: {
     /** Disable the watchdog entirely (default: false) */

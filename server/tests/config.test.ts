@@ -445,6 +445,16 @@ describe("resolveConfig", () => {
       await writeConfig({ sessionLauncher: "vertex" });
       await expect(resolveConfig(fs, opts)).rejects.toThrow("not allowed for cognitive roles");
     });
+
+    it("rejects idLauncher: 'vertex' without vertexKeyPath", async () => {
+      await writeConfig({ idLauncher: "vertex" });
+      await expect(resolveConfig(fs, opts)).rejects.toThrow("idLauncher: \"vertex\" requires vertexKeyPath to be set");
+    });
+
+    it("rejects invalid idLauncher value", async () => {
+      await writeConfig({ idLauncher: "gemini" });
+      await expect(resolveConfig(fs, opts)).rejects.toThrow(ConfigValidationError);
+    });
   });
 
   describe("vertex config", () => {
@@ -486,6 +496,47 @@ describe("resolveConfig", () => {
 
       expect(config.vertexKeyPath).toBeUndefined();
       expect(config.vertexModel).toBeUndefined();
+    });
+
+    it("reads idLauncher: 'vertex' with vertexKeyPath set", async () => {
+      await fs.mkdir("/project", { recursive: true });
+      await fs.writeFile("/project/config.json", JSON.stringify({
+        idLauncher: "vertex",
+        vertexKeyPath: "/home/rook/.config/google/google_api_key.txt",
+      }));
+
+      const config = await resolveConfig(fs, {
+        appPaths: TEST_PATHS,
+        cwd: "/project",
+        env: {},
+      });
+
+      expect(config.idLauncher).toBe("vertex");
+      expect(config.vertexKeyPath).toBe("/home/rook/.config/google/google_api_key.txt");
+    });
+
+    it("reads idLauncher: 'claude' as explicit value", async () => {
+      await fs.mkdir("/project", { recursive: true });
+      await fs.writeFile("/project/config.json", JSON.stringify({
+        idLauncher: "claude",
+      }));
+
+      const config = await resolveConfig(fs, {
+        appPaths: TEST_PATHS,
+        cwd: "/project",
+        env: {},
+      });
+
+      expect(config.idLauncher).toBe("claude");
+    });
+
+    it("defaults idLauncher to undefined (absent = claude behavior)", async () => {
+      const config = await resolveConfig(fs, {
+        appPaths: TEST_PATHS,
+        env: {},
+      });
+
+      expect(config.idLauncher).toBeUndefined();
     });
   });
 

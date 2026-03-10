@@ -217,7 +217,19 @@ export async function createAgentLayer(
   const ego = new Ego(reader, writer, conversationManager, checker, promptBuilder, gatedLauncher, clock, taskClassifier, workspaceManager.workspacePath(AgentRole.EGO));
   const subconscious = new Subconscious(reader, writer, appendWriter, conversationManager, checker, promptBuilder, gatedLauncher, clock, taskClassifier, workspaceManager.workspacePath(AgentRole.SUBCONSCIOUS));
   const superego = new Superego(reader, appendWriter, checker, promptBuilder, gatedLauncher, clock, taskClassifier, writer, workspaceManager.workspacePath(AgentRole.SUPEREGO));
-  const id = new Id(reader, checker, promptBuilder, gatedLauncher, clock, taskClassifier, workspaceManager.workspacePath(AgentRole.ID), driveQualityTracker);
+
+  // Id launcher — defaults to gatedLauncher; routes to VertexSessionLauncher when idLauncher === "vertex".
+  // VertexSessionLauncher silently ignores continueSession/persistSession flags (reads only model and timeoutMs).
+  // This is a semantic no-op for Id: Id produces stateless advisory output and does not need cross-call session continuity.
+  let idGatedLauncher: ISessionLauncher = gatedLauncher;
+  if (config.idLauncher === "vertex" && vertexSubprocessLauncher) {
+    idGatedLauncher = new SemaphoreSessionLauncher(vertexSubprocessLauncher, apiSemaphore);
+    logger.debug("agent-layer: Id using VertexSessionLauncher (idLauncher: vertex)");
+  } else if (config.idLauncher === "vertex") {
+    logger.debug("agent-layer: idLauncher is \"vertex\" but no Vertex launcher available — Id falling back to default launcher");
+  }
+
+  const id = new Id(reader, checker, promptBuilder, idGatedLauncher, clock, taskClassifier, workspaceManager.workspacePath(AgentRole.ID), driveQualityTracker);
 
   return {
     checker, promptBuilder, launcher, gatedLauncher, apiSemaphore, processTracker,

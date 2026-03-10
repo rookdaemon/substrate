@@ -106,4 +106,41 @@ describe("createApplication", () => {
     expect(app).toBeDefined();
     expect(app.orchestrator.getState()).toBe(LoopState.STOPPED);
   });
+
+  describe("idLauncher config", () => {
+    it("creates application with idLauncher: 'claude' (explicit default)", async () => {
+      const app = await createApplication(baseConfig({
+        httpPort: 0,
+        idLauncher: "claude",
+      }));
+      createdApps.push(app);
+
+      expect(app).toBeDefined();
+      expect(app.orchestrator.getState()).toBe(LoopState.STOPPED);
+    });
+
+    it("creates application without idLauncher (implicit default = claude behavior)", async () => {
+      const app = await createApplication(baseConfig({
+        httpPort: 0,
+      }));
+      createdApps.push(app);
+
+      expect(app).toBeDefined();
+      expect(app.orchestrator.getState()).toBe(LoopState.STOPPED);
+    });
+
+    it("creates application with idLauncher: 'vertex' and missing key file (falls back to default launcher)", async () => {
+      // When vertexKeyPath points to a missing file, the vertex launcher is unavailable.
+      // Id should fall back to the default gatedLauncher — the app must still start.
+      const app = await createApplication(baseConfig({
+        httpPort: 0,
+        idLauncher: "vertex",
+        vertexKeyPath: join(tempDir, "nonexistent-api-key.txt"),
+      }));
+      createdApps.push(app);
+
+      expect(app).toBeDefined();
+      expect(app.orchestrator.getState()).toBe(LoopState.STOPPED);
+    });
+  });
 });

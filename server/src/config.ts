@@ -102,6 +102,7 @@ const AppConfigSchema = z
       .optional(),
     vertexKeyPath: z.string().optional(),
     vertexModel: z.string().optional(),
+    idLauncher: z.enum(["claude", "vertex"]).optional(),
     peers: z
       .array(z.object({ name: z.string(), port: z.number().int().min(1).max(65535) }))
       .optional(),
@@ -121,6 +122,13 @@ const AppConfigSchema = z
     {
       message: "sessionLauncher: \"vertex\" is not allowed for cognitive roles. Vertex is for subprocess tasks only (compaction, summarization). Use vertexKeyPath to enable it as a subprocess fallback.",
       path: ["sessionLauncher"],
+    }
+  )
+  .refine(
+    (data) => data.idLauncher !== "vertex" || !!data.vertexKeyPath,
+    {
+      message: "idLauncher: \"vertex\" requires vertexKeyPath to be set.",
+      path: ["idLauncher"],
     }
   );
 
@@ -256,6 +264,9 @@ export interface AppConfig {
   vertexKeyPath?: string;
   /** Model name for Vertex subprocess tasks (default: "gemini-2.5-flash"). */
   vertexModel?: string;
+  /** Which session launcher to use for the Id cognitive role (default: "claude" — same as other roles).
+   *  Set to "vertex" to route Id through VertexSessionLauncher. Requires vertexKeyPath to be set. */
+  idLauncher?: "claude" | "vertex";
   /** Configuration for the loop watchdog that detects stalls and injects reminders */
   watchdog?: {
     /** Disable the watchdog entirely (default: false) */
@@ -442,6 +453,7 @@ export async function resolveConfig(
       : undefined,
     vertexKeyPath: fileConfig.vertexKeyPath,
     vertexModel: fileConfig.vertexModel,
+    idLauncher: fileConfig.idLauncher,
     watchdog: fileConfig.watchdog
       ? {
         disabled: fileConfig.watchdog.disabled ?? false,
