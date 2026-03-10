@@ -1,6 +1,6 @@
 {
   "name": "@substrate/server",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "private": true,
   "description": "Substrate backend execution loop",
   "type": "module",

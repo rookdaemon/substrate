@@ -15,6 +15,7 @@ export enum SubstrateFileType {
   PEERS = "PEERS",
   ESCALATE_TO_STEFAN = "ESCALATE_TO_STEFAN",
   RESTART_CONTEXT = "RESTART_CONTEXT",
+  HEARTBEAT = "HEARTBEAT",
 }
 
 export enum WriteMode {
@@ -50,4 +51,5 @@ export const SUBSTRATE_FILE_SPECS: Record<SubstrateFileType, SubstrateFileSpec> 
   [SubstrateFileType.PEERS]: { fileName: "PEERS.md", writeMode: WriteMode.OVERWRITE, required: false },
   [SubstrateFileType.ESCALATE_TO_STEFAN]: { fileName: "ESCALATE_TO_STEFAN.md", writeMode: WriteMode.APPEND, required: false },
   [SubstrateFileType.RESTART_CONTEXT]: { fileName: "restart-context.md", writeMode: WriteMode.OVERWRITE, required: false },
+  [SubstrateFileType.HEARTBEAT]: { fileName: "HEARTBEAT.md", writeMode: WriteMode.OVERWRITE, required: false },
 };

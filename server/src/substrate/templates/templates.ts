@@ -159,3 +159,59 @@ This file captures the agent's state when entering rate-limited hibernation. It 
 
 No rate limit hibernation in progress.
 `;
+
+export const HEARTBEAT_TEMPLATE = `# HEARTBEAT
+
+This file is read by the HeartbeatScheduler every agent cycle. When a scheduled
+entry fires, its payload is injected into CONVERSATION.md as:
+
+  [HEARTBEAT <iso-timestamp>] <payload>
+
+The file is optional — if absent the scheduler is a graceful no-op. One-shot
+entries (@once and ISO timestamps) are automatically removed after firing.
+
+## Format
+
+Each entry starts with a header line (\`# <schedule> [when: <condition>]\`)
+followed by one or more payload lines. Blank lines between entries are ignored.
+
+## Schedule Types
+
+  @once                 — Fire immediately once, then remove this entry.
+  2026-06-01T09:00Z     — ISO 8601 UTC timestamp: fire at/after that time, then remove.
+  0 9 * * 1             — 5-field cron (UTC): fire every matching minute, persist.
+  (empty / just \`#\`)   — Condition-only: no time schedule; fire on condition edge.
+
+Cron field order: minute hour day-of-month month day-of-week (0=Sunday).
+Supported cron syntax per field: \`*\`, exact value, \`*/N\` step, \`N-M\` range, \`N,M\` list.
+
+## Conditions (when: clause)
+
+Append \`when: <condition>\` to any header to add a condition gate. The entry fires
+only when the condition transitions from false to true (edge trigger). Multiple
+conditions can be combined with \` AND \`.
+
+Built-in conditions:
+  agora_peer_message             — An inbound Agora message was received this cycle.
+  peer:<peerId>.available        — A peer recovered from offline (requires peerAvailabilityMonitor config).
+
+## Examples
+
+# @once
+Run a one-time boot task on the next agent cycle.
+
+# 2026-06-01T09:00Z
+Remind me to review the quarterly plan at 09:00 UTC on 2026-06-01.
+
+# 0 9 * * 1
+Weekly Monday morning check-in: review PLAN.md and set goals for the week.
+
+# 30 * * * *
+Every hour at the half-hour mark: check PROGRESS.md for stalled tasks.
+
+# when: agora_peer_message
+A peer has sent a message. Check AGORA_INBOX.md and respond if appropriate.
+
+# 0 * * * * when: peer:alice.available
+Alice just came back online. Send a greeting via Agora.
+`;

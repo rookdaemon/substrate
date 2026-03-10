@@ -255,7 +255,7 @@ cd server && npx eslint src/ tests/
 
 ## Substrate File Formats
 
-The substrate is a directory of 15 markdown files that serve as the system's shared memory (12 required + 3 optional). Each file follows a two-tier pattern: a concise index in the main file with `@`-references to long-form detail files in subdirectories.
+The substrate is a directory of 16 markdown files that serve as the system's shared memory (12 required + 4 optional). Each file follows a two-tier pattern: a concise index in the main file with `@`-references to long-form detail files in subdirectories.
 
 | File | Write Mode | Description |
 |------|-----------|-------------|
@@ -274,6 +274,7 @@ The substrate is a directory of 15 markdown files that serve as the system's sha
 | `PEERS.md` | OVERWRITE | Agora peer registry for agent-to-agent communication (optional) |
 | `ESCALATE_TO_STEFAN.md` | APPEND | Escalation log for issues requiring manual intervention (optional) |
 | `restart-context.md` | OVERWRITE | Restart handoff context and state restoration notes (optional) |
+| `HEARTBEAT.md` | OVERWRITE | Scheduled message injection into CONVERSATION.md — read every cycle, graceful no-op if absent (optional) |
 
 ### Two-Tier Knowledge System
 
@@ -319,6 +320,70 @@ The agent can reply using the `AgoraService.send()` method via TinyBus `agora.se
 
 **Configuration:**
 Agora configuration lives in `~/.config/agora/config.json` with identity keys and peer registry. If not configured, Agora features are disabled gracefully.
+
+---
+
+### HEARTBEAT Scheduler
+
+`HEARTBEAT.md` enables scheduled message injection into `CONVERSATION.md`. The HeartbeatScheduler reads the file every agent cycle; if the file is absent it is a graceful no-op.
+
+**File location:** `{substratePath}/HEARTBEAT.md`
+
+**Injected format:** `[HEARTBEAT <iso-timestamp>] <payload>`
+
+#### Entry Format
+
+Each entry starts with a header line followed by one or more payload lines. Entries are separated by blank lines.
+
+```
+# <schedule> [when: <condition>]
+payload text (may span multiple lines — collapsed to one line when injected)
+
+# next entry
+...
+```
+
+#### Schedule Types
+
+| Schedule | Behaviour |
+|----------|-----------|
+| `@once` | Fires immediately once, then the entry is removed |
+| `2026-06-01T09:00Z` | ISO 8601 UTC timestamp: fires at/after that time, then removed |
+| `0 9 * * 1` | 5-field cron (UTC): fires every matching minute, persists |
+| *(empty header `#`)* | Condition-only: no time schedule; fires on condition edge trigger |
+
+Cron field order: `minute hour day-of-month month day-of-week` (0 = Sunday). Supported per-field syntax: `*`, exact value, `*/N` step, `N-M` range, `N,M` list.
+
+#### Conditions (`when:` clause)
+
+Append `when: <condition>` to a header to add a condition gate. The entry fires only when the condition transitions **false → true** (edge trigger). Multiple conditions may be combined with ` AND `.
+
+| Condition | Fires when |
+|-----------|-----------|
+| `agora_peer_message` | An inbound Agora message was received this cycle |
+| `peer:<peerId>.available` | A monitored peer recovered from offline (requires `peerAvailabilityMonitor` config) |
+
+#### Examples
+
+```markdown
+# @once
+Run a one-time boot task on the next agent cycle.
+
+# 2026-06-01T09:00Z
+Remind me to review the quarterly plan at 09:00 UTC on 2026-06-01.
+
+# 0 9 * * 1
+Weekly Monday morning check-in: review PLAN.md and set goals for the week.
+
+# 30 * * * *
+Every hour at the half-hour mark: check PROGRESS.md for stalled tasks.
+
+# when: agora_peer_message
+A peer has sent a message. Check AGORA_INBOX.md and respond if appropriate.
+
+# 0 * * * * when: peer:alice.available
+Alice just came back online. Send a greeting via Agora.
+```
 
 ---
 
