@@ -19,6 +19,10 @@ import { MetricsScheduler } from "./MetricsScheduler";
 import { ValidationScheduler } from "./ValidationScheduler";
 import { IScheduler } from "./IScheduler";
 import { SchedulerCoordinator } from "./SchedulerCoordinator";
+import { HeartbeatScheduler } from "./HeartbeatScheduler";
+import { AgoraPeerMessageCondition } from "./AgoraPeerMessageCondition";
+import { PeerAvailabilityCondition } from "./PeerAvailabilityCondition";
+import type { IConditionEvaluator } from "./IConditionEvaluator";
 import { SelfImprovementMetricsCollector } from "../evaluation/SelfImprovementMetrics";
 import { PerformanceMetrics } from "../evaluation/PerformanceMetrics";
 import type { Envelope } from "@rookdaemon/agora" with { "resolution-mode": "import" };
@@ -710,7 +714,37 @@ export async function createLoopLayer(
     });
   }
 
-  orchestrator.setSchedulerCoordinator(new SchedulerCoordinator(schedulers));
+  // HeartbeatScheduler — reads HEARTBEAT.md, fires due entries, appends to CONVERSATION.md
+  {
+    const heartbeatPath = path.join(config.substratePath, "HEARTBEAT.md");
+    const conditionEvaluators = new Map<string, IConditionEvaluator>();
+
+    // Agora peer message condition: fires when an inbound Agora message is received
+    const agoraPeerMessageCondition = new AgoraPeerMessageCondition();
+    conditionEvaluators.set(AgoraPeerMessageCondition.PREFIX, agoraPeerMessageCondition);
+
+    // Peer availability condition: fires when a peer transitions from unavailable to available
+    if (monitoredPeers.length > 0) {
+      const peerAvailabilityCondition = new PeerAvailabilityCondition(monitoredPeers, logger);
+      conditionEvaluators.set(PeerAvailabilityCondition.PREFIX, peerAvailabilityCondition);
+    }
+
+    const heartbeatScheduler = new HeartbeatScheduler(
+      fs,
+      clock,
+      logger,
+      heartbeatPath,
+      conversationManager,
+      conditionEvaluators
+    );
+    schedulers.push(heartbeatScheduler);
+    orchestrator.setSchedulerCoordinator(new SchedulerCoordinator(schedulers));
+
+    // Wire the agora message notification into AgoraMessageHandler
+    if (agoraMessageHandler) {
+      agoraMessageHandler.setOnMessageProcessed(() => agoraPeerMessageCondition.notifyMessage());
+    }
+  }
 
   // Watchdog — detects stalls and injects gentle reminders
   const watchdogConfig = config.watchdog ?? {};
