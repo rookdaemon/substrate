@@ -759,7 +759,8 @@ export async function createLoopLayer(
       logger,
       heartbeatPath,
       conversationManager,
-      conditionEvaluators
+      conditionEvaluators,
+      orchestrator
     );
     schedulers.push(heartbeatScheduler);
     orchestrator.setSchedulerCoordinator(new SchedulerCoordinator(schedulers));

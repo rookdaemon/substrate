@@ -3,6 +3,7 @@ import type { IClock } from "../substrate/abstractions/IClock";
 import type { ILogger } from "../logging";
 import type { IConversationManager } from "../conversation/IConversationManager";
 import type { IConditionEvaluator } from "./IConditionEvaluator";
+import type { IMessageInjector } from "./IMessageInjector";
 import { AgentRole } from "../agents/types";
 import {
   parseHeartbeat,
@@ -39,7 +40,8 @@ export class HeartbeatScheduler {
     private readonly logger: ILogger,
     private readonly heartbeatPath: string,
     private readonly conversationManager: IConversationManager,
-    private readonly evaluators: Map<string, IConditionEvaluator> = new Map()
+    private readonly evaluators: Map<string, IConditionEvaluator> = new Map(),
+    private readonly messageInjector?: IMessageInjector
   ) {}
 
   async shouldRun(): Promise<boolean> {
@@ -180,6 +182,10 @@ export class HeartbeatScheduler {
       this.logger.debug(
         `[HEARTBEAT] Failed to append to CONVERSATION.md: ${err instanceof Error ? err.message : String(err)}`
       );
+    }
+    // Inject into pendingMessages so the cycle actually processes this message
+    if (this.messageInjector) {
+      this.messageInjector.injectMessage(message);
     }
   }
 }

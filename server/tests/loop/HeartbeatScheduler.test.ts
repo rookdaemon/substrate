@@ -7,11 +7,20 @@ import { InMemoryLogger } from "../../src/logging";
 import type { IConversationManager } from "../../src/conversation/IConversationManager";
 import type { AgentRole } from "../../src/agents/types";
 import type { IConditionEvaluator } from "../../src/loop/IConditionEvaluator";
+import type { IMessageInjector } from "../../src/loop/IMessageInjector";
 
 class MockConversationManager implements IConversationManager {
   public appendedEntries: Array<{ role: AgentRole; entry: string }> = [];
   async append(role: AgentRole, entry: string): Promise<void> {
     this.appendedEntries.push({ role, entry });
+  }
+}
+
+class MockMessageInjector implements IMessageInjector {
+  public injectedMessages: string[] = [];
+  injectMessage(message: string): boolean {
+    this.injectedMessages.push(message);
+    return false;
   }
 }
 
@@ -21,7 +30,8 @@ function makeScheduler(
   fs: InMemoryFileSystem,
   clock: FixedClock,
   conversationManager: MockConversationManager,
-  evaluators?: Map<string, IConditionEvaluator>
+  evaluators?: Map<string, IConditionEvaluator>,
+  messageInjector?: IMessageInjector
 ): HeartbeatScheduler {
   return new HeartbeatScheduler(
     fs,
@@ -29,7 +39,8 @@ function makeScheduler(
     new InMemoryLogger(),
     HEARTBEAT_PATH,
     conversationManager,
-    evaluators
+    evaluators,
+    messageInjector
   );
 }
 
@@ -274,6 +285,43 @@ describe("HeartbeatScheduler", () => {
       expect(entry).not.toContain("\n");
       expect(entry).toContain("Line one.");
       expect(entry).toContain("Line two.");
+    });
+  });
+
+  describe("message injection", () => {
+    it("injects fired entries into messageInjector when provided", async () => {
+      await fs.writeFile(HEARTBEAT_PATH, "# @once\nDo the thing.\n");
+      const injector = new MockMessageInjector();
+      const scheduler = makeScheduler(fs, clock, conversationManager, undefined, injector);
+
+      await scheduler.run();
+
+      expect(injector.injectedMessages).toHaveLength(1);
+      expect(injector.injectedMessages[0]).toContain("[HEARTBEAT");
+      expect(injector.injectedMessages[0]).toContain("Do the thing.");
+    });
+
+    it("injects cron entries so cycles process them", async () => {
+      // Clock is 2026-03-09T20:00:00Z — minute=0, hour=20
+      await fs.writeFile(HEARTBEAT_PATH, "# 0 20 * * *\nHourly task.\n");
+      const injector = new MockMessageInjector();
+      const scheduler = makeScheduler(fs, clock, conversationManager, undefined, injector);
+
+      await scheduler.run();
+
+      expect(injector.injectedMessages).toHaveLength(1);
+      expect(injector.injectedMessages[0]).toContain("Hourly task.");
+      // Also appended to conversation for persistence
+      expect(conversationManager.appendedEntries).toHaveLength(1);
+    });
+
+    it("works without messageInjector (backwards compatible)", async () => {
+      await fs.writeFile(HEARTBEAT_PATH, "# @once\nPayload.\n");
+      const scheduler = makeScheduler(fs, clock, conversationManager);
+
+      await scheduler.run();
+
+      expect(conversationManager.appendedEntries).toHaveLength(1);
     });
   });
 
