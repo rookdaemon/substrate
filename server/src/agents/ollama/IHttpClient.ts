@@ -24,6 +24,12 @@ export interface IHttpClient {
     options?: HttpRequestOptions
   ): Promise<HttpResponse>;
 
+  postStream(
+    url: string,
+    body: unknown,
+    options?: HttpRequestOptions
+  ): Promise<AsyncIterable<string>>;
+
   get(
     url: string,
     options?: HttpRequestOptions

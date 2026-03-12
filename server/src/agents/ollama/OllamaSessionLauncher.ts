@@ -21,7 +21,7 @@ export interface OllamaMessage {
 
 /**
  * Expected response shape from Ollama's POST /api/chat endpoint
- * with stream: false.
+ * in streaming mode (each NDJSON line).
  */
 interface OllamaResponse {
   model: string;
@@ -114,41 +114,47 @@ export class OllamaSessionLauncher implements ISessionLauncher {
     const format: unknown = options?.outputSchema ?? "json";
 
     try {
-      const response = await this.httpClient.post(
+      const stream = await this.httpClient.postStream(
         `${this.baseUrl}/api/chat`,
         {
           model: modelToUse,
           messages,
-          stream: false,
+          stream: true,
           format,
         },
         { timeoutMs }
       );
 
+      let finalChunk: OllamaResponse | null = null;
+      for await (const line of stream) {
+        try {
+          const chunk = JSON.parse(line) as OllamaResponse;
+          if (chunk.error) {
+            const durationMs = this.clock.now().getTime() - startMs;
+            return {
+              rawOutput: "",
+              exitCode: 1,
+              durationMs,
+              success: false,
+              error: `Ollama error: ${chunk.error}`,
+            };
+          }
+          if (chunk.done) {
+            finalChunk = chunk;
+            break;
+          }
+        } catch {
+          /* partial line — skip */
+        }
+      }
+
       const durationMs = this.clock.now().getTime() - startMs;
 
-      if (!response.ok) {
-        const body = await response.text();
-        return {
-          rawOutput: "",
-          exitCode: 1,
-          durationMs,
-          success: false,
-          error: `Ollama returned HTTP ${response.status}: ${body}`,
-        };
+      if (!finalChunk) {
+        throw new Error("Stream ended without done:true chunk");
       }
 
-      const data = (await response.json()) as OllamaResponse;
-
-      if (data.error) {
-        return {
-          rawOutput: "",
-          exitCode: 1,
-          durationMs,
-          success: false,
-          error: `Ollama error: ${data.error}`,
-        };
-      }
+      const data = finalChunk;
 
       const assistantContent = data.message?.content ?? "";
 
