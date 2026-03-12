@@ -37,6 +37,53 @@ export class FetchHttpClient implements IHttpClient {
     }
   }
 
+  async postStream(
+    url: string,
+    body: unknown,
+    options?: HttpRequestOptions
+  ): Promise<AsyncIterable<string>> {
+    const controller = new AbortController();
+    const timeout = setTimeout(
+      () => controller.abort(),
+      options?.timeoutMs ?? DEFAULT_TIMEOUT_MS
+    );
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      clearTimeout(timeout);
+      throw new Error(`HTTP ${response.status}`);
+    }
+    if (!response.body) {
+      clearTimeout(timeout);
+      throw new Error(`HTTP ${response.status}: response body is not readable`);
+    }
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    return (async function* () {
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() ?? "";
+          for (const line of lines) {
+            if (line.trim()) yield line;
+          }
+        }
+        if (buffer.trim()) yield buffer;
+      } finally {
+        clearTimeout(timeout);
+        reader.releaseLock();
+      }
+    })();
+  }
+
   async get(
     url: string,
     options?: HttpRequestOptions

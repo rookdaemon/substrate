@@ -100,13 +100,13 @@ describe("OllamaSessionLauncher", () => {
     expect(body.model).toBe("phi4:14b");
   });
 
-  it("sets stream: false in the request body", async () => {
+  it("sets stream: true in the request body", async () => {
     http.enqueueJson(makeOllamaResponse("ok"));
 
     await launcher.launch(makeRequest());
 
     const body = http.getRequests()[0].body as Record<string, unknown>;
-    expect(body.stream).toBe(false);
+    expect(body.stream).toBe(true);
   });
 
   // ── JSON format enforcement ──────────────────────────────────────────────

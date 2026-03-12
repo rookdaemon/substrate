@@ -87,6 +87,22 @@ export class InMemoryHttpClient implements IHttpClient {
     return this.consumeResponse("POST", url, body, options);
   }
 
+  async postStream(
+    url: string,
+    body: unknown,
+    options?: HttpRequestOptions
+  ): Promise<AsyncIterable<string>> {
+    // Reuse recorded response — yield the body as a single NDJSON final chunk
+    const response = await this.post(url, body, options);
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    const text = await response.text();
+    return (async function* () {
+      yield text;
+    })();
+  }
+
   async get(
     url: string,
     options?: HttpRequestOptions
