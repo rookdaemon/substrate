@@ -132,8 +132,8 @@ Time: $(date -R)
     log_info "Waiting ${backoff_seconds}s before recovery attempt (escalating backoff)..."
     sleep "$backoff_seconds"
 
-    # Step 1: Try standard rebuild first (nvm use --lts, npm ci, npm run build)
-    log_info "Attempting standard rebuild: nvm use --lts, npm ci, npm run build..."
+    # Step 1: Try standard rebuild first (nvm use --lts, git pull, npm install --include=dev, npm run build)
+    log_info "Attempting standard rebuild: nvm use --lts, git pull, npm install --include=dev, npm run build..."
 
     local rebuild_output="/tmp/bishop-substrate-recovery-rebuild-output.txt"
     local rebuild_success=false
@@ -150,8 +150,11 @@ Time: $(date -R)
 
         cd "$SUBSTRATE_HOME" || exit 1
 
-        echo "=== npm ci ==="
-        npm ci || exit 1
+        echo "=== git pull ==="
+        git pull --rebase --autostash || exit 1
+
+        echo "=== npm install --include=dev ==="
+        npm install --include=dev || exit 1
 
         echo "=== npm run build ==="
         npm run build || exit 1
@@ -171,7 +174,7 @@ Time: $(date -R)
 
             send_email \
                 "Bishop Substrate Recovery Successful via Rebuild (Attempt $attempt_count)" \
-                "The bishop-substrate service was recovered by a standard rebuild (nvm use --lts, npm ci, npm run build).
+                "The bishop-substrate service was recovered by a standard rebuild (nvm use --lts, git pull, npm install --include=dev, npm run build).
 
 Attempt: $attempt_count of $MAX_ATTEMPTS
 Hostname: $(hostname)
