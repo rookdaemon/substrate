@@ -177,5 +177,19 @@ describe("createApplication", () => {
       expect(app).toBeDefined();
       expect(app.orchestrator.getState()).toBe(LoopState.STOPPED);
     });
+
+    it("creates application with idLauncher: 'ollama'", async () => {
+      // OllamaSessionLauncher is constructed eagerly — app must start even if Ollama is not reachable.
+      const app = await createApplication(baseConfig({
+        httpPort: 0,
+        idLauncher: "ollama",
+        idOllamaModel: "deepseek-r1:70b",
+        ollamaBaseUrl: "http://localhost:11434",
+      }));
+      createdApps.push(app);
+
+      expect(app).toBeDefined();
+      expect(app.orchestrator.getState()).toBe(LoopState.STOPPED);
+    });
   });
 });

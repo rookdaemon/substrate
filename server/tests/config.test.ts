@@ -455,6 +455,12 @@ describe("resolveConfig", () => {
       await writeConfig({ idLauncher: "gemini" });
       await expect(resolveConfig(fs, opts)).rejects.toThrow(ConfigValidationError);
     });
+
+    it("accepts idLauncher: 'ollama' without any additional requirements", async () => {
+      await writeConfig({ idLauncher: "ollama" });
+      const config = await resolveConfig(fs, opts);
+      expect(config.idLauncher).toBe("ollama");
+    });
   });
 
   describe("vertex config", () => {
@@ -537,6 +543,32 @@ describe("resolveConfig", () => {
       });
 
       expect(config.idLauncher).toBeUndefined();
+    });
+
+    it("reads idOllamaModel from config file", async () => {
+      await fs.mkdir("/project", { recursive: true });
+      await fs.writeFile("/project/config.json", JSON.stringify({
+        idLauncher: "ollama",
+        idOllamaModel: "deepseek-r1:70b",
+      }));
+
+      const config = await resolveConfig(fs, {
+        appPaths: TEST_PATHS,
+        cwd: "/project",
+        env: {},
+      });
+
+      expect(config.idLauncher).toBe("ollama");
+      expect(config.idOllamaModel).toBe("deepseek-r1:70b");
+    });
+
+    it("defaults idOllamaModel to undefined when absent", async () => {
+      const config = await resolveConfig(fs, {
+        appPaths: TEST_PATHS,
+        env: {},
+      });
+
+      expect(config.idOllamaModel).toBeUndefined();
     });
   });
 

@@ -227,6 +227,12 @@ export async function createAgentLayer(
     logger.debug("agent-layer: Id using VertexSessionLauncher (idLauncher: vertex)");
   } else if (config.idLauncher === "vertex") {
     logger.debug("agent-layer: idLauncher is \"vertex\" but no Vertex launcher available — Id falling back to default launcher");
+  } else if (config.idLauncher === "ollama") {
+    const ollamaBaseUrl = config.ollamaBaseUrl ?? "http://localhost:11434";
+    const ollamaModel = config.idOllamaModel ?? config.ollamaModel;
+    const ollamaLauncher = new OllamaSessionLauncher(new FetchHttpClient(), clock, ollamaModel, ollamaBaseUrl);
+    idGatedLauncher = new SemaphoreSessionLauncher(ollamaLauncher, apiSemaphore);
+    logger.debug(`agent-layer: Id using OllamaSessionLauncher (idLauncher: ollama, model: ${ollamaModel ?? "default"})`);
   }
 
   const id = new Id(reader, checker, promptBuilder, idGatedLauncher, clock, taskClassifier, workspaceManager.workspacePath(AgentRole.ID), driveQualityTracker, logger);

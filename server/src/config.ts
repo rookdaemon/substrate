@@ -102,7 +102,8 @@ const AppConfigSchema = z
       .optional(),
     vertexKeyPath: z.string().optional(),
     vertexModel: z.string().optional(),
-    idLauncher: z.enum(["claude", "vertex"]).optional(),
+    idLauncher: z.enum(["claude", "vertex", "ollama"]).optional(),
+    idOllamaModel: z.string().optional(),
     peers: z
       .array(z.object({ name: z.string(), port: z.number().int().min(1).max(65535) }))
       .optional(),
@@ -265,8 +266,12 @@ export interface AppConfig {
   /** Model name for Vertex subprocess tasks (default: "gemini-2.5-flash"). */
   vertexModel?: string;
   /** Which session launcher to use for the Id cognitive role (default: "claude" — same as other roles).
-   *  Set to "vertex" to route Id through VertexSessionLauncher. Requires vertexKeyPath to be set. */
-  idLauncher?: "claude" | "vertex";
+   *  Set to "vertex" to route Id through VertexSessionLauncher. Requires vertexKeyPath to be set.
+   *  Set to "ollama" to route Id through OllamaSessionLauncher. Uses ollamaBaseUrl and idOllamaModel (falls back to ollamaModel). */
+  idLauncher?: "claude" | "vertex" | "ollama";
+  /** Model name for Ollama when idLauncher is "ollama" (default: falls back to ollamaModel, then OllamaSessionLauncher built-in default "qwen3:14b").
+   *  Separate from ollamaModel to allow independent model selection per role. */
+  idOllamaModel?: string;
   /** Configuration for the loop watchdog that detects stalls and injects reminders */
   watchdog?: {
     /** Disable the watchdog entirely (default: false) */
@@ -454,6 +459,7 @@ export async function resolveConfig(
     vertexKeyPath: fileConfig.vertexKeyPath,
     vertexModel: fileConfig.vertexModel,
     idLauncher: fileConfig.idLauncher,
+    idOllamaModel: fileConfig.idOllamaModel,
     watchdog: fileConfig.watchdog
       ? {
         disabled: fileConfig.watchdog.disabled ?? false,
