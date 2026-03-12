@@ -83,6 +83,15 @@ describe("DriveQualityTracker", () => {
   });
 
   describe("inferCategory", () => {
+    it("classifies adversarial tasks by keyword", () => {
+      expect(DriveQualityTracker.inferCategory("Bishop adversarial review of Ch4")).toBe("adversarial");
+      expect(DriveQualityTracker.inferCategory("pre-reading prior position for Pettit")).toBe("adversarial");
+      expect(DriveQualityTracker.inferCategory("challenge construction for companion document")).toBe("adversarial");
+      expect(DriveQualityTracker.inferCategory("treatise review for Parfit Ch5")).toBe("adversarial");
+      expect(DriveQualityTracker.inferCategory("PASS evaluation with Scanlon attribution architecture")).toBe("adversarial");
+      expect(DriveQualityTracker.inferCategory("review cycle on prior position")).toBe("adversarial");
+    });
+
     it("classifies reading tasks", () => {
       expect(DriveQualityTracker.inferCategory("Read papers on alignment")).toBe("reading");
       expect(DriveQualityTracker.inferCategory("Reading session on AGI safety")).toBe("reading");

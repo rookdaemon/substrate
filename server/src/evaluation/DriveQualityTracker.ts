@@ -56,6 +56,12 @@ export class DriveQualityTracker {
    */
   static inferCategory(description: string): string {
     const lower = description.toLowerCase();
+    // Adversarial: Bishop-domain terms — checked first to prevent misclassification as reading/writing.
+    // PASS is matched on the original to treat it as an acronym and avoid common-word false positives.
+    if (
+      /\b(challenge|adversarial|ch[45]|pettit|parfit|scanlon)\b|companion document|treatise review|pre-reading|prior position|attribution architecture|review cycle/.test(lower) ||
+      /\bPASS\b/.test(description)
+    ) return "adversarial";
     if (/\bread(ing|s)?\b/.test(lower)) return "reading";
     if (/\bresearch\b/.test(lower)) return "research";
     if (/\b(write|writing|blog|document|draft)\b/.test(lower)) return "writing";
