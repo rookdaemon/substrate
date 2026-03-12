@@ -183,13 +183,16 @@ export class Subconscious {
 
       const parsed = extractJson(result.rawOutput);
       return {
-        result: (parsed.result as "success" | "failure" | "partial" | undefined) ?? "failure",
+        result: (parsed.result as "success" | "failure" | "partial" | "blocked" | undefined) ?? "failure",
         summary: (parsed.summary as string | undefined) ?? "",
         progressEntry: (parsed.progressEntry as string | undefined) ?? "",
         skillUpdates: (parsed.skillUpdates as string | null | undefined) ?? null,
         memoryUpdates: (parsed.memoryUpdates as string | null | undefined) ?? null,
         proposals: (parsed.proposals as SubconsciousProposal[] | undefined) ?? [],
         agoraReplies: (parsed.agoraReplies as AgoraReply[] | undefined) ?? [],
+        blockedReason: (parsed.blockedReason as string | undefined) ?? undefined,
+        insAcknowledgments: (parsed.insAcknowledgments as import("../../loop/ins/types").InsAcknowledgment[] | undefined) ?? undefined,
+        retryAfter: (parsed.retryAfter as string | undefined) ?? undefined,
       };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

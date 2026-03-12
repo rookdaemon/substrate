@@ -107,6 +107,9 @@ export class LoopOrchestrator implements IMessageInjector {
   private agoraService: IAgoraService | null = null;
   private agoraPeerDirectoryBuilder: (() => ReturnType<typeof buildPeerReferenceDirectory>) | null = null;
 
+  // Blocked task tracking — records which task was last blocked so [UNBLOCKED] can be logged on re-dispatch
+  private lastBlockedTaskId: string | null = null;
+
   // INS (Involuntary Nervous System) — pre-cycle deterministic rule checks
   private insHook: INSHook | null = null;
   private rateLimitTrimFn: (() => Promise<void>) | null = null;
@@ -554,6 +557,10 @@ export class LoopOrchestrator implements IMessageInjector {
         data: { consecutiveIdleCycles: this.metrics.consecutiveIdleCycles },
       });
     } else {
+      if (this.lastBlockedTaskId === dispatch.taskId) {
+        this.logger.debug(`[UNBLOCKED] cycle ${this.cycleNumber}: task "${dispatch.taskId}" — retrying after block`);
+        this.lastBlockedTaskId = null;
+      }
       this.logger.debug(`cycle ${this.cycleNumber}: dispatching task "${dispatch.taskId}"${dispatch.correlationId ? ` [correlationId: ${dispatch.correlationId}]` : ""}`);
 
       // Endpoint state injection — provide runtime context alongside task dispatch
@@ -595,6 +602,7 @@ export class LoopOrchestrator implements IMessageInjector {
       if (blocked) {
         const retryPart = taskResult.retryAfter ? ` — retry after ${taskResult.retryAfter}` : "";
         this.logger.debug(`[BLOCKED] cycle ${this.cycleNumber}: task "${dispatch.taskId}"${retryPart} — ${taskResult.summary}`);
+        this.lastBlockedTaskId = dispatch.taskId;
       } else {
         this.logger.debug(`cycle ${this.cycleNumber}: task "${dispatch.taskId}" ${success ? "succeeded" : "failed"} — ${taskResult.summary}`);
       }
