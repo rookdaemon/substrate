@@ -11,6 +11,10 @@ export const DEFAULT_VERTEX_MODEL = "gemini-2.5-flash";
 const DEFAULT_TIMEOUT_MS = 2 * 60 * 1000; // 2 minutes
 const GOOGLE_AI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta";
 
+/** Returns true if the model name is a Google AI model (gemini-* or gemma-*). */
+const isGoogleModel = (model: string): boolean =>
+  model.startsWith("gemini-") || model.startsWith("gemma-");
+
 /**
  * Google AI Generative Language API response shape.
  */
@@ -65,7 +69,9 @@ export class VertexSessionLauncher implements ISessionLauncher {
     options?: LaunchOptions,
   ): Promise<ClaudeSessionResult> {
     const startMs = this.clock.now().getTime();
-    const modelToUse = options?.model ?? this.model;
+    // Only accept Gemini/Gemma model names — reject Claude or other non-Google models
+    // that TaskClassifier may supply, to avoid silent 404 failures from Google AI API.
+    const modelToUse = options?.model && isGoogleModel(options.model) ? options.model : this.model;
     const timeoutMs = options?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 
     const url = `${GOOGLE_AI_BASE_URL}/models/${modelToUse}:generateContent?key=${this.apiKey}`;

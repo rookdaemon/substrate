@@ -82,6 +82,24 @@ describe("VertexSessionLauncher", () => {
     expect(req.url).toContain("/models/gemini-2.0-flash:");
   });
 
+  it("ignores non-Google model in options and falls back to constructor model", async () => {
+    http.enqueueJson(makeGoogleAIResponse("ok"));
+
+    await launcher.launch(makeRequest(), { model: "claude-sonnet-4-6" });
+
+    const [req] = http.getRequests();
+    expect(req.url).toContain(`/models/${DEFAULT_VERTEX_MODEL}:`);
+  });
+
+  it("accepts gemma- prefixed model in options", async () => {
+    http.enqueueJson(makeGoogleAIResponse("ok"));
+
+    await launcher.launch(makeRequest(), { model: "gemma-3-27b-it" });
+
+    const [req] = http.getRequests();
+    expect(req.url).toContain("/models/gemma-3-27b-it:");
+  });
+
   // ── Request body structure ──────────────────────────────────────────────
 
   it("sends user message in contents array", async () => {
