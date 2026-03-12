@@ -16,6 +16,7 @@ export interface PlanTask {
   children: PlanTask[];
   trigger?: string;
   correlationId?: string;
+  blockedUntil?: Date;
 }
 
 interface RawTaskLine {
@@ -24,6 +25,7 @@ interface RawTaskLine {
   deferred: boolean;
   title: string;
   correlationId?: string;
+  blockedUntil?: Date;
 }
 
 export class PlanParser {
@@ -39,17 +41,18 @@ export class PlanParser {
     return this.buildTree(taskLines, null, 0, taskLines.length, -1);
   }
 
-  static async findNextActionable(tasks: PlanTask[], evaluator?: TriggerEvaluator): Promise<PlanTask | null> {
+  static async findNextActionable(tasks: PlanTask[], evaluator?: TriggerEvaluator, now?: Date): Promise<PlanTask | null> {
     for (const task of tasks) {
       if (task.status === TaskStatus.COMPLETE) continue;
       if (task.status === TaskStatus.BLOCKED) continue;
+      if (now && task.blockedUntil && now < task.blockedUntil) continue;
       if (task.status === TaskStatus.DEFERRED) {
         if (!evaluator || !task.trigger) continue;
         const triggered = await evaluator.evaluate(task.trigger);
         if (!triggered) continue;
       }
       if (task.children.length > 0) {
-        const child = await this.findNextActionable(task.children, evaluator);
+        const child = await this.findNextActionable(task.children, evaluator, now);
         if (child) return child;
       } else {
         return task;
@@ -114,6 +117,15 @@ export class PlanParser {
     return result;
   }
 
+  static findTimeBlockedTasks(tasks: PlanTask[], now: Date): PlanTask[] {
+    const result: PlanTask[] = [];
+    for (const task of tasks) {
+      if (task.blockedUntil && now < task.blockedUntil) result.push(task);
+      result.push(...this.findTimeBlockedTasks(task.children, now));
+    }
+    return result;
+  }
+
   private static extractTaskLines(markdown: string): RawTaskLine[] {
     const lines = markdown.split("\n");
     const tasksStart = this.findTasksSectionStart(markdown);
@@ -128,12 +140,20 @@ export class PlanParser {
         // Check next line for embedded correlation ID comment
         const nextLine = lines[i + 1] ?? "";
         const correlationMatch = nextLine.match(/<!--\s*correlationId:\s*(\S+)\s*-->/);
+        // Parse inline blockedUntil annotation from the task line itself
+        const blockedUntilMatch = match[3].match(/<!--\s*blockedUntil:\s*(\S+)\s*-->/);
+        let blockedUntil: Date | undefined;
+        if (blockedUntilMatch) {
+          const parsed = new Date(blockedUntilMatch[1]);
+          if (!isNaN(parsed.getTime())) blockedUntil = parsed;
+        }
         result.push({
           indent: match[1].length,
           checked: match[2] === "x",
           deferred: match[2] === "~",
           title: match[3],
           ...(correlationMatch ? { correlationId: correlationMatch[1] } : {}),
+          ...(blockedUntil !== undefined ? { blockedUntil } : {}),
         });
       }
     }
@@ -207,6 +227,7 @@ export class PlanParser {
         children,
         ...(trigger !== undefined ? { trigger } : {}),
         ...(line.correlationId !== undefined ? { correlationId: line.correlationId } : {}),
+        ...(line.blockedUntil !== undefined ? { blockedUntil: line.blockedUntil } : {}),
       });
 
       counter++;

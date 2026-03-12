@@ -512,7 +512,11 @@ export class LoopOrchestrator implements IMessageInjector {
       this.logger.warn(`[R2] Session dispatch warning: ${this.metrics.successfulCycles}/50 cycles`);
     }
 
-    const { dispatch, blockedTaskIds } = await this.ego.dispatchNext();
+    const { dispatch, blockedTaskIds, timeBlockedTasks } = await this.ego.dispatchNext();
+
+    for (const { taskId, blockedUntil } of timeBlockedTasks) {
+      this.logger.debug(`[SCHEDULER] task skipped — blockedUntil: ${blockedUntil.toISOString()} (task: "${taskId}")`);
+    }
 
     let result: CycleResult;
 

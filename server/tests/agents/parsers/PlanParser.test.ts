@@ -126,6 +126,46 @@ Everything blocked
 - [ ] Task B blocked-until: tomorrow
 `;
 
+const BLOCKED_UNTIL_ANNOTATION_PLAN = `# Plan
+
+## Current Goal
+Rate-limited canary
+
+## Tasks
+- [ ] Canary calibration cycle <!-- blockedUntil: 2026-03-12T16:03Z -->
+- [ ] Write docs
+`;
+
+const BLOCKED_UNTIL_STALE_PLAN = `# Plan
+
+## Current Goal
+Stale annotation
+
+## Tasks
+- [ ] Old blocked task <!-- blockedUntil: 2020-01-01T00:00Z -->
+- [ ] Other task
+`;
+
+const BLOCKED_UNTIL_MALFORMED_PLAN = `# Plan
+
+## Current Goal
+Malformed annotation
+
+## Tasks
+- [ ] Malformed task <!-- blockedUntil: not-a-date -->
+- [ ] Other task
+`;
+
+const BLOCKED_UNTIL_ABSENT_PLAN = `# Plan
+
+## Current Goal
+No annotation
+
+## Tasks
+- [ ] Normal task
+- [ ] Other task
+`;
+
 describe("PlanParser", () => {
   describe("parseCurrentGoal", () => {
     it("extracts the current goal text", () => {
@@ -440,6 +480,97 @@ describe("PlanParser", () => {
         const tasks = PlanParser.parseTasks(ALL_BLOCKED_PLAN);
         const blocked = PlanParser.findBlockedTasks(tasks);
         expect(blocked).toHaveLength(2);
+      });
+    });
+  });
+
+  describe("blockedUntil HTML comment annotation (<!-- blockedUntil: ISO8601 -->)", () => {
+    const FUTURE = new Date("2026-03-12T17:00Z"); // after the annotation timestamp
+    const BEFORE = new Date("2026-03-12T15:00Z"); // before the annotation timestamp
+
+    describe("parseTasks", () => {
+      it("parses blockedUntil date from inline HTML comment", () => {
+        const tasks = PlanParser.parseTasks(BLOCKED_UNTIL_ANNOTATION_PLAN);
+        expect(tasks[0].blockedUntil).toBeDefined();
+        expect(tasks[0].blockedUntil).toEqual(new Date("2026-03-12T16:03Z"));
+      });
+
+      it("leaves blockedUntil undefined when annotation is absent", () => {
+        const tasks = PlanParser.parseTasks(BLOCKED_UNTIL_ABSENT_PLAN);
+        expect(tasks[0].blockedUntil).toBeUndefined();
+      });
+
+      it("leaves blockedUntil undefined when annotation is malformed", () => {
+        const tasks = PlanParser.parseTasks(BLOCKED_UNTIL_MALFORMED_PLAN);
+        expect(tasks[0].blockedUntil).toBeUndefined();
+      });
+
+      it("parses stale blockedUntil dates correctly", () => {
+        const tasks = PlanParser.parseTasks(BLOCKED_UNTIL_STALE_PLAN);
+        expect(tasks[0].blockedUntil).toEqual(new Date("2020-01-01T00:00Z"));
+      });
+
+      it("does not set BLOCKED status from blockedUntil annotation", () => {
+        const tasks = PlanParser.parseTasks(BLOCKED_UNTIL_ANNOTATION_PLAN);
+        expect(tasks[0].status).toBe(TaskStatus.PENDING);
+      });
+    });
+
+    describe("findNextActionable with now parameter", () => {
+      it("skips task when now < blockedUntil (future annotation)", async () => {
+        const tasks = PlanParser.parseTasks(BLOCKED_UNTIL_ANNOTATION_PLAN);
+        const next = await PlanParser.findNextActionable(tasks, undefined, BEFORE);
+        expect(next).toBeDefined();
+        expect(next!.title).toBe("Write docs");
+      });
+
+      it("dispatches task when now >= blockedUntil (stale annotation)", async () => {
+        const tasks = PlanParser.parseTasks(BLOCKED_UNTIL_STALE_PLAN);
+        const next = await PlanParser.findNextActionable(tasks, undefined, FUTURE);
+        expect(next).toBeDefined();
+        expect(next!.title).toContain("Old blocked task");
+      });
+
+      it("dispatches task normally when annotation is absent", async () => {
+        const tasks = PlanParser.parseTasks(BLOCKED_UNTIL_ABSENT_PLAN);
+        const next = await PlanParser.findNextActionable(tasks, undefined, BEFORE);
+        expect(next).toBeDefined();
+        expect(next!.title).toBe("Normal task");
+      });
+
+      it("dispatches task normally when annotation is malformed (fail-open)", async () => {
+        const tasks = PlanParser.parseTasks(BLOCKED_UNTIL_MALFORMED_PLAN);
+        const next = await PlanParser.findNextActionable(tasks, undefined, BEFORE);
+        expect(next).toBeDefined();
+        expect(next!.title).toContain("Malformed task");
+      });
+
+      it("dispatches normally when now parameter is omitted (backwards-compatible)", async () => {
+        const tasks = PlanParser.parseTasks(BLOCKED_UNTIL_ANNOTATION_PLAN);
+        const next = await PlanParser.findNextActionable(tasks);
+        expect(next).toBeDefined();
+        expect(next!.title).toContain("Canary calibration cycle");
+      });
+    });
+
+    describe("findTimeBlockedTasks", () => {
+      it("returns tasks with blockedUntil in the future", () => {
+        const tasks = PlanParser.parseTasks(BLOCKED_UNTIL_ANNOTATION_PLAN);
+        const blocked = PlanParser.findTimeBlockedTasks(tasks, BEFORE);
+        expect(blocked).toHaveLength(1);
+        expect(blocked[0].title).toContain("Canary calibration cycle");
+      });
+
+      it("returns empty array when blockedUntil is in the past (stale)", () => {
+        const tasks = PlanParser.parseTasks(BLOCKED_UNTIL_STALE_PLAN);
+        const blocked = PlanParser.findTimeBlockedTasks(tasks, FUTURE);
+        expect(blocked).toHaveLength(0);
+      });
+
+      it("returns empty array when no annotation present", () => {
+        const tasks = PlanParser.parseTasks(BLOCKED_UNTIL_ABSENT_PLAN);
+        const blocked = PlanParser.findTimeBlockedTasks(tasks, BEFORE);
+        expect(blocked).toHaveLength(0);
       });
     });
   });
