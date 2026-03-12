@@ -316,23 +316,35 @@ describe("Ego agent", () => {
 
   describe("dispatchNext", () => {
     it("returns the next actionable task from the plan", async () => {
-      const dispatch = await ego.dispatchNext();
+      const { dispatch } = await ego.dispatchNext();
       expect(dispatch).toBeDefined();
       expect(dispatch!.taskId).toBe("task-1");
       expect(dispatch!.description).toBe("Task A");
       expect(dispatch!.targetRole).toBe(AgentRole.SUBCONSCIOUS);
     });
 
-    it("returns null when all tasks are complete", async () => {
+    it("returns null dispatch when all tasks are complete", async () => {
       await fs.writeFile("/substrate/PLAN.md", "# Plan\n\n## Current Goal\nDone\n\n## Tasks\n- [x] Done");
-      const dispatch = await ego.dispatchNext();
+      const { dispatch } = await ego.dispatchNext();
       expect(dispatch).toBeNull();
     });
 
-    it("returns null when plan has no tasks", async () => {
+    it("returns null dispatch when plan has no tasks", async () => {
       await fs.writeFile("/substrate/PLAN.md", "# Plan\n\n## Current Goal\nNothing\n\n## Tasks\n");
-      const dispatch = await ego.dispatchNext();
+      const { dispatch } = await ego.dispatchNext();
       expect(dispatch).toBeNull();
+    });
+
+    it("returns null dispatch and non-empty blockedTaskIds for BLOCKED tasks", async () => {
+      await fs.writeFile("/substrate/PLAN.md", "# Plan\n\n## Current Goal\nWaiting\n\n## Tasks\n- [ ] Fix infra **BLOCKED** waiting on Ollama recovery\n");
+      const { dispatch, blockedTaskIds } = await ego.dispatchNext();
+      expect(dispatch).toBeNull();
+      expect(blockedTaskIds).toEqual(["task-1"]);
+    });
+
+    it("returns empty blockedTaskIds when no tasks are blocked", async () => {
+      const { blockedTaskIds } = await ego.dispatchNext();
+      expect(blockedTaskIds).toEqual([]);
     });
   });
 });

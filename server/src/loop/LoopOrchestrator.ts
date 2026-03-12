@@ -505,13 +505,18 @@ export class LoopOrchestrator implements IMessageInjector {
       this.logger.warn(`[R2] Session dispatch warning: ${this.metrics.successfulCycles}/50 cycles`);
     }
 
-    const dispatch = await this.ego.dispatchNext();
+    const { dispatch, blockedTaskIds } = await this.ego.dispatchNext();
 
     let result: CycleResult;
 
     if (!dispatch) {
       this.metrics.idleCycles++;
       this.metrics.consecutiveIdleCycles++;
+
+      // Log any blocked tasks so they appear in the cycle log
+      for (const taskId of blockedTaskIds) {
+        this.logger.debug(`cycle ${this.cycleNumber}: task "${taskId}" skipped — status: skipped, reason: blocked`);
+      }
 
       // Cycle mode: process pending messages (e.g. Agora) when idle so they get a response
       if (this.pendingMessages.length > 0) {

@@ -64,6 +64,11 @@ export interface DispatchResult {
   correlationId?: string;
 }
 
+export interface DispatchNextResult {
+  dispatch: DispatchResult | null;
+  blockedTaskIds: string[];
+}
+
 export class Ego {
   private readonly triggerEvaluator = new ShellTriggerEvaluator();
 
@@ -189,19 +194,23 @@ export class Ego {
     return null;
   }
 
-  async dispatchNext(): Promise<DispatchResult | null> {
+  async dispatchNext(): Promise<DispatchNextResult> {
     this.checker.assertCanRead(AgentRole.EGO, SubstrateFileType.PLAN);
     const planContent = await this.reader.read(SubstrateFileType.PLAN);
     const tasks = PlanParser.parseTasks(planContent.rawMarkdown);
+    const blockedTaskIds = PlanParser.findBlockedTasks(tasks).map((t) => t.id);
     const next = await PlanParser.findNextActionable(tasks, this.triggerEvaluator);
 
-    if (!next) return null;
+    if (!next) return { dispatch: null, blockedTaskIds };
 
     return {
-      targetRole: AgentRole.SUBCONSCIOUS,
-      taskId: next.id,
-      description: next.title,
-      ...(next.correlationId !== undefined ? { correlationId: next.correlationId } : {}),
+      dispatch: {
+        targetRole: AgentRole.SUBCONSCIOUS,
+        taskId: next.id,
+        description: next.title,
+        ...(next.correlationId !== undefined ? { correlationId: next.correlationId } : {}),
+      },
+      blockedTaskIds,
     };
   }
 }

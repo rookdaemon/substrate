@@ -2,6 +2,7 @@ export enum TaskStatus {
   PENDING = "PENDING",
   COMPLETE = "COMPLETE",
   DEFERRED = "DEFERRED",
+  BLOCKED = "BLOCKED",
 }
 
 export interface TriggerEvaluator {
@@ -41,6 +42,7 @@ export class PlanParser {
   static async findNextActionable(tasks: PlanTask[], evaluator?: TriggerEvaluator): Promise<PlanTask | null> {
     for (const task of tasks) {
       if (task.status === TaskStatus.COMPLETE) continue;
+      if (task.status === TaskStatus.BLOCKED) continue;
       if (task.status === TaskStatus.DEFERRED) {
         if (!evaluator || !task.trigger) continue;
         const triggered = await evaluator.evaluate(task.trigger);
@@ -101,6 +103,15 @@ export class PlanParser {
 
   static isEmpty(tasks: PlanTask[]): boolean {
     return tasks.length === 0;
+  }
+
+  static findBlockedTasks(tasks: PlanTask[]): PlanTask[] {
+    const result: PlanTask[] = [];
+    for (const task of tasks) {
+      if (task.status === TaskStatus.BLOCKED) result.push(task);
+      result.push(...this.findBlockedTasks(task.children));
+    }
+    return result;
   }
 
   private static extractTaskLines(markdown: string): RawTaskLine[] {
@@ -181,11 +192,18 @@ export class PlanParser {
       const title = line.title;
       const triggerMatch = title.match(/WHEN\s+`([^`]+)`/);
       const trigger = triggerMatch ? triggerMatch[1] : undefined;
+      const isBlocked = /\*\*BLOCKED\*\*|blocked-until:/i.test(title);
 
       tasks.push({
         id,
         title,
-        status: line.checked ? TaskStatus.COMPLETE : line.deferred ? TaskStatus.DEFERRED : TaskStatus.PENDING,
+        status: line.checked
+          ? TaskStatus.COMPLETE
+          : line.deferred
+            ? TaskStatus.DEFERRED
+            : isBlocked
+              ? TaskStatus.BLOCKED
+              : TaskStatus.PENDING,
         children,
         ...(trigger !== undefined ? { trigger } : {}),
         ...(line.correlationId !== undefined ? { correlationId: line.correlationId } : {}),

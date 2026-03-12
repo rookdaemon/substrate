@@ -177,16 +177,16 @@ describe("Correlation IDs", () => {
       ].join("\n"));
 
       const result = await ego.dispatchNext();
-      expect(result).not.toBeNull();
-      expect(result!.correlationId).toBe("drive-999-xyz123");
+      expect(result.dispatch).not.toBeNull();
+      expect(result.dispatch!.correlationId).toBe("drive-999-xyz123");
     });
 
     it("omits correlationId when task has none — backward compatible", async () => {
       await fs.writeFile("/substrate/PLAN.md", "# Plan\n\n## Tasks\n- [ ] Do the thing");
 
       const result = await ego.dispatchNext();
-      expect(result).not.toBeNull();
-      expect(result!.correlationId).toBeUndefined();
+      expect(result.dispatch).not.toBeNull();
+      expect(result.dispatch!.correlationId).toBeUndefined();
     });
   });
 

@@ -96,6 +96,36 @@ All deferred
 - [~] Waiting task: WHEN \`true\`. Do stuff.
 `;
 
+const BLOCKED_PLAN = `# Plan
+
+## Current Goal
+Blocked by infra
+
+## Tasks
+- [ ] Fix infra **BLOCKED** waiting on Ollama recovery
+- [ ] Write docs
+`;
+
+const BLOCKED_UNTIL_PLAN = `# Plan
+
+## Current Goal
+Waiting on deployment
+
+## Tasks
+- [ ] Deploy app blocked-until: 2026-03-15
+- [ ] Write release notes
+`;
+
+const ALL_BLOCKED_PLAN = `# Plan
+
+## Current Goal
+Everything blocked
+
+## Tasks
+- [ ] Task A **BLOCKED**
+- [ ] Task B blocked-until: tomorrow
+`;
+
 describe("PlanParser", () => {
   describe("parseCurrentGoal", () => {
     it("extracts the current goal text", () => {
@@ -344,6 +374,72 @@ describe("PlanParser", () => {
       it("returns false when DEFERRED tasks exist", () => {
         const tasks = PlanParser.parseTasks(DEFERRED_ONLY_PLAN);
         expect(PlanParser.isComplete(tasks)).toBe(false);
+      });
+    });
+  });
+
+  describe("blocked tasks (**BLOCKED** / blocked-until:)", () => {
+    describe("parseTasks", () => {
+      it("parses task with **BLOCKED** marker as BLOCKED status", () => {
+        const tasks = PlanParser.parseTasks(BLOCKED_PLAN);
+        expect(tasks[0].status).toBe(TaskStatus.BLOCKED);
+      });
+
+      it("parses task with blocked-until: marker as BLOCKED status", () => {
+        const tasks = PlanParser.parseTasks(BLOCKED_UNTIL_PLAN);
+        expect(tasks[0].status).toBe(TaskStatus.BLOCKED);
+      });
+
+      it("leaves non-blocked tasks as PENDING", () => {
+        const tasks = PlanParser.parseTasks(BLOCKED_PLAN);
+        expect(tasks[1].status).toBe(TaskStatus.PENDING);
+      });
+
+      it("preserves the full title including the BLOCKED marker", () => {
+        const tasks = PlanParser.parseTasks(BLOCKED_PLAN);
+        expect(tasks[0].title).toContain("**BLOCKED**");
+      });
+    });
+
+    describe("findNextActionable", () => {
+      it("skips BLOCKED tasks — does not dispatch them", async () => {
+        const tasks = PlanParser.parseTasks(BLOCKED_PLAN);
+        const next = await PlanParser.findNextActionable(tasks);
+        expect(next).toBeDefined();
+        expect(next!.title).toBe("Write docs");
+      });
+
+      it("skips tasks with blocked-until: marker", async () => {
+        const tasks = PlanParser.parseTasks(BLOCKED_UNTIL_PLAN);
+        const next = await PlanParser.findNextActionable(tasks);
+        expect(next).toBeDefined();
+        expect(next!.title).toBe("Write release notes");
+      });
+
+      it("returns null when all tasks are BLOCKED", async () => {
+        const tasks = PlanParser.parseTasks(ALL_BLOCKED_PLAN);
+        const next = await PlanParser.findNextActionable(tasks);
+        expect(next).toBeNull();
+      });
+    });
+
+    describe("findBlockedTasks", () => {
+      it("returns all BLOCKED tasks", () => {
+        const tasks = PlanParser.parseTasks(BLOCKED_PLAN);
+        const blocked = PlanParser.findBlockedTasks(tasks);
+        expect(blocked).toHaveLength(1);
+        expect(blocked[0].title).toContain("**BLOCKED**");
+      });
+
+      it("returns empty array when no tasks are blocked", () => {
+        const tasks = PlanParser.parseTasks(SIMPLE_PLAN);
+        expect(PlanParser.findBlockedTasks(tasks)).toHaveLength(0);
+      });
+
+      it("returns multiple blocked tasks", () => {
+        const tasks = PlanParser.parseTasks(ALL_BLOCKED_PLAN);
+        const blocked = PlanParser.findBlockedTasks(tasks);
+        expect(blocked).toHaveLength(2);
       });
     });
   });
