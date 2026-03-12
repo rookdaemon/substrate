@@ -80,7 +80,7 @@ export class LoopOrchestrator implements IMessageInjector {
 
   // Last cycle diagnostics for health reporting
   private lastCycleAt: Date | null = null;
-  private lastCycleResult: "success" | "failure" | "idle" | "none" = "none";
+  private lastCycleResult: "success" | "failure" | "blocked" | "idle" | "none" = "none";
 
   // Tick mode
   private tickPromptBuilder: TickPromptBuilder | null = null;
@@ -328,7 +328,7 @@ export class LoopOrchestrator implements IMessageInjector {
     return this.cycleNumber;
   }
 
-  getLastCycleDiagnostics(): { lastCycleAt: Date | null; lastCycleResult: "success" | "failure" | "idle" | "none" } {
+  getLastCycleDiagnostics(): { lastCycleAt: Date | null; lastCycleResult: "success" | "failure" | "blocked" | "idle" | "none" } {
     return { lastCycleAt: this.lastCycleAt, lastCycleResult: this.lastCycleResult };
   }
 
@@ -571,6 +571,7 @@ export class LoopOrchestrator implements IMessageInjector {
       this.performanceMetrics?.recordApiCall(apiCallDurationMs, "SUBCONSCIOUS", "execute").catch(() => { });
 
       const success = taskResult.result === "success";
+      const blocked = taskResult.result === "blocked";
 
       // Store for INS consecutive-partial detection
       this.lastTaskResult = {
@@ -582,7 +583,12 @@ export class LoopOrchestrator implements IMessageInjector {
         insAcknowledgments: taskResult.insAcknowledgments,
       };
 
-      this.logger.debug(`cycle ${this.cycleNumber}: task "${dispatch.taskId}" ${success ? "succeeded" : "failed"} — ${taskResult.summary}`);
+      if (blocked) {
+        const retryPart = taskResult.retryAfter ? ` — retry after ${taskResult.retryAfter}` : "";
+        this.logger.debug(`[BLOCKED] cycle ${this.cycleNumber}: task "${dispatch.taskId}"${retryPart} — ${taskResult.summary}`);
+      } else {
+        this.logger.debug(`cycle ${this.cycleNumber}: task "${dispatch.taskId}" ${success ? "succeeded" : "failed"} — ${taskResult.summary}`);
+      }
 
       if (success) {
         this.metrics.successfulCycles++;
@@ -601,6 +607,12 @@ export class LoopOrchestrator implements IMessageInjector {
         if (taskResult.memoryUpdates) {
           await this.subconscious.updateMemory(taskResult.memoryUpdates);
         }
+
+        if (taskResult.summary) {
+          await this.subconscious.logConversation(taskResult.summary);
+        }
+      } else if (blocked) {
+        this.metrics.blockedCycles++;
 
         if (taskResult.summary) {
           await this.subconscious.logConversation(taskResult.summary);
@@ -645,6 +657,7 @@ export class LoopOrchestrator implements IMessageInjector {
         taskId: dispatch.taskId,
         success,
         summary: taskResult.summary,
+        ...(taskResult.retryAfter ? { retryAfter: taskResult.retryAfter } : {}),
       };
     }
 
@@ -666,7 +679,15 @@ export class LoopOrchestrator implements IMessageInjector {
 
     // Record last cycle diagnostics for health reporting
     this.lastCycleAt = this.clock.now();
-    this.lastCycleResult = result.action === "idle" ? "idle" : (result.success ? "success" : "failure");
+    if (result.action === "idle") {
+      this.lastCycleResult = "idle";
+    } else if (result.success) {
+      this.lastCycleResult = "success";
+    } else if (result.retryAfter) {
+      this.lastCycleResult = "blocked";
+    } else {
+      this.lastCycleResult = "failure";
+    }
 
     // Superego audit — enqueue as deferred work (overlaps with next cycle's dispatch)
     if (this.cycleNumber % this.config.superegoAuditInterval === 0 || this.auditOnNextCycle) {
@@ -736,7 +757,9 @@ export class LoopOrchestrator implements IMessageInjector {
 
       // Check for rate limit backoff before idle threshold — rate limiting takes priority
       // so we don't misclassify a rate-limited idle cycle as genuinely idle.
-      const rateLimitReset = parseRateLimitReset(cycleResult.summary, this.clock.now());
+      // Prefer structured retryAfter from a "blocked" TaskResult; fall back to parsing summary text.
+      const retryAfterDirect = cycleResult.retryAfter ? new Date(cycleResult.retryAfter) : null;
+      const rateLimitReset = retryAfterDirect ?? parseRateLimitReset(cycleResult.summary, this.clock.now());
       if (rateLimitReset) {
         const currentTaskId = cycleResult.action === "dispatch" ? cycleResult.taskId : undefined;
         await this.applyRateLimitBackoff(rateLimitReset, currentTaskId);

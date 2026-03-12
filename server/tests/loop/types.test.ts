@@ -79,6 +79,7 @@ describe("createInitialMetrics", () => {
     expect(metrics.totalCycles).toBe(0);
     expect(metrics.successfulCycles).toBe(0);
     expect(metrics.failedCycles).toBe(0);
+    expect(metrics.blockedCycles).toBe(0);
     expect(metrics.idleCycles).toBe(0);
     expect(metrics.consecutiveIdleCycles).toBe(0);
     expect(metrics.superegoAudits).toBe(0);
@@ -111,6 +112,21 @@ describe("CycleResult type", () => {
 
     expect(result.action).toBe("idle");
     expect(result.taskId).toBeUndefined();
+  });
+
+  it("can carry a retryAfter timestamp for blocked results", () => {
+    const retryAfter = "2026-03-12T07:24:00.000Z";
+    const result: CycleResult = {
+      cycleNumber: 3,
+      action: "dispatch",
+      taskId: "task-blocked",
+      success: false,
+      summary: "Rate limited — retry after 07:24Z",
+      retryAfter,
+    };
+
+    expect(result.success).toBe(false);
+    expect(result.retryAfter).toBe(retryAfter);
   });
 });
 

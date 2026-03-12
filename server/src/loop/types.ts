@@ -40,12 +40,15 @@ export interface CycleResult {
   taskId?: string;
   success: boolean;
   summary: string;
+  /** ISO 8601 UTC timestamp when a blocking constraint lifts — present when task result was "blocked". */
+  retryAfter?: string;
 }
 
 export interface LoopMetrics {
   totalCycles: number;
   successfulCycles: number;
   failedCycles: number;
+  blockedCycles: number;
   idleCycles: number;
   consecutiveIdleCycles: number;
   superegoAudits: number;
@@ -57,6 +60,7 @@ export function createInitialMetrics(): LoopMetrics {
     totalCycles: 0,
     successfulCycles: 0,
     failedCycles: 0,
+    blockedCycles: 0,
     idleCycles: 0,
     consecutiveIdleCycles: 0,
     superegoAudits: 0,

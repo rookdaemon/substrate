@@ -29,7 +29,7 @@ export interface AgoraReply {
 }
 
 export interface TaskResult {
-  result: "success" | "failure" | "partial";
+  result: "success" | "failure" | "partial" | "blocked";
   summary: string;
   progressEntry: string;
   skillUpdates: string | null;
@@ -40,6 +40,12 @@ export interface TaskResult {
   blockedReason?: string;
   /** Phase 3 INS: acknowledgment round-trip — Ego acknowledges compliance flags here */
   insAcknowledgments?: import("../../loop/ins/types").InsAcknowledgment[];
+  /**
+   * ISO 8601 UTC timestamp when the blocking constraint is expected to lift.
+   * Present when result is "blocked" (e.g. rate limit active, known unblock time).
+   * Orchestrator uses this to schedule the next attempt rather than immediately re-queuing.
+   */
+  retryAfter?: string;
 }
 
 /**
@@ -49,7 +55,7 @@ export interface TaskResult {
 export const TASK_RESULT_SCHEMA = {
   type: "object",
   properties: {
-    result: { type: "string", enum: ["success", "failure", "partial"] },
+    result: { type: "string", enum: ["success", "failure", "partial", "blocked"] },
     summary: { type: "string" },
     progressEntry: { type: "string" },
     skillUpdates: { type: ["string", "null"] },
@@ -90,6 +96,7 @@ export const TASK_RESULT_SCHEMA = {
       },
     },
     blockedReason: { type: ["string", "null"] },
+    retryAfter: { type: ["string", "null"] },
   },
   required: ["result", "summary", "progressEntry", "skillUpdates", "memoryUpdates", "proposals", "agoraReplies"],
 } as const;
