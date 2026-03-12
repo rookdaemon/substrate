@@ -158,11 +158,15 @@ export class OllamaSessionLauncher implements ISessionLauncher {
 
       const assistantContent = data.message?.content ?? "";
 
+      // Strip <think>...</think> CoT preamble emitted by reasoning models (e.g. deepseek-r1)
+      const stripped = assistantContent.replace(/^<think>[\s\S]*?<\/think>\s*/i, "").trimStart();
+      const finalContent = stripped.length > 0 ? stripped : assistantContent;
+
       // Update conversation history for future continueSession calls
       if (options?.continueSession) {
         this.conversationHistory = [
           ...messages,
-          { role: "assistant", content: assistantContent },
+          { role: "assistant", content: finalContent },
         ];
       } else {
         // Discard history when not in session mode
@@ -170,7 +174,7 @@ export class OllamaSessionLauncher implements ISessionLauncher {
       }
 
       return {
-        rawOutput: assistantContent,
+        rawOutput: finalContent,
         exitCode: 0,
         durationMs,
         success: true,
