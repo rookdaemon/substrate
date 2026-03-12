@@ -290,4 +290,56 @@ describe("OllamaSessionLauncher", () => {
 
     expect(launcher.historyLength).toBe(0);
   });
+
+  // ── CoT preamble stripping (deepseek-r1 and other reasoning models) ──────
+
+  it("strips <think>...</think> preamble from rawOutput", async () => {
+    http.enqueueJson(makeOllamaResponse('<think>some reasoning here</think>\n{"key":"value"}'));
+
+    const result = await launcher.launch(makeRequest());
+
+    expect(result.success).toBe(true);
+    expect(result.rawOutput).toBe('{"key":"value"}');
+  });
+
+  it("leaves response unchanged when no thinking tags are present", async () => {
+    http.enqueueJson(makeOllamaResponse('{"key":"value"}'));
+
+    const result = await launcher.launch(makeRequest());
+
+    expect(result.success).toBe(true);
+    expect(result.rawOutput).toBe('{"key":"value"}');
+  });
+
+  it("strips multiline <think> block with case-insensitive tag matching", async () => {
+    const thinking = "<think>\nstep 1\nstep 2\n</think>\n\nfinal answer";
+    http.enqueueJson(makeOllamaResponse(thinking));
+
+    const result = await launcher.launch(makeRequest());
+
+    expect(result.rawOutput).toBe("final answer");
+  });
+
+  it("falls back to raw content when response is only a <think> block (no real content)", async () => {
+    http.enqueueJson(makeOllamaResponse("<think>reasoning only, no answer</think>"));
+
+    const result = await launcher.launch(makeRequest());
+
+    // stripped is empty → fall back to original so callers see the raw output rather than nothing
+    expect(result.success).toBe(true);
+    expect(result.rawOutput).toBe("<think>reasoning only, no answer</think>");
+  });
+
+  it("stores stripped content in conversation history (not raw CoT)", async () => {
+    http.enqueueJson(makeOllamaResponse('<think>reasoning</think>\n{"done":true}'));
+    await launcher.launch(makeRequest({ message: "m1" }), { continueSession: true });
+
+    http.enqueueJson(makeOllamaResponse("ok"));
+    await launcher.launch(makeRequest({ message: "m2" }), { continueSession: true });
+
+    const messages2 = (http.getRequests()[1].body as Record<string, unknown>)
+      .messages as Array<{ role: string; content: string }>;
+    const assistantTurn = messages2.find((m) => m.role === "assistant");
+    expect(assistantTurn?.content).toBe('{"done":true}');
+  });
 });
