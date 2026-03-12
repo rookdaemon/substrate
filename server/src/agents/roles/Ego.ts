@@ -67,6 +67,7 @@ export interface DispatchResult {
 export interface DispatchNextResult {
   dispatch: DispatchResult | null;
   blockedTaskIds: string[];
+  timeBlockedTasks: Array<{ taskId: string; blockedUntil: Date }>;
 }
 
 export class Ego {
@@ -198,10 +199,15 @@ export class Ego {
     this.checker.assertCanRead(AgentRole.EGO, SubstrateFileType.PLAN);
     const planContent = await this.reader.read(SubstrateFileType.PLAN);
     const tasks = PlanParser.parseTasks(planContent.rawMarkdown);
+    const now = this.clock.now();
     const blockedTaskIds = PlanParser.findBlockedTasks(tasks).map((t) => t.id);
-    const next = await PlanParser.findNextActionable(tasks, this.triggerEvaluator);
+    const timeBlockedTasks = PlanParser.findTimeBlockedTasks(tasks, now).map((t) => ({
+      taskId: t.id,
+      blockedUntil: t.blockedUntil!,
+    }));
+    const next = await PlanParser.findNextActionable(tasks, this.triggerEvaluator, now);
 
-    if (!next) return { dispatch: null, blockedTaskIds };
+    if (!next) return { dispatch: null, blockedTaskIds, timeBlockedTasks };
 
     return {
       dispatch: {
@@ -211,6 +217,7 @@ export class Ego {
         ...(next.correlationId !== undefined ? { correlationId: next.correlationId } : {}),
       },
       blockedTaskIds,
+      timeBlockedTasks,
     };
   }
 }
