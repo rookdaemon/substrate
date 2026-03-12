@@ -1421,8 +1421,19 @@ export class LoopOrchestrator implements IMessageInjector {
     }
   }
 
-  private formatEndpointStateForInjection(state: { status?: string; lastChecked?: string; lastSeen?: string; consecutiveDown?: number; consecutiveDegraded?: number }): string {
-    const ts = state.lastChecked ?? this.clock.now().toISOString();
+  private formatEndpointStateForInjection(state: { status?: string; lastChecked?: string; checkedAt?: string; lastSeen?: string; consecutiveDown?: number; consecutiveDegraded?: number }): string {
+    // Accept both field name conventions: checkedAt (external monitoring) and lastChecked (internal)
+    const rawTs = state.checkedAt ?? state.lastChecked;
+    const ts = rawTs ?? this.clock.now().toISOString();
+    // Staleness check: treat state older than 2 hours as UNKNOWN to avoid stale-UP false positives
+    if (rawTs) {
+      const ageMs = this.clock.now().getTime() - new Date(rawTs).getTime();
+      const twoHoursMs = 2 * 60 * 60 * 1000;
+      if (ageMs > twoHoursMs) {
+        const hoursAgo = Math.round(ageMs / 3600000);
+        return `[ENDPOINT STATE: UNKNOWN — state file is stale (last updated ${ts}, ~${hoursAgo}h ago). Treat as DOWN; probe before dispatching inference-gated tasks.]`;
+      }
+    }
     if (!state.status || state.status === "unknown") {
       return "[ENDPOINT STATE: UNKNOWN — endpoint not yet probed this session. Status in MEMORY.md may be stale.]";
     }

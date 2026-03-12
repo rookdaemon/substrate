@@ -194,4 +194,24 @@ describe("readEndpointState() private helper", () => {
     const result = await callReadEndpointState(tempDir);
     expect(result).toContain("UNKNOWN");
   });
+
+  it("T6: stale state (>2h old) → returns UNKNOWN with staleness message regardless of status", async () => {
+    // Fixed clock is 2025-06-15T10:00:00Z; 3h before = 2025-06-15T07:00:00Z
+    const staleTs = "2025-06-15T07:00:00.000Z";
+    const state = { status: "up", checkedAt: staleTs, consecutiveDown: 0 };
+    realFs.writeFileSync(path.join(tempDir, ".endpoint_state.json"), JSON.stringify(state));
+    const result = await callReadEndpointState(tempDir);
+    expect(result).toContain("UNKNOWN");
+    expect(result).toContain("stale");
+  });
+
+  it("T7: checkedAt field (external monitoring format) within 2h → parses as UP correctly", async () => {
+    // Fixed clock is 2025-06-15T10:00:00Z; 30min before = 2025-06-15T09:30:00Z
+    const recentTs = "2025-06-15T09:30:00.000Z";
+    const state = { status: "up", checkedAt: recentTs, consecutiveDown: 0 };
+    realFs.writeFileSync(path.join(tempDir, ".endpoint_state.json"), JSON.stringify(state));
+    const result = await callReadEndpointState(tempDir);
+    expect(result).toContain("Status: UP");
+    expect(result).toContain("Ollama-gated tasks: GO");
+  });
 });
