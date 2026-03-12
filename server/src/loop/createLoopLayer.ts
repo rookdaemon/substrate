@@ -844,13 +844,22 @@ export async function createLoopLayer(
   }
 
   // Restore rate-limit state from before the last shutdown (prevents hammering the API on restart).
+  // Cap at 2 hours from now to avoid multi-day sleeps from poisoning the restart loop.
   try {
     const stored = (await fs.readFile(rateLimitStatePath)).trim();
     if (stored) {
       const rateLimitDate = new Date(stored);
       if (rateLimitDate > clock.now()) {
-        orchestrator.setRateLimitUntil(stored);
-        logger.debug(`createLoopLayer: restored rateLimitUntil from disk: ${stored}`);
+        const maxBackoffMs = 2 * 60 * 60 * 1000;
+        const remainingMs = rateLimitDate.getTime() - clock.now().getTime();
+        if (remainingMs > maxBackoffMs) {
+          const capped = new Date(clock.now().getTime() + maxBackoffMs).toISOString();
+          logger.debug(`createLoopLayer: restored rateLimitUntil ${stored} exceeds 2h cap — clamped to ${capped}`);
+          orchestrator.setRateLimitUntil(capped);
+        } else {
+          orchestrator.setRateLimitUntil(stored);
+          logger.debug(`createLoopLayer: restored rateLimitUntil from disk: ${stored}`);
+        }
       }
     }
   } catch { /* file absent — no rate-limit state to restore */ }

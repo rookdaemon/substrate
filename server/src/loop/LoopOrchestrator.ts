@@ -41,6 +41,10 @@ import type { INSResult } from "./ins/types";
 import type { INSHook } from "./ins/INSHook";
 import type { ISleepWakeTimer } from "./SleepWakeTimer";
 
+/** Maximum rate-limit backoff duration (2 hours). Any parsed reset time beyond this
+ *  is capped to prevent multi-day sleeps from poisoning the restart loop. */
+export const MAX_RATE_LIMIT_BACKOFF_MS = 2 * 60 * 60 * 1000;
+
 export class LoopOrchestrator implements IMessageInjector {
   private state: LoopState = LoopState.STOPPED;
   private metrics: LoopMetrics = createInitialMetrics();
@@ -721,12 +725,14 @@ export class LoopOrchestrator implements IMessageInjector {
       const waitMs = Math.max(0, new Date(this.rateLimitUntil).getTime() - this.clock.now().getTime());
       if (waitMs > 0) {
         this.logger.debug(`runLoop: honoring restored rate limit — waiting ${waitMs}ms until ${this.rateLimitUntil}`);
+        this.watchdog?.pause();
         this.eventSink.emit({
           type: "idle",
           timestamp: this.clock.now().toISOString(),
           data: { rateLimitUntil: this.rateLimitUntil, waitMs },
         });
         await this.timer.delay(waitMs);
+        this.watchdog?.resume();
       }
       if (this.rateLimitUntil && new Date(this.rateLimitUntil).getTime() <= this.clock.now().getTime()) {
         this.rateLimitUntil = null;
@@ -749,7 +755,9 @@ export class LoopOrchestrator implements IMessageInjector {
             }
           }
           this.logger.debug(`runLoop: still rate limited — re-sleeping ${remaining}ms until ${this.rateLimitUntil}`);
+          this.watchdog?.pause();
           await this.timer.delay(remaining);
+          this.watchdog?.resume();
           if (this.rateLimitUntil && new Date(this.rateLimitUntil).getTime() <= this.clock.now().getTime()) {
             this.rateLimitUntil = null;
           }
@@ -1147,8 +1155,15 @@ export class LoopOrchestrator implements IMessageInjector {
    * path (dispatch cycle) and the thrown-RateLimitError path (idle handler, Ego).
    */
   private async applyRateLimitBackoff(rateLimitReset: Date, taskId: string | undefined): Promise<void> {
-    const waitMs = rateLimitReset.getTime() - this.clock.now().getTime();
-    this.rateLimitUntil = rateLimitReset.toISOString();
+    const rawWaitMs = rateLimitReset.getTime() - this.clock.now().getTime();
+    const waitMs = Math.min(rawWaitMs, MAX_RATE_LIMIT_BACKOFF_MS);
+    const cappedReset = waitMs < rawWaitMs
+      ? new Date(this.clock.now().getTime() + waitMs)
+      : rateLimitReset;
+    if (waitMs < rawWaitMs) {
+      this.logger.debug(`runLoop: rate limit reset ${rateLimitReset.toISOString()} exceeds cap — clamped to ${cappedReset.toISOString()}`);
+    }
+    this.rateLimitUntil = cappedReset.toISOString();
     this.logger.debug(`runLoop: rate limited — backing off ${waitMs}ms until ${this.rateLimitUntil}`);
 
     if (this.rateLimitStateManager) {
@@ -1156,12 +1171,14 @@ export class LoopOrchestrator implements IMessageInjector {
       this.logger.debug("runLoop: state saved for rate limit hibernation");
     }
 
+    this.watchdog?.pause();
     this.eventSink.emit({
       type: "idle",
       timestamp: this.clock.now().toISOString(),
       data: { rateLimitUntil: this.rateLimitUntil, waitMs },
     });
     await this.timer.delay(waitMs);
+    this.watchdog?.resume();
     // Only clear after the backoff period has elapsed — timer.wake() can resolve early.
     if (this.rateLimitUntil && new Date(this.rateLimitUntil).getTime() <= this.clock.now().getTime()) {
       this.rateLimitUntil = null;

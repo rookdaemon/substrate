@@ -520,4 +520,52 @@ describe("LoopOrchestrator: watchdog sleep-awareness", () => {
 
     watchdog.stop();
   });
+
+  it("watchdog pauses during rate-limit sleep and resumes after", async () => {
+    const deps = createDeps();
+    await setupActiveTaskSubstrate(deps.fs);
+
+    const logger = new InMemoryLogger();
+    const eventSink = new InMemoryEventSink();
+    const timer = new ClockAdvancingTimer(deps.clock);
+    const config = defaultLoopConfig({ maxConsecutiveIdleCycles: 1, idleSleepEnabled: false });
+    const orchestrator = new LoopOrchestrator(
+      deps.ego, deps.subconscious, deps.superego, deps.id,
+      deps.appendWriter, deps.clock, timer, eventSink,
+      config, logger
+    );
+
+    const injected: string[] = [];
+    let restartCalled = false;
+    const watchdog = new LoopWatchdog({
+      clock: deps.clock,
+      logger,
+      injectMessage: (msg) => injected.push(msg),
+      stallThresholdMs: 1000,
+      forceRestart: () => { restartCalled = true; },
+      forceRestartThresholdMs: 500,
+    });
+    orchestrator.setWatchdog(watchdog);
+    watchdog.recordActivity();
+    watchdog.start(999999); // Long interval — we'll check() manually
+
+    // Set a rate limit 1 hour in the future
+    const rateLimitUntil = new Date(deps.clock.now().getTime() + 3600_000).toISOString();
+    orchestrator.setRateLimitUntil(rateLimitUntil);
+
+    // Start orchestrator — it will enter rate-limit sleep (timer advances clock past the limit)
+    orchestrator.start();
+    const loopPromise = orchestrator.runLoop();
+
+    // The ClockAdvancingTimer instantly advances the clock past the rate limit,
+    // so the loop should have exited rate-limit sleep. Check that watchdog was
+    // paused during the sleep (no stall injection despite clock advancing past threshold).
+    watchdog.check();
+    expect(injected).toHaveLength(0);
+    expect(restartCalled).toBe(false);
+
+    orchestrator.stop();
+    await loopPromise.catch(() => {}); // Ignore stop errors
+    watchdog.stop();
+  });
 });
