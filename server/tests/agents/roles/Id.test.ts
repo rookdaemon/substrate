@@ -2,6 +2,7 @@ import { Id } from "../../../src/agents/roles/Id";
 import { PermissionChecker } from "../../../src/agents/permissions";
 import { PromptBuilder } from "../../../src/agents/prompts/PromptBuilder";
 import { InMemorySessionLauncher } from "../../../src/agents/claude/InMemorySessionLauncher";
+import { ISessionLauncher } from "../../../src/agents/claude/ISessionLauncher";
 import { SubstrateFileReader } from "../../../src/substrate/io/FileReader";
 import { SubstrateConfig } from "../../../src/substrate/config";
 import { InMemoryFileSystem } from "../../../src/substrate/abstractions/InMemoryFileSystem";
@@ -262,10 +263,8 @@ describe("Id agent", () => {
     });
 
     it("logs unexpected error with stack trace at outer catch", async () => {
-      // Make the promptBuilder throw by corrupting the PLAN.md permission check
-      // Simulate by making the launcher throw synchronously via a custom mechanism.
-      // We can do this by having the outer try block throw via a broken sessionLauncher.
-      const throwingLauncher = {
+      // Force outer catch by making launcher throw unexpectedly
+      const throwingLauncher: ISessionLauncher = {
         launch: async () => { throw new Error("catastrophic failure"); },
       };
       const config = new SubstrateConfig("/substrate");
@@ -273,7 +272,7 @@ describe("Id agent", () => {
       const checker = new PermissionChecker();
       const promptBuilder = new PromptBuilder(reader, checker);
       const taskClassifier = new TaskClassifier({ strategicModel: "opus", tacticalModel: "sonnet" });
-      const idThrowing = new Id(reader, checker, promptBuilder, throwingLauncher as any, clock, taskClassifier, "/workspace", undefined, logger);
+      const idThrowing = new Id(reader, checker, promptBuilder, throwingLauncher, clock, taskClassifier, "/workspace", undefined, logger);
 
       const { candidates, parseErrors } = await idThrowing.generateDrives();
 
