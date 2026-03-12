@@ -8,6 +8,7 @@ import { InMemoryFileSystem } from "../../../src/substrate/abstractions/InMemory
 import { FixedClock } from "../../../src/substrate/abstractions/FixedClock";
 import { TaskClassifier } from "../../../src/agents/TaskClassifier";
 import { DriveQualityTracker } from "../../../src/evaluation/DriveQualityTracker";
+import { InMemoryLogger } from "../../../src/logging";
 
 describe("Id agent", () => {
   let fs: InMemoryFileSystem;
@@ -206,6 +207,88 @@ describe("Id agent", () => {
 
       const { candidates: drives } = await id.generateDrives();
       expect(drives).toHaveLength(1);
+    });
+  });
+
+  describe("generateDrives debug logging", () => {
+    let logger: InMemoryLogger;
+    let idWithLogger: Id;
+
+    beforeEach(() => {
+      logger = new InMemoryLogger();
+      const config = new SubstrateConfig("/substrate");
+      const reader = new SubstrateFileReader(fs, config);
+      const checker = new PermissionChecker();
+      const promptBuilder = new PromptBuilder(reader, checker);
+      const taskClassifier = new TaskClassifier({ strategicModel: "opus", tacticalModel: "sonnet" });
+      idWithLogger = new Id(reader, checker, promptBuilder, launcher, clock, taskClassifier, "/workspace", undefined, logger);
+    });
+
+    it("logs openTaskCount before invoking session when plan has pending tasks", async () => {
+      launcher.enqueueSuccess(JSON.stringify({ goalCandidates: [] }));
+
+      await idWithLogger.generateDrives();
+
+      const entries = logger.getEntries();
+      expect(entries.some((e) => e.includes("openTaskCount=1"))).toBe(true);
+    });
+
+    it("logs openTaskCount=0 when all plan tasks are complete", async () => {
+      await fs.writeFile("/substrate/PLAN.md", "# Plan\n\n## Tasks\n- [x] Done");
+      launcher.enqueueSuccess(JSON.stringify({ goalCandidates: [] }));
+
+      await idWithLogger.generateDrives();
+
+      const entries = logger.getEntries();
+      expect(entries.some((e) => e.includes("openTaskCount=0"))).toBe(true);
+    });
+
+    it("logs session failure reason at !result.success early return", async () => {
+      launcher.enqueueFailure("connection timeout");
+
+      await idWithLogger.generateDrives();
+
+      const entries = logger.getEntries();
+      expect(entries.some((e) => e.includes("session failed") && e.includes("connection timeout"))).toBe(true);
+    });
+
+    it("logs unknown error when session fails with no message", async () => {
+      launcher.enqueueFailure("");
+
+      await idWithLogger.generateDrives();
+
+      const entries = logger.getEntries();
+      expect(entries.some((e) => e.includes("session failed") && e.includes("unknown error"))).toBe(true);
+    });
+
+    it("logs unexpected error with stack trace at outer catch", async () => {
+      // Make the promptBuilder throw by corrupting the PLAN.md permission check
+      // Simulate by making the launcher throw synchronously via a custom mechanism.
+      // We can do this by having the outer try block throw via a broken sessionLauncher.
+      const throwingLauncher = {
+        launch: async () => { throw new Error("catastrophic failure"); },
+      };
+      const config = new SubstrateConfig("/substrate");
+      const reader = new SubstrateFileReader(fs, config);
+      const checker = new PermissionChecker();
+      const promptBuilder = new PromptBuilder(reader, checker);
+      const taskClassifier = new TaskClassifier({ strategicModel: "opus", tacticalModel: "sonnet" });
+      const idThrowing = new Id(reader, checker, promptBuilder, throwingLauncher as any, clock, taskClassifier, "/workspace", undefined, logger);
+
+      const { candidates, parseErrors } = await idThrowing.generateDrives();
+
+      expect(candidates).toEqual([]);
+      expect(parseErrors).toBe(0);
+      const entries = logger.getEntries();
+      expect(entries.some((e) => e.includes("unexpected error") && e.includes("catastrophic failure"))).toBe(true);
+    });
+
+    it("does not log when no logger is provided (backward-compatible)", async () => {
+      launcher.enqueueFailure("error");
+      // id (no logger) should not throw
+      const { candidates, parseErrors } = await id.generateDrives();
+      expect(candidates).toEqual([]);
+      expect(parseErrors).toBe(0);
     });
   });
 });

@@ -4,13 +4,14 @@ import { SubstrateFileReader } from "../../substrate/io/FileReader";
 import { PermissionChecker } from "../permissions";
 import { PromptBuilder } from "../prompts/PromptBuilder";
 import { ISessionLauncher, ProcessLogEntry } from "../claude/ISessionLauncher";
-import { PlanParser } from "../parsers/PlanParser";
+import { PlanParser, TaskStatus } from "../parsers/PlanParser";
 import { extractJson } from "../parsers/extractJson";
 import { AgentRole, generateCorrelationId } from "../types";
 import { TaskClassifier } from "../TaskClassifier";
 import { DriveQualityTracker } from "../../evaluation/DriveQualityTracker";
 import { RateLimitError } from "../../loop/RateLimitError";
 import { isRateLimitText } from "../../loop/rateLimitParser";
+import { ILogger } from "../../logging";
 
 export interface GoalCandidate {
   title: string;
@@ -39,7 +40,8 @@ export class Id {
     private readonly clock: IClock,
     private readonly taskClassifier: TaskClassifier,
     private readonly workingDirectory?: string,
-    private readonly driveQualityTracker?: DriveQualityTracker
+    private readonly driveQualityTracker?: DriveQualityTracker,
+    private readonly logger?: ILogger
   ) {}
 
   async detectIdle(): Promise<IdleDetectionResult> {
@@ -80,6 +82,17 @@ export class Id {
       message += `Analyze the current state. Are we idle? What goals should we pursue?`;
       
       const model = this.taskClassifier.getModel({ role: AgentRole.ID, operation: "generateDrives" });
+
+      // Log open task count before invoking session to distinguish zero-candidate causes
+      try {
+        const planContent = await this.reader.read(SubstrateFileType.PLAN);
+        const tasks = PlanParser.parseTasks(planContent.rawMarkdown);
+        const openTaskCount = tasks.filter((t) => t.status !== TaskStatus.COMPLETE).length;
+        this.logger?.debug(`Id.generateDrives: openTaskCount=${openTaskCount}`);
+      } catch {
+        // logging only — do not block session launch
+      }
+
       const result = await this.sessionLauncher.launch({
         systemPrompt,
         message,
@@ -87,6 +100,7 @@ export class Id {
 
       if (!result.success) {
         if (isRateLimitText(result.error)) throw new RateLimitError(result.error!);
+        this.logger?.debug(`Id.generateDrives: session failed — ${result.error || "unknown error"}`);
         return { candidates: [], parseErrors: 0 };
       }
 
@@ -106,6 +120,9 @@ export class Id {
       }
     } catch (err) {
       if (err instanceof RateLimitError) throw err;
+      const msg = err instanceof Error ? err.message : String(err);
+      const stack = err instanceof Error ? (err.stack ?? "") : "";
+      this.logger?.debug(`Id.generateDrives: unexpected error — ${msg}${stack ? `\n${stack}` : ""}`);
       return { candidates: [], parseErrors: 0 };  // Id silently returns empty — errors surface through other agents
     }
   }

@@ -229,7 +229,7 @@ export async function createAgentLayer(
     logger.debug("agent-layer: idLauncher is \"vertex\" but no Vertex launcher available — Id falling back to default launcher");
   }
 
-  const id = new Id(reader, checker, promptBuilder, idGatedLauncher, clock, taskClassifier, workspaceManager.workspacePath(AgentRole.ID), driveQualityTracker);
+  const id = new Id(reader, checker, promptBuilder, idGatedLauncher, clock, taskClassifier, workspaceManager.workspacePath(AgentRole.ID), driveQualityTracker, logger);
 
   return {
     checker, promptBuilder, launcher, gatedLauncher, apiSemaphore, processTracker,
