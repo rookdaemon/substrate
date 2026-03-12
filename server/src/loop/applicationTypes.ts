@@ -94,8 +94,12 @@ export interface ApplicationConfig {
   /** Model name for Vertex subprocess tasks (default: "gemini-2.5-flash"). */
   vertexModel?: string;
   /** Which session launcher to use for the Id cognitive role (default: "claude" — same as other roles).
-   *  Set to "vertex" to route Id through VertexSessionLauncher. Requires vertexKeyPath to be set. */
-  idLauncher?: "claude" | "vertex";
+   *  Set to "vertex" to route Id through VertexSessionLauncher. Requires vertexKeyPath to be set.
+   *  Set to "ollama" to route Id through OllamaSessionLauncher. Uses ollamaBaseUrl and idOllamaModel (falls back to ollamaModel). */
+  idLauncher?: "claude" | "vertex" | "ollama";
+  /** Model name for Ollama when idLauncher is "ollama" (default: falls back to ollamaModel, then OllamaSessionLauncher built-in default).
+   *  Separate from ollamaModel to allow independent model selection for Id. */
+  idOllamaModel?: string;
   /** Configuration for the loop watchdog that detects stalls and injects reminders */
   watchdog?: {
     /** Disable the watchdog entirely (default: false) */
