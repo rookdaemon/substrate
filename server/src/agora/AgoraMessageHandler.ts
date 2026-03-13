@@ -217,12 +217,7 @@ export class AgoraMessageHandler {
       return false;
     }
 
-    const hash = createHash("sha256")
-      .update(senderPublicKey)
-      .update(messageType)
-      .update(JSON.stringify(payload))
-      .digest("hex");
-
+    const hash = this.computeContentHash(senderPublicKey, messageType, payload);
     const now = this.clock.now().getTime();
     const firstSeen = this.contentDedup.get(hash);
 
@@ -234,6 +229,15 @@ export class AgoraMessageHandler {
     }
 
     return false;
+  }
+
+  /** Compute a stable SHA-256 hash over sender + type + payload for content-based dedup. */
+  private computeContentHash(senderPublicKey: string, messageType: string, payload: unknown): string {
+    return createHash("sha256")
+      .update(senderPublicKey)
+      .update(messageType)
+      .update(JSON.stringify(payload))
+      .digest("hex");
   }
 
   /**
@@ -257,11 +261,7 @@ export class AgoraMessageHandler {
 
     // Record content hash only for structural message types
     if (AgoraMessageHandler.STRUCTURAL_MESSAGE_TYPES.has(messageType)) {
-      const hash = createHash("sha256")
-        .update(senderPublicKey)
-        .update(messageType)
-        .update(JSON.stringify(payload))
-        .digest("hex");
+      const hash = this.computeContentHash(senderPublicKey, messageType, payload);
       const now = this.clock.now().getTime();
       this.contentDedup.set(hash, now);
 

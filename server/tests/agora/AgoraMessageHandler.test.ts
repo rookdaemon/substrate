@@ -23,11 +23,11 @@ class MockConversationManager implements IConversationManager {
 }
 
 /** Conversation manager that throws on the first N appends, then succeeds. */
-class FailingConversationManager implements IConversationManager {
-  public appendedEntries: Array<{ role: AgentRole; entry: string }> = [];
+class FailingConversationManager extends MockConversationManager {
   public failuresRemaining: number;
 
   constructor(failCount = 1) {
+    super();
     this.failuresRemaining = failCount;
   }
 
@@ -36,7 +36,7 @@ class FailingConversationManager implements IConversationManager {
       this.failuresRemaining--;
       throw new Error("Simulated write failure");
     }
-    this.appendedEntries.push({ role, entry });
+    await super.append(role, entry);
   }
 }
 
