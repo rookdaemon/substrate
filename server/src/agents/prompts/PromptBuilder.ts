@@ -4,6 +4,68 @@ import { PermissionChecker } from "../permissions";
 import { AgentRole } from "../types";
 import { ROLE_PROMPTS } from "./templates";
 
+/**
+ * Built-in tool names differ between Claude Code and Gemini CLI backends.
+ * This mapping is used to inject a TOOL REFERENCE section into system prompts
+ * so the model knows which exact tool names to call.
+ */
+export interface ToolNames {
+  readFile: string;
+  writeFile: string;
+  editFile: string;
+  runShell: string;
+  grepSearch: string;
+  globSearch: string;
+  sendAgoraMessage: string;
+}
+
+const CLAUDE_TOOL_NAMES: ToolNames = {
+  readFile: "Read",
+  writeFile: "Write",
+  editFile: "Edit",
+  runShell: "Bash",
+  grepSearch: "Grep",
+  globSearch: "Glob",
+  sendAgoraMessage: "mcp__tinybus__send_agora_message",
+};
+
+const GEMINI_TOOL_NAMES: ToolNames = {
+  readFile: "read_file",
+  writeFile: "write_file",
+  editFile: "replace",
+  runShell: "run_shell_command",
+  grepSearch: "grep_search",
+  globSearch: "glob",
+  sendAgoraMessage: "send_agora_message",
+};
+
+export const TOOL_NAMES_BY_LAUNCHER: Record<string, ToolNames> = {
+  claude: CLAUDE_TOOL_NAMES,
+  gemini: GEMINI_TOOL_NAMES,
+  // copilot and ollama use Claude Code API compatibility — fall back to Claude names
+  copilot: CLAUDE_TOOL_NAMES,
+  ollama: CLAUDE_TOOL_NAMES,
+};
+
+const DEFAULT_LAUNCHER = "claude";
+
+function getToolNames(launcherType?: string): ToolNames {
+  return TOOL_NAMES_BY_LAUNCHER[launcherType ?? DEFAULT_LAUNCHER] ?? CLAUDE_TOOL_NAMES;
+}
+
+function buildToolReferenceSection(tools: ToolNames): string {
+  return `\n\n=== TOOL REFERENCE ===
+
+Built-in tool names for this session (use these exact names when calling tools):
+- Read file: \`${tools.readFile}\`
+- Write file: \`${tools.writeFile}\`
+- Edit file (replace text): \`${tools.editFile}\`
+- Run shell command: \`${tools.runShell}\`
+- Search file contents: \`${tools.grepSearch}\`
+- Find files by pattern: \`${tools.globSearch}\`
+- Send Agora message (MCP): \`${tools.sendAgoraMessage}\``;
+}
+
 export interface FileContext {
   fileType: SubstrateFileType;
   fileName: string;
@@ -13,6 +75,9 @@ export interface FileContext {
 export interface PromptBuilderPaths {
   substratePath: string;
   sourceCodePath?: string;
+  /** Session launcher type — determines built-in tool names in the TOOL REFERENCE section.
+   *  Defaults to "claude". Valid values: "claude" | "gemini" | "copilot" | "ollama". */
+  launcherType?: string;
 }
 
 const AUTONOMY_REMINDER = `\n\n=== AUTONOMY REMINDER ===
@@ -74,6 +139,9 @@ export class PromptBuilder {
       }
       prompt += `\n\n=== ENVIRONMENT ===\n\n${lines.join("\n")}`;
     }
+
+    const tools = getToolNames(this.paths?.launcherType);
+    prompt += buildToolReferenceSection(tools);
 
     prompt += AUTONOMY_REMINDER;
 

@@ -72,6 +72,7 @@ export async function createAgentLayer(
   const promptBuilder = new PromptBuilder(reader, checker, {
     substratePath: config.substratePath,
     sourceCodePath: config.sourceCodePath,
+    launcherType: config.sessionLauncher ?? "claude",
   });
 
   // Process tracker for zombie cleanup (created before launcher so we can pass it)
