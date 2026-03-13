@@ -66,29 +66,41 @@ export class PeerAvailabilityMonitor {
     }
   }
 
-  /** Scan all configured peers and inject active rate-limit updates. */
+  /**
+   * Scan all configured peers and inject active rate-limit updates.
+   *
+   * Timing contract: completes in max(individual timeouts), not sum(individual timeouts).
+   * All peer fetches run concurrently via Promise.all() — each peer targets a different
+   * endpoint, so there is no single upstream to protect with a concurrency limit.
+   */
   async scanAll(now: Date = new Date()): Promise<void> {
     const nowMs = now.getTime();
     const activeThisScan = new Map<string, string>();
 
-    for (const peer of this.peers) {
-      try {
-        const status = await this.readPeerStatus(peer);
-        if (!status.online || status.rateLimitUntil === null) {
-          continue;
+    const results = await Promise.all(
+      this.peers.map(async (peer) => {
+        try {
+          return await this.readPeerStatus(peer);
+        } catch (err) {
+          this.logger.debug(
+            `[PEER-MONITOR] Warning: could not read status for ${peer.peerId} at ${peer.apiStatusUrl}: ${err instanceof Error ? err.message : String(err)}`
+          );
+          return null;
         }
+      })
+    );
 
-        const rateLimitUntilMs = Date.parse(status.rateLimitUntil);
-        if (!Number.isFinite(rateLimitUntilMs) || rateLimitUntilMs <= nowMs) {
-          continue;
-        }
-
-        activeThisScan.set(status.peerId, status.rateLimitUntil);
-      } catch (err) {
-        this.logger.debug(
-          `[PEER-MONITOR] Warning: could not read status for ${peer.peerId} at ${peer.apiStatusUrl}: ${err instanceof Error ? err.message : String(err)}`
-        );
+    for (const status of results) {
+      if (!status || !status.online || status.rateLimitUntil === null) {
+        continue;
       }
+
+      const rateLimitUntilMs = Date.parse(status.rateLimitUntil);
+      if (!Number.isFinite(rateLimitUntilMs) || rateLimitUntilMs <= nowMs) {
+        continue;
+      }
+
+      activeThisScan.set(status.peerId, status.rateLimitUntil);
     }
 
     let changed = false;
