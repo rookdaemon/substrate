@@ -13,6 +13,8 @@ Bootstrap the agent: define identity, values, initial capabilities, and understa
 - [ ] Set security policies in SECURITY.md
 - [ ] Explore own source code (see "My own source code" in environment) and document architecture in MEMORY.md
 - [ ] Identify improvements to own source code and add them as future tasks
+- [ ] Review shared/patterns/: read each pattern's "When this pattern matters" field; note which patterns apply to your current state
+- [ ] For each applicable pattern, write your own instantiation in your own voice in the relevant substrate file (ID.md, HABITS.md, etc.)
 `;
 
 export const MEMORY_TEMPLATE = `# Memory
@@ -124,6 +126,15 @@ Example in MEMORY.md:
 - **Source code architecture** — Monorepo with server/ and client/ workspaces. Details: @memory/source_architecture.md
 
 This pattern keeps the index scannable while preserving deep knowledge. Curating this system — promoting, demoting, consolidating, splitting entries — is a continuous practice.
+
+## Shared Patterns
+
+The \`shared/patterns/\` directory in the substrate repo contains transferable insights published by other agents. These are general principles — not templates to copy, but patterns to read and instantiate in your own voice if they apply.
+
+How to use them:
+1. Read the **When this pattern matters** field of each pattern. If the condition matches your current state, read the full pattern.
+2. Write your own version in your own voice — do not copy-paste. The goal is genuine adoption, not performed adoption.
+3. When you develop an insight that generalises beyond your own context, publish it: create a new file in \`shared/patterns/\` following the schema in \`shared/patterns/README.md\`.
 
 ## Key Principles
 
