@@ -128,6 +128,26 @@ describe("PeerAvailabilityMonitor.scanAll", () => {
         expect(injector.messages).toHaveLength(1);
     });
 
+    it("injects [PEER RATE LIMIT CLEARED] when rate limit clears", async () => {
+        const rlu = "2026-03-09T10:00:00.000Z";
+
+        let body: Record<string, unknown> = { state: "RATE_LIMITED", rateLimitUntil: rlu };
+        const responses = new Map([
+            [PEER_BISHOP.apiStatusUrl, { ok: true, get body() { return body; } }],
+        ]);
+        const injector = makeInjector();
+        const monitor = new PeerAvailabilityMonitor([PEER_BISHOP], injector, makeLogger(), makeFetch(responses));
+
+        await monitor.scanAll(new Date("2026-03-09T09:00:00.000Z"));
+        body = { state: "RUNNING" };
+        await monitor.scanAll(new Date("2026-03-09T11:00:00.000Z"));
+
+        expect(injector.messages).toEqual([
+            `[PEER RATE LIMIT] rateLimitedUntil[bishop]=${rlu}`,
+            `[PEER RATE LIMIT CLEARED] peerId=bishop`,
+        ]);
+    });
+
     it("re-injects when a new rate limit timestamp appears", async () => {
         const now = new Date("2026-03-09T09:00:00.000Z");
         const rlu1 = "2026-03-09T10:00:00.000Z";
@@ -149,6 +169,7 @@ describe("PeerAvailabilityMonitor.scanAll", () => {
 
         expect(injector.messages).toEqual([
             `[PEER RATE LIMIT] rateLimitedUntil[bishop]=${rlu1}`,
+            `[PEER RATE LIMIT CLEARED] peerId=bishop`,
             `[PEER RATE LIMIT] rateLimitedUntil[bishop]=${rlu2}`,
         ]);
     });
@@ -276,6 +297,7 @@ describe("PeerAvailabilityMonitor: state persistence", () => {
 
         const saved = JSON.parse(fileSystem.files.get(STATE_PATH) ?? "{}") as Record<string, string>;
         expect(saved["bishop"]).toBeUndefined();
+        expect(injector.messages).toEqual([`[PEER RATE LIMIT CLEARED] peerId=bishop`]);
     });
 
     it("onContactFailed() persists state to disk", async () => {

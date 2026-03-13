@@ -26,6 +26,8 @@ export interface IPeerMonitorFileSystem {
  *
  * On each scan, this class computes active peer rate limits and injects
  * `rateLimitedUntil[peerId]=<iso timestamp>` updates for new/changed entries only.
+ * When a previously-active rate limit clears, `[PEER RATE LIMIT CLEARED] peerId=<id>`
+ * is injected to close the loop opened by the original rate-limit injection.
  *
  * When `statePath` and `fileSystem` are provided, `lastInjectedActiveRateLimit`
  * is persisted to disk so redundant re-injections are suppressed across restarts.
@@ -106,6 +108,7 @@ export class PeerAvailabilityMonitor {
     for (const peerId of Array.from(this.lastInjectedActiveRateLimit.keys())) {
       if (!activeThisScan.has(peerId)) {
         this.lastInjectedActiveRateLimit.delete(peerId);
+        this.injectRateLimitCleared(peerId);
         changed = true;
       }
     }
@@ -178,6 +181,12 @@ export class PeerAvailabilityMonitor {
 
   private injectRateLimit(peerId: string, rateLimitUntil: string): void {
     const line = `[PEER RATE LIMIT] rateLimitedUntil[${peerId}]=${rateLimitUntil}`;
+    this.logger.debug(`[PEER-MONITOR] Injecting: ${line}`);
+    this.injector.injectMessage(line);
+  }
+
+  private injectRateLimitCleared(peerId: string): void {
+    const line = `[PEER RATE LIMIT CLEARED] peerId=${peerId}`;
     this.logger.debug(`[PEER-MONITOR] Injecting: ${line}`);
     this.injector.injectMessage(line);
   }
