@@ -38,6 +38,8 @@ This spec does **not** require the review to implement changes; it defines what 
 - **Inspection guarantee**
   - Preserve “codebase fits in context / readable by agent” where possible; call out any new or existing hotspots that violate this.
 
+- **INS (Iterative Nested Self-refinement):** `server/src/loop/ins/` — pre-cycle hook that injects compliance flags into `pendingMessages`. Evaluate whether this adds value vs. complexity and token cost.
+
 **Relevant code areas (for the review to reference):**
 
 - `server/src/loop/createApplication.ts` (wiring and dependency count).
@@ -103,7 +105,7 @@ This spec does **not** require the review to implement changes; it defines what 
 - `server/src/substrate/validation/SecretDetector.ts`, `server/src/substrate/io/FileLock.ts`, `server/src/substrate/initialization/SubstrateValidator.ts`.
 - `server/src/loop/LoopHttpServer.ts` (auth, routes).
 - `server/src/loop/createApplication.ts` (shutdown, cleanup).
-- `server/src/agora-relay/` (in-process relay using [agora](https://github.com/rookdaemon/agora)); relay implementation and REST API live in the agora repo.
+- `agora-relay/` (monorepo workspace; in-process relay using [agora](https://github.com/rookdaemon/agora)); relay implementation and REST API live in that workspace and in the agora repo.
 
 ---
 
@@ -143,6 +145,7 @@ This spec does **not** require the review to implement changes; it defines what 
 
 - **Inventory process spawn points**
   - Agent SDK launcher (Claude Code sessions): when are they started, how long do they live, when are they killed (idle timeout, abandoned process grace, reaper).
+  - Code dispatch backends (ClaudeCliBackend, GeminiCliBackend): subprocess per invocation vs. reuse.
   - Backup: subprocess or CLI for backup/restore.
   - Any other child processes (e.g. email, external scripts).
 - **Identify unnecessary or overlapping runs**
@@ -158,6 +161,7 @@ This spec does **not** require the review to implement changes; it defines what 
 **Relevant code areas:**
 
 - `server/src/agents/claude/AgentSdkLauncher.ts`, `NodeProcessRunner.ts`, `ProcessTracker.ts`.
+- `server/src/code-dispatch/ClaudeCliBackend.ts`, `GeminiCliBackend.ts` (subprocess-per-call pattern).
 - `server/src/loop/BackupScheduler.ts` (runner usage).
 - All schedulers in `server/src/loop/*Scheduler.ts`.
 - `server/src/loop/LoopOrchestrator.ts` (runLoop, runTickLoop, idle/sleep).
