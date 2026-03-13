@@ -338,7 +338,7 @@ export async function createLoopLayer(
       agoraService,
       logger,
       agoraMessageHandler?.getSeenKeyStore(),
-      /* onSendFailed */ undefined,
+      peerMonitor?.onContactFailed.bind(peerMonitor),
       conversationManager,
       clock,
     );
