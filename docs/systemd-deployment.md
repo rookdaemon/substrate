@@ -120,6 +120,16 @@ sudo systemctl enable substrate.service
 sudo systemctl start substrate.service
 ```
 
+### Gemini Deployment
+
+If `config.json` sets `"sessionLauncher": "gemini"`, substrate automatically registers the
+TinyBus MCP server in Gemini CLI's configuration on every startup. No manual step is needed.
+
+After startup, verify the registration:
+```bash
+gemini mcp list   # should show "tinybus" entry
+```
+
 ## Testing Recovery
 
 To test the recovery mechanism:

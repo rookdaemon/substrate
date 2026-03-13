@@ -3,6 +3,7 @@ import { PermissionChecker } from "../agents/permissions";
 import { PromptBuilder } from "../agents/prompts/PromptBuilder";
 import { AgentSdkLauncher, SdkQueryFn } from "../agents/claude/AgentSdkLauncher";
 import { GeminiSessionLauncher } from "../agents/gemini/GeminiSessionLauncher";
+import { GeminiMcpSetup } from "../agents/gemini/GeminiMcpSetup";
 import { CopilotSessionLauncher } from "../agents/copilot/CopilotSessionLauncher";
 import { OllamaSessionLauncher } from "../agents/ollama/OllamaSessionLauncher";
 import { OllamaInferenceClient } from "../agents/ollama/OllamaInferenceClient";
@@ -98,6 +99,9 @@ export async function createAgentLayer(
   if (config.sessionLauncher === "gemini") {
     logger.debug("agent-layer: using GeminiSessionLauncher for cognitive roles");
     const geminiLauncher = new GeminiSessionLauncher(new NodeProcessRunner(), clock, config.model);
+    // Register TinyBus in Gemini CLI's MCP config so mcp__tinybus__* tools are available
+    const geminiMcpSetup = new GeminiMcpSetup(new NodeProcessRunner(), logger);
+    await geminiMcpSetup.register("tinybus", mcpUrl);
     gatedLauncher = new SemaphoreSessionLauncher(geminiLauncher, apiSemaphore);
   } else if (config.sessionLauncher === "copilot") {
     logger.debug("agent-layer: using CopilotSessionLauncher for cognitive roles");

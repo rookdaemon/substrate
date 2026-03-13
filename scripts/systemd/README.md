@@ -16,6 +16,7 @@ This directory contains systemd service units and recovery scripts for deploying
 2. Node.js installed (preferably via nvm)
 3. Claude CLI installed and authenticated
 4. Mail utility installed (`sudo apt-get install mailutils` on Debian/Ubuntu)
+5. **Gemini deployments only**: Gemini CLI installed and authenticated (`gemini --version`)
 
 ### Setup Steps
 
@@ -65,6 +66,20 @@ This directory contains systemd service units and recovery scripts for deploying
    ```bash
    sudo systemctl status substrate.service
    ```
+
+### Gemini Deployment (additional step)
+
+If `config.json` sets `"sessionLauncher": "gemini"`, substrate automatically registers the
+TinyBus MCP server with Gemini CLI on every startup via `gemini mcp add tinybus --url ...`.
+No manual pre-configuration is required.
+
+To verify the registration is active after startup:
+```bash
+gemini mcp list
+```
+
+The `tinybus` entry must appear for `mcp__tinybus__send_agora_message` calls from the
+Subconscious role to succeed.
 
 ## Recovery Mechanism
 
