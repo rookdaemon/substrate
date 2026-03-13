@@ -185,36 +185,38 @@ export class AgoraMessageHandler {
   }
 
   /**
+   * Structural (infrastructure) message types that are expected to repeat with identical
+   * content (e.g., periodic announce heartbeats). Only these types are subject to
+   * content-based dedup. Conversational types (dm, publish, request, …) must never be
+   * content-deduped because a peer legitimately sending the same text twice deserves two
+   * distinct entries in CONVERSATION.md.
+   */
+  private static readonly STRUCTURAL_MESSAGE_TYPES = new Set(["announce", "heartbeat"]);
+
+  /**
    * Check if an envelope ID has already been processed.
-   * Returns true if duplicate, false if new.
-   * Maintains a bounded set with oldest-first eviction when MAX_DEDUP_SIZE is exceeded.
+   * Returns true if duplicate, false if new (does NOT record — call recordProcessed after write).
    */
   private isDuplicate(envelopeId: string): boolean {
     if (this.processedEnvelopeIds.has(envelopeId)) {
       this.logger.debug(`[AGORA] Duplicate envelope ${envelopeId} — skipping`);
       return true;
     }
-
-    // Add to set
-    this.processedEnvelopeIds.add(envelopeId);
-
-    // Bound size: if over limit, remove oldest entry
-    if (this.processedEnvelopeIds.size > this.MAX_DEDUP_SIZE) {
-      const oldest = this.processedEnvelopeIds.values().next().value;
-      if (oldest !== undefined) {
-        this.processedEnvelopeIds.delete(oldest);
-      }
-    }
-
     return false;
   }
 
   /**
    * Content-based dedup: check if this sender + type + payload combination
    * has been seen within the dedup window (#238).
-   * Returns true if duplicate content, false if new.
+   * Only applies to structural message types (announce, heartbeat) — never to conversational
+   * types such as dm or publish, where the same content sent twice is a legitimate repeat.
+   * Returns true if duplicate content, false if new (does NOT record — call recordProcessed after write).
    */
   private isDuplicateContent(senderPublicKey: string, messageType: string, payload: unknown): boolean {
+    if (!AgoraMessageHandler.STRUCTURAL_MESSAGE_TYPES.has(messageType)) {
+      return false;
+    }
+
     const hash = createHash("sha256")
       .update(senderPublicKey)
       .update(messageType)
@@ -231,26 +233,54 @@ export class AgoraMessageHandler {
       return true;
     }
 
-    // New content or expired window — record it
-    this.contentDedup.set(hash, now);
+    return false;
+  }
 
-    // Bound map size: evict entries older than the window
-    if (this.contentDedup.size > this.MAX_CONTENT_DEDUP_SIZE) {
-      for (const [key, ts] of this.contentDedup.entries()) {
-        if ((now - ts) >= this.CONTENT_DEDUP_WINDOW_MS) {
-          this.contentDedup.delete(key);
-        }
-      }
-      // If still over limit after expiry sweep, remove oldest
-      if (this.contentDedup.size > this.MAX_CONTENT_DEDUP_SIZE) {
-        const oldestKey = this.contentDedup.keys().next().value;
-        if (oldestKey !== undefined) {
-          this.contentDedup.delete(oldestKey);
-        }
+  /**
+   * Record an envelope as successfully processed.
+   * MUST be called only after a successful write to CONVERSATION.md so that a failed
+   * write does not permanently block a legitimate relay retry of the same envelope.
+   *
+   * - Adds the envelope ID to the bounded processedEnvelopeIds set.
+   * - For structural message types (announce, heartbeat), also records the content hash
+   *   in the contentDedup map so periodic repeats are suppressed within the window.
+   */
+  private recordProcessed(envelopeId: string, senderPublicKey: string, messageType: string, payload: unknown): void {
+    // Record envelope ID with size-bounded eviction
+    this.processedEnvelopeIds.add(envelopeId);
+    if (this.processedEnvelopeIds.size > this.MAX_DEDUP_SIZE) {
+      const oldest = this.processedEnvelopeIds.values().next().value;
+      if (oldest !== undefined) {
+        this.processedEnvelopeIds.delete(oldest);
       }
     }
 
-    return false;
+    // Record content hash only for structural message types
+    if (AgoraMessageHandler.STRUCTURAL_MESSAGE_TYPES.has(messageType)) {
+      const hash = createHash("sha256")
+        .update(senderPublicKey)
+        .update(messageType)
+        .update(JSON.stringify(payload))
+        .digest("hex");
+      const now = this.clock.now().getTime();
+      this.contentDedup.set(hash, now);
+
+      // Bound map size: evict entries older than the window
+      if (this.contentDedup.size > this.MAX_CONTENT_DEDUP_SIZE) {
+        for (const [key, ts] of this.contentDedup.entries()) {
+          if ((now - ts) >= this.CONTENT_DEDUP_WINDOW_MS) {
+            this.contentDedup.delete(key);
+          }
+        }
+        // If still over limit after expiry sweep, remove oldest
+        if (this.contentDedup.size > this.MAX_CONTENT_DEDUP_SIZE) {
+          const oldestKey = this.contentDedup.keys().next().value;
+          if (oldestKey !== undefined) {
+            this.contentDedup.delete(oldestKey);
+          }
+        }
+      }
+    }
   }
 
   /**
@@ -458,6 +488,8 @@ export class AgoraMessageHandler {
         try {
           await this.conversationManager.append(AgentRole.SUBCONSCIOUS, conversationEntry);
           this.logger.debug(`[AGORA] Quarantined message written to CONVERSATION.md: envelopeId=${envelope.id}`);
+          // Record dedup AFTER successful write so relay retries aren't blocked if the write failed.
+          this.recordProcessed(envelope.id, envelopeFrom, envelope.type, envelope.payload);
         } catch (err) {
           this.logger.debug(`[AGORA] Failed to write quarantined message to CONVERSATION.md: ${err instanceof Error ? err.message : String(err)}`);
           throw err;
@@ -582,6 +614,9 @@ export class AgoraMessageHandler {
     try {
       await this.conversationManager.append(AgentRole.SUBCONSCIOUS, conversationEntry);
       this.logger.debug(`[AGORA] Written to CONVERSATION.md: envelopeId=${envelope.id}`);
+      // Record dedup AFTER successful write so a failed write does not permanently
+      // blacklist the envelope ID and prevent legitimate relay retries.
+      this.recordProcessed(envelope.id, envelopeFrom, envelope.type, envelope.payload);
     } catch (err) {
       this.logger.debug(`[AGORA] Failed to write to CONVERSATION.md: ${err instanceof Error ? err.message : String(err)}`);
       throw err;
