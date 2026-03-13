@@ -1,4 +1,4 @@
-import { DrivePatternLearner, CategoryBias } from "../../src/evaluation/DrivePatternLearner";
+import { DrivePatternLearner } from "../../src/evaluation/DrivePatternLearner";
 import { DriveQualityTracker } from "../../src/evaluation/DriveQualityTracker";
 import { InMemoryFileSystem } from "../../src/substrate/abstractions/InMemoryFileSystem";
 
