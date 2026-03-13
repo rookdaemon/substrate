@@ -1,4 +1,4 @@
-import { PromptBuilder } from "../../../src/agents/prompts/PromptBuilder";
+import { PromptBuilder, TOOL_NAMES_BY_LAUNCHER } from "../../../src/agents/prompts/PromptBuilder";
 import { PermissionChecker } from "../../../src/agents/permissions";
 import { ROLE_PROMPTS } from "../../../src/agents/prompts/templates";
 import { AgentRole } from "../../../src/agents/types";
@@ -92,56 +92,83 @@ describe("PromptBuilder", () => {
       expect(prompt).toContain("Banned compliance reflexes");
     });
 
-    it("does NOT include Gemini tool names note by default", () => {
+    it("includes TOOL REFERENCE section with Claude tool names by default", () => {
       const prompt = builder.buildSystemPrompt(AgentRole.SUBCONSCIOUS);
-      expect(prompt).not.toContain("[Tool names for this session:");
+      expect(prompt).toContain("=== TOOL REFERENCE ===");
+      expect(prompt).toContain("`Read`");
+      expect(prompt).toContain("`Write`");
+      expect(prompt).toContain("`Edit`");
+      expect(prompt).toContain("`Bash`");
+      expect(prompt).toContain("`Grep`");
+      expect(prompt).toContain("`Glob`");
+      expect(prompt).toContain("`mcp__tinybus__send_agora_message`");
     });
 
-    describe("Gemini launcher", () => {
-      let geminiBuilder: PromptBuilder;
-
-      beforeEach(() => {
-        geminiBuilder = new PromptBuilder(reader, checker, {
-          substratePath: "/substrate",
-          sourceCodePath: "/home/user/substrate",
-          sessionLauncherType: "gemini",
-        });
+    it("includes Gemini tool names when launcherType is gemini", () => {
+      const geminiBuilder = new PromptBuilder(reader, checker, {
+        substratePath: "/substrate",
+        sourceCodePath: "/home/user/substrate",
+        launcherType: "gemini",
       });
+      const prompt = geminiBuilder.buildSystemPrompt(AgentRole.SUBCONSCIOUS);
+      expect(prompt).toContain("=== TOOL REFERENCE ===");
+      expect(prompt).toContain("`read_file`");
+      expect(prompt).toContain("`write_file`");
+      expect(prompt).toContain("`replace`");
+      expect(prompt).toContain("`run_shell_command`");
+      expect(prompt).toContain("`grep_search`");
+      expect(prompt).toContain("`glob`");
+      expect(prompt).toContain("`send_agora_message`");
+      // Must NOT contain Claude-specific tool names
+      expect(prompt).not.toContain("`Read`");
+      expect(prompt).not.toContain("`Write`");
+      expect(prompt).not.toContain("`Bash`");
+      expect(prompt).not.toContain("`mcp__tinybus__send_agora_message`");
+    });
 
-      it("includes Gemini tool names note at top of system prompt", () => {
-        const prompt = geminiBuilder.buildSystemPrompt(AgentRole.SUBCONSCIOUS);
-        expect(prompt).toContain("[Tool names for this session: read_file, write_file, replace, run_shell_command, grep_search, glob]");
+    it("uses Claude tool names for copilot launcher", () => {
+      const copilotBuilder = new PromptBuilder(reader, checker, {
+        substratePath: "/substrate",
+        sourceCodePath: "/home/user/substrate",
+        launcherType: "copilot",
       });
+      const prompt = copilotBuilder.buildSystemPrompt(AgentRole.SUBCONSCIOUS);
+      expect(prompt).toContain("`Read`");
+      expect(prompt).toContain("`mcp__tinybus__send_agora_message`");
+      expect(prompt).not.toContain("`read_file`");
+    });
 
-      it("Gemini tool names note appears before role template", () => {
-        const prompt = geminiBuilder.buildSystemPrompt(AgentRole.SUBCONSCIOUS);
-        const noteIdx = prompt.indexOf("[Tool names for this session:");
-        const roleIdx = prompt.indexOf("You are the Subconscious");
-        expect(noteIdx).toBeLessThan(roleIdx);
+    it("uses Claude tool names for ollama launcher", () => {
+      const ollamaBuilder = new PromptBuilder(reader, checker, {
+        substratePath: "/substrate",
+        sourceCodePath: "/home/user/substrate",
+        launcherType: "ollama",
       });
+      const prompt = ollamaBuilder.buildSystemPrompt(AgentRole.SUBCONSCIOUS);
+      expect(prompt).toContain("`Read`");
+      expect(prompt).toContain("`mcp__tinybus__send_agora_message`");
+      expect(prompt).not.toContain("`read_file`");
+    });
 
-      it("includes Gemini-specific tool names in note", () => {
-        const prompt = geminiBuilder.buildSystemPrompt(AgentRole.SUBCONSCIOUS);
-        expect(prompt).toContain("read_file");
-        expect(prompt).toContain("write_file");
-        expect(prompt).toContain("replace");
-        expect(prompt).toContain("run_shell_command");
-        expect(prompt).toContain("grep_search");
-        expect(prompt).toContain("glob");
-      });
+    it("tool reference appears between environment and autonomy reminder", () => {
+      const prompt = builder.buildSystemPrompt(AgentRole.SUBCONSCIOUS);
+      const envIdx = prompt.indexOf("=== ENVIRONMENT ===");
+      const toolIdx = prompt.indexOf("=== TOOL REFERENCE ===");
+      const autonomyIdx = prompt.indexOf("=== AUTONOMY REMINDER ===");
+      expect(envIdx).toBeLessThan(toolIdx);
+      expect(toolIdx).toBeLessThan(autonomyIdx);
+    });
 
-      it("applies Gemini tool names note to all roles", () => {
-        for (const role of [AgentRole.EGO, AgentRole.SUBCONSCIOUS, AgentRole.SUPEREGO, AgentRole.ID]) {
-          const prompt = geminiBuilder.buildSystemPrompt(role);
-          expect(prompt).toContain("[Tool names for this session: read_file, write_file, replace, run_shell_command, grep_search, glob]");
-        }
+    it("Gemini Subconscious prompt does not contain Claude-only Agora tool name", () => {
+      const geminiBuilder = new PromptBuilder(reader, checker, {
+        substratePath: "/substrate",
+        sourceCodePath: "/home/user/substrate",
+        launcherType: "gemini",
       });
-
-      it("still includes environment section and autonomy reminder", () => {
-        const prompt = geminiBuilder.buildSystemPrompt(AgentRole.SUBCONSCIOUS);
-        expect(prompt).toContain("=== ENVIRONMENT ===");
-        expect(prompt).toContain("=== AUTONOMY REMINDER ===");
-      });
+      const prompt = geminiBuilder.buildSystemPrompt(AgentRole.SUBCONSCIOUS);
+      // The dynamic TOOL REFERENCE should list send_agora_message, not the MCP-prefixed name
+      expect(prompt).toContain("`send_agora_message`");
+      expect(prompt).not.toContain("`mcp__tinybus__send_agora_message`");
     });
   });
 

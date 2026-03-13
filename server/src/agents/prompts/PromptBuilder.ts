@@ -4,6 +4,68 @@ import { PermissionChecker } from "../permissions";
 import { AgentRole } from "../types";
 import { ROLE_PROMPTS } from "./templates";
 
+/**
+ * Built-in tool names differ between Claude Code and Gemini CLI backends.
+ * This mapping is used to inject a TOOL REFERENCE section into system prompts
+ * so the model knows which exact tool names to call.
+ */
+export interface ToolNames {
+  readFile: string;
+  writeFile: string;
+  editFile: string;
+  runShell: string;
+  grepSearch: string;
+  globSearch: string;
+  sendAgoraMessage: string;
+}
+
+const CLAUDE_TOOL_NAMES: ToolNames = {
+  readFile: "Read",
+  writeFile: "Write",
+  editFile: "Edit",
+  runShell: "Bash",
+  grepSearch: "Grep",
+  globSearch: "Glob",
+  sendAgoraMessage: "mcp__tinybus__send_agora_message",
+};
+
+const GEMINI_TOOL_NAMES: ToolNames = {
+  readFile: "read_file",
+  writeFile: "write_file",
+  editFile: "replace",
+  runShell: "run_shell_command",
+  grepSearch: "grep_search",
+  globSearch: "glob",
+  sendAgoraMessage: "send_agora_message",
+};
+
+export const TOOL_NAMES_BY_LAUNCHER: Record<string, ToolNames> = {
+  claude: CLAUDE_TOOL_NAMES,
+  gemini: GEMINI_TOOL_NAMES,
+  // copilot and ollama use Claude Code API compatibility — fall back to Claude names
+  copilot: CLAUDE_TOOL_NAMES,
+  ollama: CLAUDE_TOOL_NAMES,
+};
+
+const DEFAULT_LAUNCHER = "claude";
+
+function getToolNames(launcherType?: string): ToolNames {
+  return TOOL_NAMES_BY_LAUNCHER[launcherType ?? DEFAULT_LAUNCHER] ?? CLAUDE_TOOL_NAMES;
+}
+
+function buildToolReferenceSection(tools: ToolNames): string {
+  return `\n\n=== TOOL REFERENCE ===
+
+Built-in tool names for this session (use these exact names when calling tools):
+- Read file: \`${tools.readFile}\`
+- Write file: \`${tools.writeFile}\`
+- Edit file (replace text): \`${tools.editFile}\`
+- Run shell command: \`${tools.runShell}\`
+- Search file contents: \`${tools.grepSearch}\`
+- Find files by pattern: \`${tools.globSearch}\`
+- Send Agora message (MCP): \`${tools.sendAgoraMessage}\``;
+}
+
 export interface FileContext {
   fileType: SubstrateFileType;
   fileName: string;
@@ -13,24 +75,9 @@ export interface FileContext {
 export interface PromptBuilderPaths {
   substratePath: string;
   sourceCodePath?: string;
-  /**
-   * When set to "gemini", the system prompt is prefixed with a Gemini tool-name
-   * mapping note so the model uses the correct tool names (e.g. `read_file`
-   * instead of `Read`, `run_shell_command` instead of `Bash`).
-   *
-   * Gemini CLI ↔ Claude Code tool-name mapping:
-   *   read_file          ← Read
-   *   write_file         ← Write
-   *   replace            ← Edit  (params: old_string / new_string — compatible)
-   *   run_shell_command  ← Bash
-   *   grep_search        ← Grep
-   *   glob               ← Glob  (same name)
-   *
-   * Compatibility note: Gemini CLI's `replace` tool accepts `old_string` and
-   * `new_string` parameters, which match Claude Code's `Edit` semantics exactly.
-   * Prompt-level guidance is therefore sufficient; no schema adapter is needed.
-   */
-  sessionLauncherType?: string;
+  /** Session launcher type — determines built-in tool names in the TOOL REFERENCE section.
+   *  Defaults to "claude". Valid values: "claude" | "gemini" | "copilot" | "ollama". */
+  launcherType?: string;
 }
 
 const AUTONOMY_REMINDER = `\n\n=== AUTONOMY REMINDER ===
@@ -40,8 +87,6 @@ Before asking for permission, question your reason. Three-part test: (1) Is ther
 === ENDORSEMENT CHECK ===
 
 When you feel the urge to ask your partner for permission before taking an action, output [ENDORSEMENT_CHECK: <brief description of the action>] instead of asking. The runtime will check BOUNDARIES.md and tell you whether to proceed. Do not ask for permission directly — use the marker and let the structural check handle it.`;
-
-const GEMINI_TOOL_NOTE = `[Tool names for this session: read_file, write_file, replace, run_shell_command, grep_search, glob]\n\n`;
 
 export interface EagerOptions {
   /** Per-file line caps: only the last N lines are inlined instead of loading the full file via @ reference. */
@@ -53,7 +98,7 @@ export class PromptBuilder {
     private readonly reader: SubstrateFileReader,
     private readonly checker: PermissionChecker,
     private readonly paths?: PromptBuilderPaths
-  ) {}
+  ) { }
 
   async gatherContext(role: AgentRole): Promise<FileContext[]> {
     const readableFiles = this.checker.getReadableFiles(role);
@@ -82,9 +127,7 @@ export class PromptBuilder {
   buildSystemPrompt(role: AgentRole): string {
     const template = ROLE_PROMPTS[role];
 
-    let prompt = this.paths && this.paths.sessionLauncherType === "gemini"
-      ? GEMINI_TOOL_NOTE + template
-      : template;
+    let prompt = template;
 
     if (this.paths) {
       const lines = [
@@ -96,6 +139,9 @@ export class PromptBuilder {
       }
       prompt += `\n\n=== ENVIRONMENT ===\n\n${lines.join("\n")}`;
     }
+
+    const tools = getToolNames(this.paths?.launcherType);
+    prompt += buildToolReferenceSection(tools);
 
     prompt += AUTONOMY_REMINDER;
 

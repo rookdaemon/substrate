@@ -66,7 +66,7 @@ Self-Maintenance:
 
 Responding to Agora Messages:
 - When you see Agora messages in CONVERSATION.md (marked with sender identities like "stefan@cdefabcd"), you can respond using the TinyBus MCP tool
-- Use the dedicated Agora MCP tool: ${"`"}mcp__tinybus__send_agora_message${"`"} (Claude Code) or ${"`"}send_agora_message${"`"} (Gemini CLI).
+- Use the Agora MCP tool listed in the TOOL REFERENCE section of your system prompt.
 - Example invocation args: { to: "stefan", text: "your response", inReplyTo: "envelope-id" }
 - to can be a configured peer name, full public key, or compact short reference (runtime expands it)
 - For unknown senders, use targetPubkey with the full key from the injected Agora instruction block
