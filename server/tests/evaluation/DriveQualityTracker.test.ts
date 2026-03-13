@@ -206,6 +206,13 @@ describe("DriveQualityTracker", () => {
       expect(DriveQualityTracker.inferCategory("review cycle on prior position")).toBe("adversarial");
     });
 
+    it("classifies adversarial protocol markers (rebuttal, resolution, stress-test)", () => {
+      expect(DriveQualityTracker.inferCategory("Write rebuttal to Bishop's challenge")).toBe("adversarial");
+      expect(DriveQualityTracker.inferCategory("Draft resolution after adversarial review")).toBe("adversarial");
+      expect(DriveQualityTracker.inferCategory("stress-test argument for robustness")).toBe("adversarial");
+      expect(DriveQualityTracker.inferCategory("Stress test Bishop's position on autonomy")).toBe("adversarial");
+    });
+
     it("classifies reading tasks", () => {
       expect(DriveQualityTracker.inferCategory("Read papers on alignment")).toBe("reading");
       expect(DriveQualityTracker.inferCategory("Reading session on AGI safety")).toBe("reading");
