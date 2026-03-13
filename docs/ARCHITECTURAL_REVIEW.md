@@ -205,7 +205,7 @@ LoopOrchestrator.executeOneCycle()
 
 **F-S1 — MCP endpoint has no authentication.** `/mcp` accepts any request. Agents that expose MCP to peers are effectively running an unauthenticated RPC server on their HTTP port. The `invoke` tool on `CodeDispatchMcpServer` can execute arbitrary code with agent permissions.
 
-**F-S2 — `/hooks/agent` has no authentication.** The agent event webhook endpoint accepts any caller. Depending on what hook handlers do, this could be exploited to inject events into the loop.
+**F-S2 — `/hooks/agent` auth is weaker than `/api/*`.** The Agora webhook (`/hooks/agent`) is intentionally exempt from the API bearer token because peer agents do not know the local token. It relies on Ed25519 envelope signature verification (`verifyEnvelope`) and, optionally, a separate `AGORA_WEBHOOK_TOKEN` Bearer token. This is appropriate for the Agora use-case, but other future `/hooks/*` routes should document their own auth mechanism explicitly.
 
 **F-S3 — Agora replay window on restart.** The in-memory dedup Set (1,000 envelope IDs) is lost on process restart. A short window exists where replayed envelopes from just before shutdown would be accepted. This is a low-severity but real gap.
 
@@ -219,7 +219,6 @@ LoopOrchestrator.executeOneCycle()
 
 | ID | Recommendation | Priority |
 |---|---|---|
-| R-S2 | Add bearer token requirement to `/hooks/agent` when `apiToken` is configured, consistent with `/api/*` | quick win |
 | R-S3 | Persist the last N processed envelope IDs to a substrate file (e.g. `AGORA_SEEN.md` or a small JSON file) on each write, and reload on startup. 200–500 IDs is sufficient for practical replay protection across restarts | medium |
 | R-S4 | Run `SecretDetector` on every substrate file write (in `FileWriter` or as a `DeferredWorkQueue` item) rather than only during weekly validation. Fail the write or emit a high-severity log event on detection | medium |
 | R-S6 | Persist per-sender rate-limit windows (Map entries) to disk on shutdown and reload on startup, consistent with the rate-limit backoff persistence already in place | medium |
@@ -337,7 +336,6 @@ In **tick mode**: messages arrive into the SDK session directly or via `SessionM
 
 | ID | Theme | Priority | Dependencies |
 |---|---|---|---|
-| R-S2 | Auth for `/hooks/agent` | quick win | — |
 | R-R1 | Tune session wall-time cap in cycle mode (document in-cycle latency) | quick win | — |
 | R-L4 | PeriodicJobScheduler consolidation | medium | — |
 | R-L5 | Remove or demote INS hook | medium | — |

@@ -14,6 +14,8 @@ The final `ARCHITECTURAL_REVIEW.md` shall:
 
 This spec does **not** require the review to implement changes; it defines what the review document must specify so that implementation can follow in later work.
 
+> **Status:** `docs/ARCHITECTURAL_REVIEW.md` has been produced and satisfies all requirements in this spec. Refer to it for current findings and recommendations.
+
 ---
 
 ## 2. Themes and Requirements
@@ -179,46 +181,7 @@ The review document must also:
 
 ---
 
-## 4. Plan for producing ARCHITECTURAL_REVIEW.md
-
-1. **Gather**
-   - Walk codebase per section (createApplication, orchestrator, agents, evaluation, conversation, Agora, TinyBus, schedulers).
-   - Extract config surface (config.ts, ApplicationConfig, env) and document defaults.
-   - List all entry points for “external world” (HTTP, WS, Agora relay, MCP, file watcher).
-
-2. **Analyze**
-   - For “leaner”: count dependencies per module; list optional features and their call sites.
-   - For “tokens”: trace every place that builds a prompt or calls the model; estimate relative cost of each.
-   - For “security/integrity/availability”: checklist against the requirements above; reference existing SECURITY.md.
-   - For “responsiveness”: trace one Agora and one chat message end-to-end; note all delays.
-   - For “frugal”: list every spawn/exec and under what condition.
-
-3. **Write ARCHITECTURAL_REVIEW.md**
-   - One section per theme (plus intro and cross-cutting).
-   - Each section: current state, findings, recommended changes with priority and trade-offs.
-   - Point to files and line ranges where useful; add a short “References” list of key paths.
-
-4. **Review and iterate**
-   - Optional: lightweight review with maintainers to ensure recommendations are feasible and aligned with roadmap.
-   - Version the document (e.g. in repo or doc title) so later implementation can refer to it.
-
----
-
-## 5. Document structure for ARCHITECTURAL_REVIEW.md (suggested outline)
-
-- **1. Introduction** — Scope, goals (five themes), and how to read the doc.
-- **2. Current architecture (summary)** — High-level diagram or list of subsystems and data flow; main entry points.
-- **3. Leaner code** — Inventory, duplication, optionality, consolidation, inspection guarantee.
-- **4. Token efficiency** — Token-bearing operations, waste, levers (prompts, cache, flags, idle).
-- **5. Security, integrity, and availability** — Inbound security, secrets, integrity, availability, references to Agora SECURITY.md.
-- **6. Responsiveness** — Current flow, latency sources, improvements (wake, bounded wait, visibility).
-- **7. Frugal process usage** — Spawn points, overlapping runs, levers (coalesce, intervals, reuse, policy).
-- **8. Cross-cutting** — Priorities, invariants, config, testing/observability.
-- **9. References** — Key files and config locations.
-
----
-
-## 6. Success criteria for the review
+## 4. Success criteria for the review
 
 The ARCHITECTURAL_REVIEW.md specification is satisfied when:
 
