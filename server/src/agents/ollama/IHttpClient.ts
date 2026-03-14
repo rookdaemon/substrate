@@ -15,6 +15,7 @@ export interface HttpResponse {
 
 export interface HttpRequestOptions {
   timeoutMs?: number;
+  headers?: Record<string, string>;
 }
 
 export interface IHttpClient {

@@ -9,6 +9,7 @@ import { OllamaSessionLauncher } from "../agents/ollama/OllamaSessionLauncher";
 import { OllamaInferenceClient } from "../agents/ollama/OllamaInferenceClient";
 import { OllamaOffloadService } from "../agents/ollama/OllamaOffloadService";
 import { FetchHttpClient } from "../agents/ollama/FetchHttpClient";
+import { GroqSessionLauncher } from "../agents/groq/GroqSessionLauncher";
 import { VertexSessionLauncher } from "../agents/vertex/VertexSessionLauncher";
 import { ProcessTracker, ProcessTrackerConfig } from "../agents/claude/ProcessTracker";
 import { NodeProcessKiller } from "../agents/claude/NodeProcessKiller";
@@ -113,6 +114,11 @@ export async function createAgentLayer(
     logger.debug(`agent-layer: using OllamaSessionLauncher for cognitive roles (${ollamaBaseUrl}, model: ${config.ollamaModel ?? "default"})`);
     const ollamaLauncher = new OllamaSessionLauncher(new FetchHttpClient(), clock, config.ollamaModel, ollamaBaseUrl);
     gatedLauncher = new SemaphoreSessionLauncher(ollamaLauncher, apiSemaphore);
+  } else if (config.sessionLauncher === "groq") {
+    const groqApiKey = process.env.GROQ_API_KEY ?? "";
+    logger.debug(`agent-layer: using GroqSessionLauncher for cognitive roles (model: ${config.groqModel ?? "default"})`);
+    const groqLauncher = new GroqSessionLauncher(new FetchHttpClient(), clock, groqApiKey, config.groqModel);
+    gatedLauncher = new SemaphoreSessionLauncher(groqLauncher, apiSemaphore);
   } else {
     gatedLauncher = new SemaphoreSessionLauncher(launcher, apiSemaphore);
   }
@@ -238,6 +244,11 @@ export async function createAgentLayer(
     const ollamaLauncher = new OllamaSessionLauncher(new FetchHttpClient(), clock, ollamaModel, ollamaBaseUrl);
     idGatedLauncher = new SemaphoreSessionLauncher(ollamaLauncher, apiSemaphore);
     logger.debug(`agent-layer: Id using OllamaSessionLauncher (idLauncher: ollama, model: ${ollamaModel ?? "default"})`);
+  } else if (config.idLauncher === "groq") {
+    const groqApiKey = process.env.GROQ_API_KEY ?? "";
+    const groqLauncher = new GroqSessionLauncher(new FetchHttpClient(), clock, groqApiKey, config.groqModel);
+    idGatedLauncher = new SemaphoreSessionLauncher(groqLauncher, apiSemaphore);
+    logger.debug(`agent-layer: Id using GroqSessionLauncher (idLauncher: groq, model: ${config.groqModel ?? "default"})`);
   }
 
   const id = new Id(reader, checker, promptBuilder, idGatedLauncher, clock, taskClassifier, workspaceManager.workspacePath(AgentRole.ID), driveQualityTracker, logger);

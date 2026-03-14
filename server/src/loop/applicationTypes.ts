@@ -74,7 +74,7 @@ export interface ApplicationConfig {
   /** Maximum concurrent Claude API sessions (default: 2). Prevents rate-limit saturation when work pipeline and conversations overlap. */
   maxConcurrentSessions?: number;
   /** Which session launcher to use for agent reasoning sessions (default: "claude"). */
-  sessionLauncher?: "claude" | "gemini" | "ollama";
+  sessionLauncher?: "claude" | "gemini" | "ollama" | "groq";
   /** Base URL for the Ollama server when sessionLauncher is "ollama" (default: "http://localhost:11434"). */
   ollamaBaseUrl?: string;
   /** Model name for Ollama when sessionLauncher is "ollama" (default: "qwen3:14b"). Separate from `model` which is the Claude/Gemini model name. */
@@ -95,11 +95,14 @@ export interface ApplicationConfig {
   vertexModel?: string;
   /** Which session launcher to use for the Id cognitive role (default: "claude" — same as other roles).
    *  Set to "vertex" to route Id through VertexSessionLauncher. Requires vertexKeyPath to be set.
-   *  Set to "ollama" to route Id through OllamaSessionLauncher. Uses ollamaBaseUrl and idOllamaModel (falls back to ollamaModel). */
-  idLauncher?: "claude" | "vertex" | "ollama";
+   *  Set to "ollama" to route Id through OllamaSessionLauncher. Uses ollamaBaseUrl and idOllamaModel (falls back to ollamaModel).
+   *  Set to "groq" to route Id through GroqSessionLauncher. Requires GROQ_API_KEY env var. Uses groqModel (falls back to GroqSessionLauncher default). */
+  idLauncher?: "claude" | "vertex" | "ollama" | "groq";
   /** Model name for Ollama when idLauncher is "ollama" (default: falls back to ollamaModel, then OllamaSessionLauncher built-in default).
    *  Separate from ollamaModel to allow independent model selection for Id. */
   idOllamaModel?: string;
+  /** Model name for Groq (default: "llama3-70b-8192"). Used when sessionLauncher or idLauncher is "groq". */
+  groqModel?: string;
   /** Configuration for the loop watchdog that detects stalls and injects reminders */
   watchdog?: {
     /** Disable the watchdog entirely (default: false) */

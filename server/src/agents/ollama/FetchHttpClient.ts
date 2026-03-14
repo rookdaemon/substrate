@@ -21,7 +21,7 @@ export class FetchHttpClient implements IHttpClient {
     try {
       const response = await fetch(url, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...options?.headers },
         body: JSON.stringify(body),
         signal: controller.signal,
       });
@@ -49,7 +49,7 @@ export class FetchHttpClient implements IHttpClient {
     );
     const response = await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...options?.headers },
       body: JSON.stringify(body),
       signal: controller.signal,
     });

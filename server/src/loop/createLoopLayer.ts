@@ -153,6 +153,8 @@ export async function createLoopLayer(
       ? "vertex"
       : config.idLauncher === "ollama"
       ? "ollama"
+      : config.idLauncher === "groq"
+      ? "groq"
       : config.sessionLauncher ?? "claude";
 
   const idleHandler = new IdleHandler(id, superego, ego, clock, logger, canaryLogger, idLauncherName);
