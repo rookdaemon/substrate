@@ -1816,3 +1816,102 @@ describe("AgoraMessageHandler", () => {
     });
   });
 });
+
+// ── Additional: lastSeen tracking via AgoraStateStore ──────────────────────────
+import { AgoraStateStore } from "../../src/agora/AgoraStateStore";
+import { InMemoryFileSystem } from "../../src/substrate/abstractions/InMemoryFileSystem";
+
+describe("AgoraMessageHandler — lastSeen tracking", () => {
+  const PEER_PK = "302a300506032b6570032100abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd";
+  const testEnv: Envelope = {
+    id: "ls-env-1",
+    type: "dm",
+    from: PEER_PK,
+    sender: PEER_PK,
+    to: [],
+    timestamp: 1_700_000_000_000,
+    payload: { text: "hi" },
+    signature: "sig",
+  };
+
+  function makeHandlerWithStore(stateStore: AgoraStateStore | null = null) {
+    const svc = new MockAgoraService();
+    svc.addPeer("peer", PEER_PK);
+    const mgr = new MockConversationManager();
+    const inj = new MockMessageInjector();
+    const clk = new MockClock(new Date("2026-02-01T10:00:00Z"));
+    const log = new MockLogger();
+    return {
+      handler: new AgoraMessageHandler(
+        svc, mgr, inj, null, clk,
+        () => LoopState.RUNNING, () => false,
+        log, 'quarantine',
+        { enabled: false, maxMessages: 100, windowMs: 60000 },
+        null, null, null, null,
+        stateStore,
+      ),
+      clock: clk,
+      stateStore,
+    };
+  }
+
+  it("updates lastSeen after successfully processing a message", async () => {
+    const memFs = new InMemoryFileSystem();
+    const store = new AgoraStateStore("/state.json", memFs);
+    const { handler } = makeHandlerWithStore(store);
+
+    await handler.processEnvelope(testEnv, "webhook");
+
+    const saved = await store.getLastSeen(PEER_PK);
+    expect(saved).toBeDefined();
+    expect(typeof saved).toBe("number");
+    expect(saved).toBeGreaterThan(0);
+  });
+
+  it("does NOT update lastSeen for duplicate (ignored) envelopes", async () => {
+    const memFs = new InMemoryFileSystem();
+    const store = new AgoraStateStore("/state.json", memFs);
+    const { handler } = makeHandlerWithStore(store);
+
+    await handler.processEnvelope(testEnv, "webhook");
+    const firstSeen = await store.getLastSeen(PEER_PK);
+
+    // Second delivery of the same envelope is a duplicate → 'ignored' path
+    await handler.processEnvelope(testEnv, "webhook");
+    const afterDuplicate = await store.getLastSeen(PEER_PK);
+
+    // lastSeen should not have changed (still the same value as after first delivery)
+    expect(afterDuplicate).toBe(firstSeen);
+  });
+
+  it("does NOT update lastSeen when no stateStore is wired", async () => {
+    const { handler } = makeHandlerWithStore(null);
+    // Should not throw
+    await expect(handler.processEnvelope(testEnv, "webhook")).resolves.not.toThrow();
+  });
+
+  it("updates lastSeen after quarantining an unknown sender (policy=quarantine)", async () => {
+    const memFs = new InMemoryFileSystem();
+    const store = new AgoraStateStore("/state.json", memFs);
+
+    const emptySvc = new MockAgoraService(); // no peer registered
+    const mgr = new MockConversationManager();
+    const inj = new MockMessageInjector();
+    const clk = new MockClock(new Date("2026-02-01T10:00:00Z"));
+    const log = new MockLogger();
+    const quarantineHandler = new AgoraMessageHandler(
+      emptySvc, mgr, inj, null, clk,
+      () => LoopState.RUNNING, () => false,
+      log, 'quarantine',
+      { enabled: false, maxMessages: 100, windowMs: 60000 },
+      null, null, null, null,
+      store,
+    );
+
+    await quarantineHandler.processEnvelope(testEnv, "webhook");
+
+    // Even quarantined messages should update lastSeen
+    const saved = await store.getLastSeen(PEER_PK);
+    expect(saved).toBeDefined();
+  });
+});

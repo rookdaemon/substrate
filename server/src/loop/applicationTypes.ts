@@ -51,6 +51,13 @@ export interface ApplicationConfig {
         windowMs: number;
       };
     };
+    /**
+     * Base URL for the relay REST API used by the wake poller on startup.
+     * If omitted, the poller derives the URL from the Agora relay WebSocket URL
+     * (replacing ws:// → http:// and wss:// → https://).
+     * Set this explicitly when the REST API is on a different host or port.
+     */
+    relayRestApiUrl?: string;
   };
   conversationIdleTimeoutMs?: number; // Default: 60000 (60s)
   /** Maximum duration (ms) for a single conversation session. Prevents runaway sessions from blocking cycles.

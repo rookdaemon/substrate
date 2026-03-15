@@ -40,6 +40,8 @@ import { TinyBus, SessionInjectionProvider, ChatMessageProvider, type Message } 
 import { ConversationProvider } from "../tinybus/providers/ConversationProvider";
 import { AgoraMessageHandler } from "../agora/AgoraMessageHandler";
 import { AgoraOutboundProvider } from "../agora/AgoraOutboundProvider";
+import { AgoraStateStore } from "../agora/AgoraStateStore";
+import { AgoraWakePoller } from "../agora/AgoraWakePoller";
 import { IAgoraService } from "../agora/IAgoraService";
 import { buildPeerReferenceDirectory } from "../agora/utils";
 import { FlashGate } from "../gates/FlashGate";
@@ -108,10 +110,13 @@ export async function createLoopLayer(
   let agoraService: IAgoraService | null = null;
   let agoraMessageHandler: AgoraMessageHandler | null = null;
   let agoraOutboundProvider: AgoraOutboundProvider | null = null;
+  let agoraWakePoller: AgoraWakePoller | null = null;
   let agoraConfig: Awaited<ReturnType<typeof AgoraService.loadConfig>> | null = null;
+  let agoraVerifyFn: ((e: Envelope) => { valid: boolean; reason?: string }) | null = null;
   try {
     const agora = await import("@rookdaemon/agora");
     agoraConfig = await agora.AgoraService.loadConfig();
+    agoraVerifyFn = agora.verifyEnvelope;
     // AgoraService v0.4.5+ receives onRelayMessage at construction time.
     // The closure captures the outer `agoraMessageHandler` binding; by the time
     // any relay message arrives (after connectRelay below), it will be set.
@@ -219,6 +224,9 @@ export async function createLoopLayer(
   }
 
   // Create AgoraMessageHandler now that orchestrator exists
+  const agoraStatePath = path.resolve(config.substratePath, "..", ".agora_state.json");
+  const agoraStateStore = agoraService ? new AgoraStateStore(agoraStatePath, fs, logger) : null;
+
   if (agoraService && agoraConfig) {
     const rateLimitConfig = config.agora?.security?.perSenderRateLimit ?? {
       enabled: true,
@@ -254,7 +262,32 @@ export async function createLoopLayer(
       getIgnoredPeersPath(),
       getSeenKeysPath(),
       flashGate, // F2 gate — null when VertexSessionLauncher is unavailable
+      agoraStateStore, // lastSeen anchor for wake polling
     );
+
+    // Build AgoraWakePoller if relay is configured.
+    // The REST URL is taken from config (agora.relayRestApiUrl) or derived from the
+    // WebSocket relay URL (ws→http / wss→https, same host/port).
+    const relayWsUrl = (agoraConfig as { relay?: { url?: string } }).relay?.url;
+    const relayRestApiUrl =
+      config.agora?.relayRestApiUrl ??
+      (relayWsUrl ? AgoraWakePoller.deriveRestUrl(relayWsUrl) : null);
+
+    if (relayRestApiUrl && agoraStateStore && agoraVerifyFn) {
+      const selfPubkey = (agoraConfig as { identity: { publicKey: string } }).identity.publicKey;
+      agoraWakePoller = new AgoraWakePoller(
+        agoraStateStore,
+        relayRestApiUrl,
+        selfPubkey,
+        agoraMessageHandler,
+        agoraVerifyFn,
+        logger,
+        clock,
+      );
+      logger.debug(`[AGORA] AgoraWakePoller configured (relayRestApiUrl=${relayRestApiUrl})`);
+    } else {
+      logger.debug("[AGORA] AgoraWakePoller disabled (no relay REST URL available)");
+    }
 
     // NOTE: connectRelay is intentionally deferred to after all startup state has been
     // restored (dedup state, rate-limit state, sleep state, orchestrator deps).
@@ -880,6 +913,14 @@ export async function createLoopLayer(
       agoraMessageHandler.setProcessedEnvelopeIds(ids);
       logger.debug(`createLoopLayer: restored ${ids.length} Agora dedup envelope IDs from disk`);
     } catch { /* file absent — no dedup state to restore */ }
+  }
+
+  // Wake poll: fetch messages that arrived while the substrate was down.
+  // Runs AFTER dedup state is restored so duplicate envelopes from the relay replay
+  // stream are correctly rejected, and BEFORE connectRelay so the replayed messages
+  // are processed in deterministic order (wake-poll batch first, live relay stream second).
+  if (agoraWakePoller) {
+    await agoraWakePoller.pollMissedMessages();
   }
 
   // Connect to the Agora relay only AFTER all startup state has been fully restored.
