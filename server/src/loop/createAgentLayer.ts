@@ -9,6 +9,7 @@ import { OllamaSessionLauncher } from "../agents/ollama/OllamaSessionLauncher";
 import { OllamaInferenceClient } from "../agents/ollama/OllamaInferenceClient";
 import { OllamaOffloadService } from "../agents/ollama/OllamaOffloadService";
 import { FetchHttpClient } from "../agents/ollama/FetchHttpClient";
+import { GroqSessionLauncher } from "../agents/groq/GroqSessionLauncher";
 import { VertexSessionLauncher } from "../agents/vertex/VertexSessionLauncher";
 import { ProcessTracker, ProcessTrackerConfig } from "../agents/claude/ProcessTracker";
 import { NodeProcessKiller } from "../agents/claude/NodeProcessKiller";
@@ -95,6 +96,24 @@ export async function createAgentLayer(
   // API semaphore — caps concurrent Claude sessions for rate-limit safety
   const apiSemaphore = new ApiSemaphore(config.maxConcurrentSessions ?? 2);
 
+  // Groq API key — read from key file if configured (never from env vars)
+  let groqApiKey: string | undefined;
+  if (config.groqKeyPath) {
+    try {
+      const { readFileSync } = await import("node:fs");
+      const key = readFileSync(config.groqKeyPath, "utf8").trim();
+      if (key) {
+        groqApiKey = key;
+      } else {
+        logger.debug("agent-layer: Groq key file is empty — Groq launcher disabled");
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const redacted = msg.replaceAll(config.groqKeyPath, "[REDACTED]");
+      logger.debug(`agent-layer: Cannot read Groq key file — Groq launcher disabled (${redacted})`);
+    }
+  }
+
   // Cognitive role launcher — switch based on sessionLauncher config
   let gatedLauncher: ISessionLauncher;
   if (config.sessionLauncher === "gemini") {
@@ -113,6 +132,15 @@ export async function createAgentLayer(
     logger.debug(`agent-layer: using OllamaSessionLauncher for cognitive roles (${ollamaBaseUrl}, model: ${config.ollamaModel ?? "default"})`);
     const ollamaLauncher = new OllamaSessionLauncher(new FetchHttpClient(), clock, config.ollamaModel, ollamaBaseUrl);
     gatedLauncher = new SemaphoreSessionLauncher(ollamaLauncher, apiSemaphore);
+  } else if (config.sessionLauncher === "groq") {
+    if (groqApiKey) {
+      logger.debug(`agent-layer: using GroqSessionLauncher for cognitive roles (model: ${config.groqModel ?? "default"})`);
+      const groqLauncher = new GroqSessionLauncher(new FetchHttpClient(), clock, groqApiKey, config.groqModel);
+      gatedLauncher = new SemaphoreSessionLauncher(groqLauncher, apiSemaphore);
+    } else {
+      logger.debug("agent-layer: sessionLauncher is \"groq\" but groqKeyPath is not set or key file unreadable — falling back to Claude SDK launcher");
+      gatedLauncher = new SemaphoreSessionLauncher(launcher, apiSemaphore);
+    }
   } else {
     gatedLauncher = new SemaphoreSessionLauncher(launcher, apiSemaphore);
   }
@@ -238,6 +266,15 @@ export async function createAgentLayer(
     const ollamaLauncher = new OllamaSessionLauncher(new FetchHttpClient(), clock, ollamaModel, ollamaBaseUrl);
     idGatedLauncher = new SemaphoreSessionLauncher(ollamaLauncher, apiSemaphore);
     logger.debug(`agent-layer: Id using OllamaSessionLauncher (idLauncher: ollama, model: ${ollamaModel ?? "default"})`);
+  } else if (config.idLauncher === "groq") {
+    if (groqApiKey) {
+      const model = config.idGroqModel ?? config.groqModel;
+      const groqLauncher = new GroqSessionLauncher(new FetchHttpClient(), clock, groqApiKey, model);
+      idGatedLauncher = new SemaphoreSessionLauncher(groqLauncher, apiSemaphore);
+      logger.debug(`agent-layer: Id using GroqSessionLauncher (idLauncher: groq, model: ${model ?? "default"})`);
+    } else {
+      logger.debug("agent-layer: idLauncher is \"groq\" but groqKeyPath is not set or key file unreadable — Id falling back to default launcher");
+    }
   }
 
   const id = new Id(reader, checker, promptBuilder, idGatedLauncher, clock, taskClassifier, workspaceManager.workspacePath(AgentRole.ID), driveQualityTracker, logger);
