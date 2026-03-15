@@ -209,6 +209,51 @@ describe("SubstrateValidator", () => {
     });
   });
 
+  describe("challenges/ validation", () => {
+    it("reports broken @challenges/ reference from challenge_lifecycle_index.md", async () => {
+      await setupFs(fs, {
+        "challenge_lifecycle_index.md": "# Challenges\n\n@challenges/missing.md\n",
+      });
+
+      const report = await validator.validate();
+      expect(report.brokenReferences).toHaveLength(1);
+      expect(report.brokenReferences[0]).toEqual({
+        file: "challenge_lifecycle_index.md",
+        reference: "challenges/missing.md",
+      });
+    });
+
+    it("reports no broken reference when challenges/ file exists", async () => {
+      await setupFs(fs, {
+        "challenge_lifecycle_index.md": "# Challenges\n\n@challenges/gc24.md\n",
+        "challenges/gc24.md": "# GC24",
+      });
+
+      const report = await validator.validate();
+      expect(report.brokenReferences).toHaveLength(0);
+    });
+
+    it("reports orphaned challenges/ file not referenced by index", async () => {
+      await setupFs(fs, {
+        "challenge_lifecycle_index.md": "# Challenges\n",
+        "challenges/orphan.md": "# Orphan Challenge",
+      });
+
+      const report = await validator.validate();
+      expect(report.orphanedFiles).toContain("challenges/orphan.md");
+    });
+
+    it("does not report orphan when challenges/ file is referenced", async () => {
+      await setupFs(fs, {
+        "challenge_lifecycle_index.md": "# Challenges\n\n@challenges/active.md\n",
+        "challenges/active.md": "# Active Challenge",
+      });
+
+      const report = await validator.validate();
+      expect(report.orphanedFiles).not.toContain("challenges/active.md");
+    });
+  });
+
   describe("eager reference counts", () => {
     it("reports zero count for index files with no references", async () => {
       await setupFs(fs, {

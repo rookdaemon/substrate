@@ -34,8 +34,8 @@ export interface ValidationReport {
   eagerReferenceCounts: EagerReferenceCount[];
 }
 
-const INDEX_FILES = ["MEMORY.md", "SKILLS.md", "HABITS.md", "VALUES.md", "ID.md", "SECURITY.md"];
-const SUBDIRS = ["memory", "skills", "habits", "values", "id", "security"];
+const INDEX_FILES = ["MEMORY.md", "SKILLS.md", "HABITS.md", "VALUES.md", "ID.md", "SECURITY.md", "challenge_lifecycle_index.md"];
+const SUBDIRS = ["memory", "skills", "habits", "values", "id", "security", "challenges"];
 const STALE_THRESHOLD_DAYS = 30;
 /** Maximum number of eager @-references recommended per index file (R-T2). */
 export const MAX_EAGER_REFERENCES = 5;
