@@ -2,31 +2,21 @@ import { IFileSystem } from "../../substrate/abstractions/IFileSystem";
 import { ILogger } from "../../logging";
 
 /**
- * Deterministic CONVERSATION.md trim for use during rate-limit sleep.
- *
- * Runs without any model calls. If the file exceeds the threshold, trims
- * the oldest raw conversation entries (the "raw recent tail") until the
- * line count reaches floor(threshold * 0.75). Structural blocks — markdown
- * headers, session summaries, and any non-timestamped content — are
- * preserved unchanged.
- *
- * This is a size cap only. Full LLM-based compaction still runs on the next
- * non-rate-limited cycle if the file remains over threshold.
- *
- * @param conversationPath - Absolute path to CONVERSATION.md
- * @param threshold - Line count threshold (same as INS compaction threshold)
- * @param fs - File system abstraction
- * @param logger - Logger
+ * Trims a single substrate file (CONVERSATION.md or PROGRESS.md) if it
+ * exceeds the threshold. Removes the oldest timestamped entries from the
+ * raw tail until the line count reaches floor(threshold * targetRatio).
+ * Structural blocks (markdown headers, summaries) are always preserved.
  */
-export async function insMaintenanceTrim(
-  conversationPath: string,
+async function trimFile(
+  filePath: string,
   threshold: number,
+  targetRatio: number,
   fs: IFileSystem,
   logger: ILogger,
 ): Promise<void> {
   let content: string;
   try {
-    content = await fs.readFile(conversationPath);
+    content = await fs.readFile(filePath);
   } catch {
     return; // File doesn't exist — no action
   }
@@ -38,7 +28,7 @@ export async function insMaintenanceTrim(
     return; // Within threshold — no action
   }
 
-  const target = Math.floor(threshold * 0.75);
+  const target = Math.floor(threshold * targetRatio);
 
   // Find the boundary between the structural head and the raw recent tail.
   // Raw entries are timestamped lines written by AppendOnlyWriter:
@@ -64,6 +54,39 @@ export async function insMaintenanceTrim(
   const newLines = [...structuralHead, ...trimmedTail];
   const after = newLines.length;
 
-  await fs.writeFile(conversationPath, newLines.join("\n"));
+  await fs.writeFile(filePath, newLines.join("\n"));
   logger.debug(`[INS] Rate-limit trim: ${before} → ${after} lines`);
+}
+
+/**
+ * Deterministic trim for CONVERSATION.md and PROGRESS.md during rate-limit
+ * sleep. Runs without any model calls.
+ *
+ * - CONVERSATION.md: trims oldest raw entries to floor(threshold * 0.75)
+ * - PROGRESS.md: trims oldest raw entries to floor(threshold * 0.85)
+ *   (higher ratio preserves more history)
+ *
+ * Structural blocks — markdown headers, session summaries, and any
+ * non-timestamped content — are preserved unchanged in both files.
+ *
+ * This is a size cap only. Full LLM-based compaction still runs on the next
+ * non-rate-limited cycle if a file remains over threshold.
+ *
+ * @param conversationPath - Absolute path to CONVERSATION.md
+ * @param threshold - Line count threshold (same as INS compaction threshold)
+ * @param fs - File system abstraction
+ * @param logger - Logger
+ * @param progressPath - Optional absolute path to PROGRESS.md
+ */
+export async function insMaintenanceTrim(
+  conversationPath: string,
+  threshold: number,
+  fs: IFileSystem,
+  logger: ILogger,
+  progressPath?: string,
+): Promise<void> {
+  await trimFile(conversationPath, threshold, 0.75, fs, logger);
+  if (progressPath !== undefined) {
+    await trimFile(progressPath, threshold, 0.85, fs, logger);
+  }
 }
