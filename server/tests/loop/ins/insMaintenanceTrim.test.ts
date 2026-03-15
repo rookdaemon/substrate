@@ -188,3 +188,105 @@ describe("insMaintenanceTrim", () => {
     expect(newContent).toContain("Structural line 89");
   });
 });
+
+describe("insMaintenanceTrim — PROGRESS.md", () => {
+  let fs: InMemoryFileSystem;
+  let logger: InMemoryLogger;
+  const conversationPath = "/substrate/CONVERSATION.md";
+  const progressPath = "/substrate/PROGRESS.md";
+  const threshold = 200;
+
+  beforeEach(async () => {
+    fs = new InMemoryFileSystem();
+    logger = new InMemoryLogger();
+    await fs.mkdir("/substrate", { recursive: true });
+    // CONVERSATION.md well under threshold so it never triggers
+    await fs.writeFile(conversationPath, "# Conversation\n\n[2026-01-01T00:00:00.000Z] Entry\n");
+  });
+
+  it("does nothing when PROGRESS.md is below threshold", async () => {
+    const lines = Array.from({ length: 100 }, (_, i) => `[2026-03-01T12:00:00.000Z] Progress ${i}`);
+    const original = "# Progress\n\n" + lines.join("\n");
+    await fs.writeFile(progressPath, original);
+
+    await insMaintenanceTrim(conversationPath, threshold, fs, logger, progressPath);
+
+    const content = await fs.readFile(progressPath);
+    expect(content).toBe(original);
+    expect(logger.getEntries()).toHaveLength(0);
+  });
+
+  it("trims PROGRESS.md to floor(threshold * 0.85) when over threshold", async () => {
+    const header = "# Progress\n\n";
+    const entryLines = Array.from(
+      { length: 250 },
+      (_, i) => `[2026-03-01T12:00:00.000Z] Progress entry ${i}`,
+    );
+    const content = header + entryLines.join("\n");
+    await fs.writeFile(progressPath, content);
+
+    await insMaintenanceTrim(conversationPath, threshold, fs, logger, progressPath);
+
+    const newContent = await fs.readFile(progressPath);
+    const after = newContent.split("\n").length;
+    expect(after).toBe(Math.floor(threshold * 0.85));
+  });
+
+  it("preserves structural head in PROGRESS.md", async () => {
+    const structuralHead = [
+      "# Progress",
+      "",
+      "## Goals",
+      "",
+      "Key objectives here.",
+      "",
+    ].join("\n");
+
+    const entryLines = Array.from(
+      { length: 250 },
+      (_, i) => `[2026-03-01T12:00:00.000Z] Progress entry ${i}`,
+    );
+    const content = structuralHead + entryLines.join("\n");
+    await fs.writeFile(progressPath, content);
+
+    await insMaintenanceTrim(conversationPath, threshold, fs, logger, progressPath);
+
+    const newContent = await fs.readFile(progressPath);
+    expect(newContent.startsWith(structuralHead)).toBe(true);
+    expect(newContent).toContain("## Goals");
+    expect(newContent).toContain("Key objectives here.");
+  });
+
+  it("does not trim PROGRESS.md when progressPath is not provided", async () => {
+    const header = "# Progress\n\n";
+    const entryLines = Array.from(
+      { length: 250 },
+      (_, i) => `[2026-03-01T12:00:00.000Z] Progress entry ${i}`,
+    );
+    const content = header + entryLines.join("\n");
+    await fs.writeFile(progressPath, content);
+
+    // Call without progressPath
+    await insMaintenanceTrim(conversationPath, threshold, fs, logger);
+
+    const unchanged = await fs.readFile(progressPath);
+    expect(unchanged).toBe(content);
+  });
+
+  it("PROGRESS.md uses 0.85 ratio while CONVERSATION.md uses 0.75", async () => {
+    // Both files over threshold
+    const convLines = Array.from({ length: 250 }, (_, i) => `[2026-03-01T12:00:00.000Z] Conv ${i}`);
+    await fs.writeFile(conversationPath, "# Conversation\n\n" + convLines.join("\n"));
+
+    const progLines = Array.from({ length: 250 }, (_, i) => `[2026-03-01T12:00:00.000Z] Prog ${i}`);
+    await fs.writeFile(progressPath, "# Progress\n\n" + progLines.join("\n"));
+
+    await insMaintenanceTrim(conversationPath, threshold, fs, logger, progressPath);
+
+    const convContent = await fs.readFile(conversationPath);
+    const progContent = await fs.readFile(progressPath);
+
+    expect(convContent.split("\n").length).toBe(Math.floor(threshold * 0.75));
+    expect(progContent.split("\n").length).toBe(Math.floor(threshold * 0.85));
+  });
+});

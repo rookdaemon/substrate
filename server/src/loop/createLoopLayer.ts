@@ -431,8 +431,9 @@ export async function createLoopLayer(
     orchestrator.setINSHook(insHook);
     // Wire deterministic rate-limit trim — no LLM call, runs before each rate-limit re-sleep.
     const conversationPath = path.join(config.substratePath, "CONVERSATION.md");
+    const progressPath = path.join(config.substratePath, "PROGRESS.md");
     orchestrator.setRateLimitTrimFn(() =>
-      insMaintenanceTrim(conversationPath, insConfig.conversationLineThreshold, fs, logger),
+      insMaintenanceTrim(conversationPath, insConfig.conversationLineThreshold, fs, logger, progressPath),
     );
     // ComplianceStateManager saves after each state change in INSHook — no shutdown hook needed.
   }
