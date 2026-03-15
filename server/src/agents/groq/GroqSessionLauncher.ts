@@ -43,14 +43,14 @@ interface GroqResponse {
  * 30 req/min per API key) — adequate for sparse subprocess usage.
  *
  * API endpoint: https://api.groq.com/openai/v1/chat/completions
- * Auth: Authorization: Bearer <GROQ_API_KEY>
+ * Auth: Authorization: Bearer <key read from groqKeyPath file>
  *
- * Graceful fallback: if GROQ_API_KEY is absent or empty, launch() throws
- * immediately so the OllamaOffload try-skip pattern can handle it.
+ * Graceful fallback: if the key file is missing or empty, createAgentLayer
+ * skips construction and falls back to the default launcher.
  *
  * Config shape (config.json):
- *   { "sessionLauncher": "groq", "groqModel": "llama3-70b-8192" }
- *   { "idLauncher": "groq", "groqModel": "llama3-70b-8192" }
+ *   { "sessionLauncher": "groq", "groqKeyPath": "/path/to/groq.key", "groqModel": "llama3-70b-8192" }
+ *   { "idLauncher": "groq",      "groqKeyPath": "/path/to/groq.key", "idGroqModel": "llama3-70b-8192" }
  *
  * @see https://console.groq.com/docs/openai
  */
@@ -66,8 +66,8 @@ export class GroqSessionLauncher implements ISessionLauncher {
   ) {
     if (!apiKey) {
       throw new Error(
-        "GroqSessionLauncher: GROQ_API_KEY is missing or empty. " +
-          "Set the GROQ_API_KEY environment variable to enable Groq inference.",
+        "GroqSessionLauncher: API key is missing or empty. " +
+          "Set groqKeyPath in config.json to point to a file containing the Groq API key.",
       );
     }
     this.apiKey = apiKey;

@@ -50,13 +50,13 @@ describe("GroqSessionLauncher", () => {
   it("throws immediately when apiKey is empty", () => {
     expect(
       () => new GroqSessionLauncher(http, clock, ""),
-    ).toThrow(/GROQ_API_KEY/);
+    ).toThrow(/API key is missing or empty/);
   });
 
-  it("throws with a descriptive message when apiKey is missing", () => {
+  it("throws with a descriptive message pointing to groqKeyPath config", () => {
     expect(
       () => new GroqSessionLauncher(http, clock, ""),
-    ).toThrow(/Set the GROQ_API_KEY environment variable/);
+    ).toThrow(/groqKeyPath/);
   });
 
   // ── URL and model routing ────────────────────────────────────────────────
@@ -105,7 +105,7 @@ describe("GroqSessionLauncher", () => {
 
   // ── Auth header ──────────────────────────────────────────────────────────
 
-  it("sends Authorization Bearer header with API key", async () => {
+  it("sends Authorization Bearer header with key from file", async () => {
     http.enqueueJson(makeGroqResponse("ok"));
 
     await launcher.launch(makeRequest());

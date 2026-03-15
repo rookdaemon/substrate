@@ -73,7 +73,10 @@ export interface ApplicationConfig {
   progressMaxBytes?: number;
   /** Maximum concurrent Claude API sessions (default: 2). Prevents rate-limit saturation when work pipeline and conversations overlap. */
   maxConcurrentSessions?: number;
-  /** Which session launcher to use for agent reasoning sessions (default: "claude"). */
+  /** Which session launcher to use for agent reasoning sessions (default: "claude").
+   *  NOTE: "groq" uses Groq's free tier (100k tokens/day, 30 req/min) — adequate for Id subprocess
+   *  roles but NOT recommended for cyclical cognitive roles (Ego/Subconscious/Superego) which exhaust
+   *  the daily token budget in 1-2 active days. Use idLauncher: "groq" for targeted Id use instead. */
   sessionLauncher?: "claude" | "gemini" | "ollama" | "groq";
   /** Base URL for the Ollama server when sessionLauncher is "ollama" (default: "http://localhost:11434"). */
   ollamaBaseUrl?: string;
@@ -93,16 +96,24 @@ export interface ApplicationConfig {
   vertexKeyPath?: string;
   /** Model name for Vertex subprocess tasks (default: "gemini-2.5-flash"). */
   vertexModel?: string;
+  /** Path to Groq API key file. Required when sessionLauncher or idLauncher is "groq".
+   *  Key is read from this file at startup (never from env vars). Never logged.
+   *  Recommended path: ~/.config/substrate/groq.key
+   *  Free tier: 100k tokens/day, 30 req/min per key — suited for idLauncher: "groq" (sparse Id use). */
+  groqKeyPath?: string;
   /** Which session launcher to use for the Id cognitive role (default: "claude" — same as other roles).
    *  Set to "vertex" to route Id through VertexSessionLauncher. Requires vertexKeyPath to be set.
    *  Set to "ollama" to route Id through OllamaSessionLauncher. Uses ollamaBaseUrl and idOllamaModel (falls back to ollamaModel).
-   *  Set to "groq" to route Id through GroqSessionLauncher. Requires GROQ_API_KEY env var. Uses groqModel (falls back to GroqSessionLauncher default). */
+   *  Set to "groq" to route Id through GroqSessionLauncher. Requires groqKeyPath to be set. Uses idGroqModel (falls back to groqModel). */
   idLauncher?: "claude" | "vertex" | "ollama" | "groq";
   /** Model name for Ollama when idLauncher is "ollama" (default: falls back to ollamaModel, then OllamaSessionLauncher built-in default).
    *  Separate from ollamaModel to allow independent model selection for Id. */
   idOllamaModel?: string;
-  /** Model name for Groq (default: "llama3-70b-8192"). Used when sessionLauncher or idLauncher is "groq". */
+  /** Model name for Groq (default: "llama3-70b-8192"). Used when sessionLauncher is "groq". */
   groqModel?: string;
+  /** Model name for Groq when idLauncher is "groq" (default: falls back to groqModel, then GroqSessionLauncher built-in default).
+   *  Separate from groqModel to allow independent model selection for Id. */
+  idGroqModel?: string;
   /** Configuration for the loop watchdog that detects stalls and injects reminders */
   watchdog?: {
     /** Disable the watchdog entirely (default: false) */
