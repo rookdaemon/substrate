@@ -71,8 +71,7 @@ describe("PeriodicJobScheduler", () => {
       await fs.writeFile(STATE_FILE, pastTime.toISOString());
 
       const scheduler = makeScheduler(async () => "ok", { stateFilePath: STATE_FILE });
-      // 5 days elapsed < 1 hour interval → should NOT run (wrong interval ratio, let me redo)
-      // Actually 5 days > 1 hour interval → should run
+      // 5 days > 1 hour interval → should run
       expect(await scheduler.shouldRun()).toBe(true);
     });
 
