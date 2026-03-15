@@ -5,6 +5,7 @@ import { ILogger } from "../logging";
 import { createBackup } from "../backup";
 import * as path from "node:path";
 import * as crypto from "node:crypto";
+import { PeriodicJobScheduler } from "./PeriodicJobScheduler";
 
 export interface BackupSchedulerConfig {
   substratePath: string;
@@ -31,9 +32,7 @@ export interface ScheduledBackupResult {
 }
 
 export class BackupScheduler {
-  private lastBackupTime: Date | null = null;
-  private backupCount = 0;
-  private stateLoaded = false;
+  private readonly scheduler: PeriodicJobScheduler<ScheduledBackupResult>;
 
   constructor(
     private readonly fs: IFileSystem,
@@ -41,93 +40,40 @@ export class BackupScheduler {
     private readonly clock: IClock,
     private readonly logger: ILogger,
     private readonly config: BackupSchedulerConfig
-  ) {}
+  ) {
+    this.scheduler = new PeriodicJobScheduler<ScheduledBackupResult>(
+      fs,
+      clock,
+      logger,
+      {
+        intervalMs: config.backupIntervalMs,
+        stateFilePath: config.stateFilePath,
+        name: "BackupScheduler",
+      },
+      () => this.doBackup()
+    );
+  }
 
   /**
    * Check if a backup should run based on interval
    */
   async shouldRunBackup(): Promise<boolean> {
-    // Ensure state is loaded from disk on first call
-    if (!this.stateLoaded) {
-      await this.ensureStateLoaded();
-    }
-
-    if (!this.lastBackupTime) {
-      return true; // First backup
-    }
-
-    const elapsed = this.clock.now().getTime() - this.lastBackupTime.getTime();
-    return elapsed >= this.config.backupIntervalMs;
+    return this.scheduler.shouldRun();
   }
 
   /**
-   * Execute a scheduled backup with verification
+   * Execute a scheduled backup with verification.
+   * Returns a failure result if the backup or verification fails; does not
+   * update the last-run timestamp so the job is retried on the next cycle.
    */
   async runBackup(): Promise<ScheduledBackupResult> {
     const timestamp = this.clock.now().toISOString();
-    this.logger.debug("BackupScheduler: starting scheduled backup");
-
     try {
-      // Create backup
-      const backupResult = await createBackup({
-        fs: this.fs,
-        runner: this.runner,
-        clock: this.clock,
-        substratePath: this.config.substratePath,
-        outputDir: this.config.backupDir,
-      });
-
-      if (!backupResult.success) {
-        this.logger.debug(`BackupScheduler: backup failed — ${backupResult.error}`);
-        return {
-          success: false,
-          error: backupResult.error,
-          timestamp,
-        };
-      }
-
-      this.logger.debug(`BackupScheduler: backup created at ${backupResult.outputPath}`);
-      this.lastBackupTime = this.clock.now();
-      this.backupCount++;
-      this.stateLoaded = true; // Mark state as loaded since we just updated it
-
-      // Persist state after successful backup
-      await this.persistLastBackupTime(this.lastBackupTime);
-
-      // Verify backup if enabled
-      let verification: BackupVerificationResult | undefined;
-      if (this.config.verifyBackups && backupResult.outputPath) {
-        verification = await this.verifyBackup(backupResult.outputPath);
-        if (!verification.valid) {
-          this.logger.debug(`BackupScheduler: verification failed — ${verification.error}`);
-          return {
-            success: false,
-            backupPath: backupResult.outputPath,
-            verification,
-            error: `Backup verification failed: ${verification.error}`,
-            timestamp,
-          };
-        }
-        this.logger.debug(`BackupScheduler: verification passed (checksum: ${verification.checksum})`);
-      }
-
-      // Clean up old backups
-      await this.cleanupOldBackups();
-
-      return {
-        success: true,
-        backupPath: backupResult.outputPath,
-        verification,
-        timestamp,
-      };
+      return await this.scheduler.run();
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);
       this.logger.debug(`BackupScheduler: unexpected error — ${errorMsg}`);
-      return {
-        success: false,
-        error: errorMsg,
-        timestamp,
-      };
+      return { success: false, error: errorMsg, timestamp };
     }
   }
 
@@ -228,68 +174,58 @@ export class BackupScheduler {
     backupCount: number;
     nextBackupDue: Date | null;
   } {
-    const nextBackupDue = this.lastBackupTime
-      ? new Date(this.lastBackupTime.getTime() + this.config.backupIntervalMs)
-      : this.clock.now();
-
+    const s = this.scheduler.getStatus();
     return {
-      lastBackupTime: this.lastBackupTime,
-      backupCount: this.backupCount,
-      nextBackupDue,
+      lastBackupTime: s.lastRunTime,
+      backupCount: s.runCount,
+      nextBackupDue: s.nextDue,
     };
   }
 
-  /**
-   * Ensure state is loaded from disk
-   */
-  private async ensureStateLoaded(): Promise<void> {
-    if (this.stateLoaded) {
-      return;
-    }
-
-    this.lastBackupTime = await this.loadLastBackupTime();
-    this.stateLoaded = true;
-  }
+  // ── private ────────────────────────────────────────────────────────────────
 
   /**
-   * Load last backup time from state file
+   * Core backup logic.  Throws on failure so that PeriodicJobScheduler does
+   * NOT update the last-run timestamp, ensuring a retry on the next cycle.
    */
-  private async loadLastBackupTime(): Promise<Date | null> {
-    if (!this.config.stateFilePath) {
-      return null;
+  private async doBackup(): Promise<ScheduledBackupResult> {
+    const timestamp = this.clock.now().toISOString();
+    this.logger.debug("BackupScheduler: starting scheduled backup");
+
+    const backupResult = await createBackup({
+      fs: this.fs,
+      runner: this.runner,
+      clock: this.clock,
+      substratePath: this.config.substratePath,
+      outputDir: this.config.backupDir,
+    });
+
+    if (!backupResult.success) {
+      this.logger.debug(`BackupScheduler: backup failed — ${backupResult.error}`);
+      throw new Error(backupResult.error ?? "backup failed");
     }
 
-    try {
-      const exists = await this.fs.exists(this.config.stateFilePath);
-      if (!exists) {
-        return null;
+    this.logger.debug(`BackupScheduler: backup created at ${backupResult.outputPath}`);
+
+    // Verify backup if enabled
+    let verification: BackupVerificationResult | undefined;
+    if (this.config.verifyBackups && backupResult.outputPath) {
+      verification = await this.verifyBackup(backupResult.outputPath);
+      if (!verification.valid) {
+        this.logger.debug(`BackupScheduler: verification failed — ${verification.error}`);
+        throw new Error(`Backup verification failed: ${verification.error}`);
       }
-
-      const content = await this.fs.readFile(this.config.stateFilePath);
-      const date = new Date(content.trim());
-      return isNaN(date.getTime()) ? null : date;
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : String(err);
-      this.logger.debug(`BackupScheduler: failed to load state — ${errorMsg}`);
-      return null;
-    }
-  }
-
-  /**
-   * Persist last backup time to state file
-   */
-  private async persistLastBackupTime(time: Date): Promise<void> {
-    if (!this.config.stateFilePath) {
-      return;
+      this.logger.debug(`BackupScheduler: verification passed (checksum: ${verification.checksum})`);
     }
 
-    try {
-      const dir = path.dirname(this.config.stateFilePath);
-      await this.fs.mkdir(dir, { recursive: true });
-      await this.fs.writeFile(this.config.stateFilePath, time.toISOString());
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : String(err);
-      this.logger.debug(`BackupScheduler: failed to persist state — ${errorMsg}`);
-    }
+    // Clean up old backups
+    await this.cleanupOldBackups();
+
+    return {
+      success: true,
+      backupPath: backupResult.outputPath,
+      verification,
+      timestamp,
+    };
   }
 }

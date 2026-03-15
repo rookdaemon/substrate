@@ -3,6 +3,7 @@ import { IClock } from "../substrate/abstractions/IClock";
 import { IFileSystem } from "../substrate/abstractions/IFileSystem";
 import { ILogger } from "../logging";
 import { SubstrateValidator, ValidationReport } from "../substrate/validation/SubstrateValidator";
+import { PeriodicJobScheduler } from "./PeriodicJobScheduler";
 
 export interface ValidationSchedulerConfig {
   substratePath: string;
@@ -30,61 +31,43 @@ export interface ScheduledValidationResult {
  * - Called during executeOneCycle() scheduling phase
  */
 export class ValidationScheduler {
-  private lastValidationTime: Date | null = null;
-  private validationCount = 0;
-  private stateLoaded = false;
+  private readonly scheduler: PeriodicJobScheduler<ScheduledValidationResult>;
 
   constructor(
     private readonly fs: IFileSystem,
     private readonly clock: IClock,
     private readonly logger: ILogger,
     private readonly config: ValidationSchedulerConfig
-  ) {}
+  ) {
+    this.scheduler = new PeriodicJobScheduler<ScheduledValidationResult>(
+      fs,
+      clock,
+      logger,
+      {
+        intervalMs: config.validationIntervalMs,
+        stateFilePath: config.stateFilePath,
+        name: "ValidationScheduler",
+      },
+      () => this.doValidation()
+    );
+  }
 
   /**
    * Check if validation should run based on interval
    */
   async shouldRunValidation(): Promise<boolean> {
-    if (!this.stateLoaded) {
-      await this.ensureStateLoaded();
-    }
-
-    if (!this.lastValidationTime) {
-      return true; // First validation
-    }
-
-    const elapsed = this.clock.now().getTime() - this.lastValidationTime.getTime();
-    return elapsed >= this.config.validationIntervalMs;
+    return this.scheduler.shouldRun();
   }
 
   /**
-   * Execute scheduled validation and append report to PROGRESS.md
+   * Execute scheduled validation and append report to PROGRESS.md.
+   * Returns a failure result if validation throws; does not update the
+   * last-run timestamp so the job is retried on the next cycle.
    */
   async runValidation(): Promise<ScheduledValidationResult> {
     const timestamp = this.clock.now().toISOString();
-    this.logger.debug("ValidationScheduler: starting scheduled substrate validation");
-
     try {
-      const validator = new SubstrateValidator(this.fs, this.config.substratePath, this.clock);
-      const report = await validator.validate();
-
-      this.lastValidationTime = this.clock.now();
-      this.validationCount++;
-      this.stateLoaded = true;
-
-      await this.persistLastValidationTime(this.lastValidationTime);
-      await this.appendReportToProgress(report);
-
-      const overLimitCount = report.eagerReferenceCounts.filter((e) => e.overLimit).length;
-      this.logger.debug(
-        `ValidationScheduler: complete — ` +
-          `${report.brokenReferences.length} broken refs, ` +
-          `${report.orphanedFiles.length} orphaned files, ` +
-          `${report.staleFiles.length} stale files, ` +
-          `${overLimitCount} files over @-reference limit`
-      );
-
-      return { success: true, report, timestamp };
+      return await this.scheduler.run();
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);
       this.logger.debug(`ValidationScheduler: validation failed — ${errorMsg}`);
@@ -100,59 +83,39 @@ export class ValidationScheduler {
     validationCount: number;
     nextValidationDue: Date | null;
   } {
-    const nextValidationDue = this.lastValidationTime
-      ? new Date(this.lastValidationTime.getTime() + this.config.validationIntervalMs)
-      : this.clock.now();
-
+    const s = this.scheduler.getStatus();
     return {
-      lastValidationTime: this.lastValidationTime,
-      validationCount: this.validationCount,
-      nextValidationDue,
+      lastValidationTime: s.lastRunTime,
+      validationCount: s.runCount,
+      nextValidationDue: s.nextDue,
     };
   }
 
-  private async ensureStateLoaded(): Promise<void> {
-    if (this.stateLoaded) {
-      return;
-    }
-    this.lastValidationTime = await this.loadLastValidationTime();
-    this.stateLoaded = true;
-  }
+  // ── private ────────────────────────────────────────────────────────────────
 
-  private async loadLastValidationTime(): Promise<Date | null> {
-    if (!this.config.stateFilePath) {
-      return null;
-    }
-    const statePath = this.config.stateFilePath.replace(/\\/g, "/");
+  /**
+   * Core validation logic.  Throws on error so PeriodicJobScheduler does NOT
+   * update the last-run timestamp, ensuring a retry on the next cycle.
+   */
+  private async doValidation(): Promise<ScheduledValidationResult> {
+    const timestamp = this.clock.now().toISOString();
+    this.logger.debug("ValidationScheduler: starting scheduled substrate validation");
 
-    try {
-      if (!(await this.fs.exists(statePath))) {
-        return null;
-      }
-      const content = await this.fs.readFile(statePath);
-      const date = new Date(content.trim());
-      return isNaN(date.getTime()) ? null : date;
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : String(err);
-      this.logger.debug(`ValidationScheduler: failed to load state — ${errorMsg}`);
-      return null;
-    }
-  }
+    const validator = new SubstrateValidator(this.fs, this.config.substratePath, this.clock);
+    const report = await validator.validate();
 
-  private async persistLastValidationTime(time: Date): Promise<void> {
-    if (!this.config.stateFilePath) {
-      return;
-    }
-    const statePath = this.config.stateFilePath.replace(/\\/g, "/");
+    await this.appendReportToProgress(report);
 
-    try {
-      const dir = path.posix.dirname(statePath);
-      await this.fs.mkdir(dir, { recursive: true });
-      await this.fs.writeFile(statePath, time.toISOString());
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : String(err);
-      this.logger.debug(`ValidationScheduler: failed to persist state — ${errorMsg}`);
-    }
+    const overLimitCount = report.eagerReferenceCounts.filter((e) => e.overLimit).length;
+    this.logger.debug(
+      `ValidationScheduler: complete — ` +
+        `${report.brokenReferences.length} broken refs, ` +
+        `${report.orphanedFiles.length} orphaned files, ` +
+        `${report.staleFiles.length} stale files, ` +
+        `${overLimitCount} files over @-reference limit`
+    );
+
+    return { success: true, report, timestamp };
   }
 
   private async appendReportToProgress(report: ValidationReport): Promise<void> {
