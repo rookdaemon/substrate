@@ -45,18 +45,20 @@ describe("GroqSessionLauncher", () => {
     launcher = new GroqSessionLauncher(http, clock, FAKE_API_KEY);
   });
 
-  // ── Constructor guards ───────────────────────────────────────────────────
+  // ── Missing key ──────────────────────────────────────────────────────────
 
-  it("throws immediately when apiKey is empty", () => {
-    expect(
-      () => new GroqSessionLauncher(http, clock, ""),
-    ).toThrow(/API key is missing or empty/);
+  it("does not throw when constructed with an empty apiKey", () => {
+    expect(() => new GroqSessionLauncher(http, clock, "")).not.toThrow();
   });
 
-  it("throws with a descriptive message pointing to groqKeyPath config", () => {
-    expect(
-      () => new GroqSessionLauncher(http, clock, ""),
-    ).toThrow(/groqKeyPath/);
+  it("returns success=false with descriptive error when apiKey is empty", async () => {
+    const emptyKeyLauncher = new GroqSessionLauncher(http, clock, "");
+    const result = await emptyKeyLauncher.launch(makeRequest());
+
+    expect(result.success).toBe(false);
+    expect(result.exitCode).toBe(1);
+    expect(result.error).toContain("GROQ API key not configured");
+    expect(http.getRequests()).toHaveLength(0);
   });
 
   // ── URL and model routing ────────────────────────────────────────────────
