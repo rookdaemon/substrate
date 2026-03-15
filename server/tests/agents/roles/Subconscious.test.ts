@@ -1,6 +1,6 @@
 import { Subconscious } from "../../../src/agents/roles/Subconscious";
 import { PermissionChecker } from "../../../src/agents/permissions";
-import { PromptBuilder } from "../../../src/agents/prompts/PromptBuilder";
+import { PromptBuilder, SubstrateSnapshot } from "../../../src/agents/prompts/PromptBuilder";
 import { InMemorySessionLauncher } from "../../../src/agents/claude/InMemorySessionLauncher";
 import { SubstrateFileReader } from "../../../src/substrate/io/FileReader";
 import { SubstrateFileWriter } from "../../../src/substrate/io/FileWriter";
@@ -12,6 +12,7 @@ import { FixedClock } from "../../../src/substrate/abstractions/FixedClock";
 import { TaskClassifier } from "../../../src/agents/TaskClassifier";
 import { ConversationManager } from "../../../src/conversation/ConversationManager";
 import { IConversationCompactor } from "../../../src/conversation/IConversationCompactor";
+import { SubstrateFileType } from "../../../src/substrate/types";
 
 // Mock compactor for ConversationManager
 class MockCompactor implements IConversationCompactor {
@@ -115,6 +116,42 @@ describe("Subconscious agent", () => {
 
       expect(result.result).toBe("failure");
       expect(result.summary).toMatch(/JSON|Unexpected|parse/i);
+    });
+
+    it("uses snapshot content for PLAN instead of re-reading from disk", async () => {
+      launcher.enqueueSuccess(JSON.stringify({
+        result: "success", summary: "Done", progressEntry: "", skillUpdates: null, memoryUpdates: null, proposals: [], agoraReplies: [],
+      }));
+
+      const snapshotPlanContent = "# Plan (from snapshot)\n\n## Tasks\n- [ ] Snapshot Task";
+      const snapshot: SubstrateSnapshot = {
+        files: { [SubstrateFileType.PLAN]: snapshotPlanContent },
+      };
+
+      await subconscious.execute({ taskId: "task-1", description: "Do it" }, undefined, undefined, snapshot);
+
+      const launches = launcher.getLaunches();
+      // The message sent to Claude should contain the snapshot's PLAN content,
+      // not the on-disk PLAN.md content (which begins "# Plan\n\n## Current Goal")
+      expect(launches[0].request.message).toContain("from snapshot");
+      expect(launches[0].request.message).not.toContain("Current Goal");
+    });
+
+    it("falls back to disk read for files not present in the snapshot", async () => {
+      launcher.enqueueSuccess(JSON.stringify({
+        result: "success", summary: "Done", progressEntry: "", skillUpdates: null, memoryUpdates: null, proposals: [], agoraReplies: [],
+      }));
+
+      // Snapshot only contains PLAN — VALUES should still be read from disk
+      const snapshot: SubstrateSnapshot = {
+        files: { [SubstrateFileType.PLAN]: "# Snapshot Plan" },
+      };
+
+      await subconscious.execute({ taskId: "task-1", description: "Do it" }, undefined, undefined, snapshot);
+
+      const launches = launcher.getLaunches();
+      // VALUES.md is an eager file for Subconscious and should appear (read from disk)
+      expect(launches[0].request.message).toContain("Be good");
     });
 
     it("includes proposals in the result", async () => {

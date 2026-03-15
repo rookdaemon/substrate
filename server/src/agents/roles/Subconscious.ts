@@ -4,7 +4,7 @@ import { SubstrateFileReader } from "../../substrate/io/FileReader";
 import { SubstrateFileWriter } from "../../substrate/io/FileWriter";
 import { AppendOnlyWriter } from "../../substrate/io/AppendOnlyWriter";
 import { PermissionChecker } from "../permissions";
-import { PromptBuilder } from "../prompts/PromptBuilder";
+import { PromptBuilder, SubstrateSnapshot } from "../prompts/PromptBuilder";
 import { ISessionLauncher, ProcessLogEntry } from "../claude/ISessionLauncher";
 import { PlanParser } from "../parsers/PlanParser";
 import { extractJson } from "../parsers/extractJson";
@@ -147,11 +147,12 @@ export class Subconscious {
   async execute(
     task: TaskAssignment,
     onLogEntry?: (entry: ProcessLogEntry) => void,
-    pendingMessages?: string[]
+    pendingMessages?: string[],
+    snapshot?: SubstrateSnapshot
   ): Promise<TaskResult> {
     try {
       const systemPrompt = this.promptBuilder.buildSystemPrompt(AgentRole.SUBCONSCIOUS);
-      const eagerRefs = await this.promptBuilder.getEagerReferences(AgentRole.SUBCONSCIOUS);
+      const eagerRefs = await this.promptBuilder.getEagerReferences(AgentRole.SUBCONSCIOUS, undefined, snapshot);
       const lazyRefs = this.promptBuilder.getLazyReferences(AgentRole.SUBCONSCIOUS);
 
       let message = this.promptBuilder.buildAgentMessage(eagerRefs, lazyRefs, "");

@@ -72,6 +72,15 @@ export interface FileContext {
   content: string;
 }
 
+/**
+ * A per-cycle snapshot of substrate file contents read by Ego.
+ * Passed to Subconscious so it can reuse already-loaded content
+ * instead of re-reading the same files from disk within the same cycle.
+ */
+export interface SubstrateSnapshot {
+  files: Partial<Record<SubstrateFileType, string>>;
+}
+
 export interface PromptBuilderPaths {
   substratePath: string;
   sourceCodePath?: string;
@@ -157,7 +166,7 @@ export class PromptBuilder {
       .join("\n");
   }
 
-  async getEagerReferences(role: AgentRole, options?: EagerOptions): Promise<string> {
+  async getEagerReferences(role: AgentRole, options?: EagerOptions, snapshot?: SubstrateSnapshot): Promise<string> {
     const eagerFiles = this.checker.getEagerFiles(role);
     const substratePath = this.paths?.substratePath ?? "/substrate";
     const maxLines = options?.maxLines ?? {};
@@ -166,23 +175,34 @@ export class PromptBuilder {
     for (const ft of eagerFiles) {
       const cap = maxLines[ft];
       const fileName = SUBSTRATE_FILE_SPECS[ft].fileName;
+      const snapshotContent = snapshot?.files[ft];
       if (cap !== undefined) {
-        try {
-          const fileContent = await this.reader.read(ft);
-          const lines = fileContent.rawMarkdown.split("\n");
+        if (snapshotContent !== undefined) {
+          const lines = snapshotContent.split("\n");
           const tail = lines.slice(-cap).join("\n");
           parts.push(`${substratePath}/${fileName} (last ${cap} lines):\n${tail}`);
-        } catch {
-          // File unreadable — fall back to @ reference so the runtime can attempt to load it
-          parts.push(`@${substratePath}/${fileName}`);
+        } else {
+          try {
+            const fileContent = await this.reader.read(ft);
+            const lines = fileContent.rawMarkdown.split("\n");
+            const tail = lines.slice(-cap).join("\n");
+            parts.push(`${substratePath}/${fileName} (last ${cap} lines):\n${tail}`);
+          } catch {
+            // File unreadable — fall back to @ reference so the runtime can attempt to load it
+            parts.push(`@${substratePath}/${fileName}`);
+          }
         }
       } else {
-        try {
-          const fileContent = await this.reader.read(ft);
-          parts.push(`${substratePath}/${fileName}:\n${fileContent.rawMarkdown}`);
-        } catch {
-          // File unreadable — fall back to @ reference so Claude CLI can still expand it
-          parts.push(`@${substratePath}/${fileName}`);
+        if (snapshotContent !== undefined) {
+          parts.push(`${substratePath}/${fileName}:\n${snapshotContent}`);
+        } else {
+          try {
+            const fileContent = await this.reader.read(ft);
+            parts.push(`${substratePath}/${fileName}:\n${fileContent.rawMarkdown}`);
+          } catch {
+            // File unreadable — fall back to @ reference so Claude CLI can still expand it
+            parts.push(`@${substratePath}/${fileName}`);
+          }
         }
       }
     }

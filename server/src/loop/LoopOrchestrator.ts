@@ -482,7 +482,7 @@ export class LoopOrchestrator implements IMessageInjector {
     const r2Halt = this.checkR2Ceiling();
     if (r2Halt) return r2Halt;
 
-    const { dispatch, blockedTaskIds, timeBlockedTasks } = await this.ego.dispatchNext();
+    const { dispatch, blockedTaskIds, timeBlockedTasks, snapshot } = await this.ego.dispatchNext();
 
     for (const { taskId, blockedUntil } of timeBlockedTasks) {
       this.logger.debug(`[SCHEDULER] task skipped — blockedUntil: ${blockedUntil.toISOString()} (task: "${taskId}")`);
@@ -550,7 +550,8 @@ export class LoopOrchestrator implements IMessageInjector {
           description: dispatch.description,
         },
         this.createLogCallback("SUBCONSCIOUS"),
-        pending
+        pending,
+        snapshot
       );
       const apiCallDurationMs = this.clock.now().getTime() - apiCallStartMs;
       // Best-effort — fire-and-forget so metrics never block the loop
