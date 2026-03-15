@@ -1,4 +1,5 @@
 # Allow rook to manage substrate services without password
-# Required for recovery.sh to restart substrate.service after fixing issues
+# Required for recovery.sh and auto-update.sh to restart services after fixing issues
 rook ALL=(root) NOPASSWD: /usr/bin/systemctl restart substrate.service
 rook ALL=(root) NOPASSWD: /usr/bin/systemctl reset-failed substrate.service
+rook ALL=(root) NOPASSWD: /usr/bin/systemctl restart nova-substrate.service

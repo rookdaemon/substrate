@@ -1,0 +1,20 @@
+[Unit]
+Description=Substrate Auto-Update Timer (periodic pull/build/test/restart)
+Documentation=https://github.com/rookdaemon/substrate
+Requires=substrate-autoupdate.service
+
+[Timer]
+# First run: 10 minutes after boot (gives substrate time to fully start)
+OnBootSec=10min
+
+# Subsequent runs: every 30 minutes after the last run completes
+# Adjust to taste — e.g. OnUnitActiveSec=1h for hourly cadence
+OnUnitActiveSec=30min
+
+# Persist timer across reboots; ensures a missed run fires on next boot
+Persistent=true
+
+Unit=substrate-autoupdate.service
+
+[Install]
+WantedBy=timers.target

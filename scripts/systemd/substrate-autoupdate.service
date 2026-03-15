@@ -1,0 +1,41 @@
+[Unit]
+Description=Substrate Auto-Update Service (pull/build/lint/test/restart)
+Documentation=https://github.com/rookdaemon/substrate
+# Run after network is up so git pull can reach remote
+After=network.target
+
+[Service]
+Type=oneshot
+User=rook
+Group=rook
+WorkingDirectory=/home/rook/substrate
+
+# PATH: Use default node symlink for version-agnostic deployment
+Environment="PATH=/home/rook/.nvm/versions/node/default/bin:/home/rook/.local/bin:/usr/local/bin:/usr/bin:/bin"
+Environment="HOME=/home/rook"
+Environment="NVM_DIR=/home/rook/.nvm"
+
+# API ports for sleep-gate check (override if your deployment uses different ports)
+Environment="ROOK_API_PORT=3000"
+Environment="NOVA_API_PORT=3001"
+
+# Minimum consecutive idle cycles before restart is allowed (fallback when not SLEEPING)
+Environment="IDLE_THRESHOLD=5"
+
+ExecStart=/home/rook/substrate/scripts/auto-update.sh
+
+# Dedicated log directory (created and owned by rook automatically by systemd)
+LogsDirectory=substrate-autoupdate
+Environment="LOGS_DIRECTORY=/var/log/substrate-autoupdate"
+
+# Give enough time for npm ci + full test suite
+TimeoutStartSec=600
+
+# Structured logging — also captured to LOG_FILE by the script itself
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=substrate-autoupdate
+
+[Install]
+# Activated by the companion timer; not enabled directly
+WantedBy=

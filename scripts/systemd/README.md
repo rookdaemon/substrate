@@ -6,7 +6,10 @@ This directory contains systemd service units and recovery scripts for deploying
 
 - **`substrate.service`** - Main systemd unit for the Substrate server
 - **`substrate-recovery.service`** - Automated recovery service triggered on failure
+- **`substrate-autoupdate.service`** - Oneshot service that runs the periodic auto-update job
+- **`substrate-autoupdate.timer`** - Systemd timer that fires the auto-update service every 30 minutes
 - **`../recovery.sh`** - Recovery orchestration script with graduated response
+- **`../auto-update.sh`** - Auto-update script: pull → build → lint → test → restart both substrates
 
 ## Installation
 
@@ -30,11 +33,14 @@ This directory contains systemd service units and recovery scripts for deploying
    ```bash
    sudo cp scripts/systemd/substrate.service /etc/systemd/system/
    sudo cp scripts/systemd/substrate-recovery.service /etc/systemd/system/
+   sudo cp scripts/systemd/substrate-autoupdate.service /etc/systemd/system/
+   sudo cp scripts/systemd/substrate-autoupdate.timer /etc/systemd/system/
    ```
 
-3. **Ensure recovery script is executable**:
+3. **Ensure scripts are executable**:
    ```bash
    chmod +x scripts/recovery.sh
+   chmod +x scripts/auto-update.sh
    ```
 
 4. **Install sudoers rule** (allows recovery script to restart the service):
@@ -56,10 +62,13 @@ This directory contains systemd service units and recovery scripts for deploying
    sudo systemctl daemon-reload
    ```
 
-7. **Enable and start the service**:
+7. **Enable and start the service and auto-update timer**:
    ```bash
    sudo systemctl enable substrate.service
    sudo systemctl start substrate.service
+   # Enable the periodic auto-update timer
+   sudo systemctl enable substrate-autoupdate.timer
+   sudo systemctl start substrate-autoupdate.timer
    ```
 
 8. **Verify the service is running**:
@@ -80,6 +89,82 @@ gemini mcp list
 
 The `tinybus` entry must appear for `mcp__tinybus__send_agora_message` calls from the
 Subconscious role to succeed.
+
+## Auto-Update Mechanism
+
+The auto-update system runs a periodic maintenance job that keeps both `substrate` and `nova-substrate` current without manual intervention.
+
+### How It Works
+
+`substrate-autoupdate.timer` fires `substrate-autoupdate.service` every 30 minutes (first run: 10 minutes after boot). The service runs `scripts/auto-update.sh`, which:
+
+1. **`git pull --rebase --autostash`** — fetch latest commits
+2. **`npm ci`** — clean install from lock file
+3. **`npm run lint`** — lint all workspaces
+4. **`npm run test`** — test all workspaces
+5. **Sleep gate** — query `/api/loop/status` on both substrates; defer restart if either is active
+6. **`sudo systemctl restart substrate.service`**
+7. **`sudo systemctl restart nova-substrate.service`**
+
+### Rollback Safety
+
+If any step (pull, install, lint, or tests) fails, the script logs the failure and **exits without restarting** either service. The currently-running substrate is left untouched.
+
+### Sleep Gate
+
+Before restarting, the script checks the loop state of each substrate:
+
+- `state = "SLEEPING"` → gate passed
+- `consecutiveIdleCycles >= IDLE_THRESHOLD` (default 5) → gate passed
+- API unreachable or substrate active → **defer to next timer tick**
+
+This prevents mid-cycle interruption. If a substrate is busy, the restart is silently deferred; the timer fires again in 30 minutes and retries automatically.
+
+### Logs
+
+Structured output goes to two places:
+- **Dedicated log file**: `/var/log/substrate-autoupdate/auto-update.log` (with automatic size-based rotation at 10 MB)
+- **Systemd journal**: `journalctl -u substrate-autoupdate`
+
+### Configuration
+
+| Environment variable | Default | Description |
+|---|---|---|
+| `SUBSTRATE_HOME` | `/home/rook/substrate` | Repository root |
+| `ROOK_API_PORT` | `3000` | Rook substrate HTTP port |
+| `NOVA_API_PORT` | `3001` | Nova substrate HTTP port |
+| `IDLE_THRESHOLD` | `5` | Min consecutive idle cycles to pass sleep gate |
+
+Override in `substrate-autoupdate.service` → `Environment=` lines.
+
+### Adjusting Cadence
+
+Edit `scripts/systemd/substrate-autoupdate.timer`:
+```ini
+OnUnitActiveSec=30min   # change to e.g. 1h for hourly
+```
+
+### Manual Run
+
+```bash
+sudo systemctl start substrate-autoupdate.service
+# Watch progress:
+journalctl -u substrate-autoupdate -f
+# Or tail the log file:
+tail -f /var/log/substrate-autoupdate/auto-update.log
+```
+
+### Simulate a Test Failure
+
+To verify the rollback safety:
+```bash
+# Temporarily break a test, then run the updater
+sudo systemctl start substrate-autoupdate.service
+journalctl -u substrate-autoupdate --no-pager | tail -20
+# Expect: "Tests failed — substrates untouched"
+# Verify neither service was restarted:
+sudo systemctl status substrate.service nova-substrate.service
+```
 
 ## Recovery Mechanism
 
@@ -144,8 +229,12 @@ sudo journalctl -u substrate -f
 # Recovery service logs
 sudo journalctl -u substrate-recovery -f
 
+# Auto-update service logs
+sudo journalctl -u substrate-autoupdate -f
+tail -f /var/log/substrate-autoupdate/auto-update.log
+
 # Combined view
-sudo journalctl -u substrate -u substrate-recovery -f
+sudo journalctl -u substrate -u substrate-recovery -u substrate-autoupdate -f
 ```
 
 ### Check Recovery Status
@@ -243,6 +332,11 @@ sudo systemctl stop substrate.service
 sudo systemctl disable substrate.service
 sudo rm /etc/systemd/system/substrate.service
 sudo rm /etc/systemd/system/substrate-recovery.service
+# Remove auto-update timer and service
+sudo systemctl stop substrate-autoupdate.timer
+sudo systemctl disable substrate-autoupdate.timer
+sudo rm /etc/systemd/system/substrate-autoupdate.service
+sudo rm /etc/systemd/system/substrate-autoupdate.timer
 sudo systemctl daemon-reload
 rm -f /var/lib/substrate/recovery-attempts
 ```
