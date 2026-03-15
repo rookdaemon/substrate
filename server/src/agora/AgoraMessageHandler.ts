@@ -11,6 +11,7 @@ import type { Envelope } from "@rookdaemon/agora" with { "resolution-mode": "imp
 import type { ILogger } from "../logging";
 import { createHash } from "crypto";
 import type { IFlashGate, EnvelopeSummary } from "../gates/IFlashGate";
+import type { IEnvelopeDedupStore } from "./IEnvelopeDedupStore";
 
 /**
  * Sliding window state for per-sender rate limiting
@@ -62,9 +63,8 @@ export type MessageStatus = 'injected' | 'queued' | 'unprocessed' | 'ignored';
 export class AgoraMessageHandler {
   /**
    * In-memory set of processed envelope IDs for deduplication.
-   * NOTE: This set is lost on process restart, so the same envelope could be processed
-   * twice across a restart. For idempotent substrate writes this is acceptable.
-   * If stronger guarantees are needed, persist the last N IDs to a file on shutdown.
+   * Persisted to agora_seen.json after each new ID is registered so that the set
+   * survives process restarts (see FileEnvelopeDedupStore / IEnvelopeDedupStore).
    */
   private processedEnvelopeIds: Set<string> = new Set();
   private readonly MAX_DEDUP_SIZE = 1000;
@@ -110,6 +110,7 @@ export class AgoraMessageHandler {
     private readonly ignoredPeersPath: string | null = null,
     private readonly seenKeysPath: string | null = null,
     private readonly flashGate: IFlashGate | null = null,
+    private readonly dedupStore: IEnvelopeDedupStore | null = null,
   ) {
     if (this.ignoredPeersPath) {
       try {
@@ -194,6 +195,18 @@ export class AgoraMessageHandler {
   }
 
   /**
+   * Load previously-seen envelope IDs from the dedupStore (if configured).
+   * Called once at startup after the store is wired. Gracefully handles a missing
+   * or corrupt file by starting with an empty set.
+   */
+  async loadDedup(): Promise<void> {
+    if (!this.dedupStore) return;
+    const ids = await this.dedupStore.load();
+    this.setProcessedEnvelopeIds(ids);
+    this.logger.debug(`[AGORA] Loaded ${ids.length} dedup envelope IDs from agora_seen.json`);
+  }
+
+  /**
    * Structural (infrastructure) message types that are expected to repeat with identical
    * content (e.g., periodic announce heartbeats). Only these types are subject to
    * content-based dedup. Conversational types (dm, publish, request, …) must never be
@@ -226,6 +239,9 @@ export class AgoraMessageHandler {
       }
     }
 
+    // Fire-and-forget: persist the updated set so it survives a process restart.
+    this.persistDedup();
+
     return false;
   }
 
@@ -236,6 +252,19 @@ export class AgoraMessageHandler {
    */
   private removeFromDedup(envelopeId: string): void {
     this.processedEnvelopeIds.delete(envelopeId);
+    // Keep the persisted file consistent with in-memory state.
+    this.persistDedup();
+  }
+
+  /**
+   * Fire-and-forget helper: save current processedEnvelopeIds to the dedupStore.
+   * Errors are logged and swallowed by the store; they must not propagate here
+   * because isDuplicate() is called on the hot message-handling path.
+   */
+  private persistDedup(): void {
+    if (!this.dedupStore) return;
+    const ids = Array.from(this.processedEnvelopeIds);
+    this.dedupStore.save(ids).catch(() => { /* store logs internally */ });
   }
 
   /**

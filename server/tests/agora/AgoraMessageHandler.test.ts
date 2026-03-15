@@ -9,6 +9,8 @@ import { AgentRole } from "../../src/agents/types";
 import type { Envelope } from "@rookdaemon/agora" with { "resolution-mode": "import" };
 import type { ILogger } from "../../src/logging";
 import type { IFlashGate, F2GateInput, F2GateResult, FlashGateResult } from "../../src/gates/IFlashGate";
+import type { IEnvelopeDedupStore } from "../../src/agora/IEnvelopeDedupStore";
+import { FileEnvelopeDedupStore } from "../../src/agora/FileEnvelopeDedupStore";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -1813,6 +1815,248 @@ describe("AgoraMessageHandler", () => {
       // Message should be processed normally
       expect(injector.injectedMessages).toHaveLength(1);
       expect(conversationMgr.appendedEntries).toHaveLength(1);
+    });
+  });
+
+  // ────────────────────────────────────────────────────────────────────────────
+  // FileEnvelopeDedupStore — unit tests
+  // ────────────────────────────────────────────────────────────────────────────
+
+  describe("FileEnvelopeDedupStore", () => {
+    let tempDir: string;
+    let filePath: string;
+
+    beforeEach(() => {
+      tempDir = mkdtempSync(join(tmpdir(), "dedup-store-"));
+      filePath = join(tempDir, "agora_seen.json");
+    });
+
+    afterEach(() => {
+      rmSync(tempDir, { recursive: true, force: true });
+    });
+
+    it("load returns empty array when file does not exist", async () => {
+      const store = new FileEnvelopeDedupStore(filePath, logger);
+      const ids = await store.load();
+      expect(ids).toEqual([]);
+    });
+
+    it("load returns empty array and logs warning when file is corrupt JSON", async () => {
+      writeFileSync(filePath, "not valid json", "utf-8");
+      const store = new FileEnvelopeDedupStore(filePath, logger);
+      const ids = await store.load();
+      expect(ids).toEqual([]);
+      expect(logger.debugMessages.some(m => m.includes("agora_seen.json"))).toBe(true);
+    });
+
+    it("load returns empty array and logs warning when file has wrong shape", async () => {
+      writeFileSync(filePath, JSON.stringify({ not: "an array" }), "utf-8");
+      const store = new FileEnvelopeDedupStore(filePath, logger);
+      const ids = await store.load();
+      expect(ids).toEqual([]);
+      expect(logger.debugMessages.some(m => m.includes("agora_seen.json"))).toBe(true);
+    });
+
+    it("save then load round-trips IDs correctly", async () => {
+      const store = new FileEnvelopeDedupStore(filePath, logger);
+      const ids = ["id-1", "id-2", "id-3"];
+      await store.save(ids);
+      const loaded = await store.load();
+      expect(loaded).toEqual(ids);
+    });
+
+    it("save caps at maxSize, keeping the tail (most-recent)", async () => {
+      const store = new FileEnvelopeDedupStore(filePath, logger, 500);
+      const ids = Array.from({ length: 600 }, (_, i) => `id-${i}`);
+      await store.save(ids);
+
+      const content = readFileSync(filePath, "utf-8");
+      const saved = JSON.parse(content) as string[];
+      expect(saved).toHaveLength(500);
+      expect(saved[0]).toBe("id-100");       // oldest of the tail
+      expect(saved[499]).toBe("id-599");     // newest
+      expect(saved.includes("id-0")).toBe(false); // first 100 evicted
+    });
+
+    it("save writes atomically (file is never absent between writes)", async () => {
+      const store = new FileEnvelopeDedupStore(filePath, logger);
+      await store.save(["id-1"]);
+      // File must exist after the first save
+      const content = readFileSync(filePath, "utf-8");
+      expect(JSON.parse(content)).toEqual(["id-1"]);
+    });
+  });
+
+  // ────────────────────────────────────────────────────────────────────────────
+  // AgoraMessageHandler + IEnvelopeDedupStore integration
+  // ────────────────────────────────────────────────────────────────────────────
+
+  describe("dedup store integration", () => {
+    const baseRateLimit = { enabled: true, maxMessages: 10, windowMs: 60000 };
+
+    /** In-memory stub that records save() calls. */
+    class MockDedupStore implements IEnvelopeDedupStore {
+      public saved: string[][] = [];
+      private initial: string[];
+
+      constructor(initial: string[] = []) {
+        this.initial = initial;
+      }
+
+      async load(): Promise<string[]> {
+        return this.initial;
+      }
+
+      async save(ids: string[]): Promise<void> {
+        this.saved.push([...ids]);
+      }
+    }
+
+    function makeHandlerWithStore(store: IEnvelopeDedupStore): AgoraMessageHandler {
+      return new AgoraMessageHandler(
+        agoraService,
+        conversationManager,
+        messageInjector,
+        eventSink,
+        clock,
+        getState,
+        isRateLimited,
+        logger,
+        'quarantine',
+        baseRateLimit,
+        null, // wakeLoop
+        null, // ignoredPeersPath
+        null, // seenKeysPath
+        null, // flashGate
+        store,
+      );
+    }
+
+    it("loadDedup restores IDs from the store so duplicates are rejected", async () => {
+      const store = new MockDedupStore([testEnvelope.id]);
+      const h = makeHandlerWithStore(store);
+      await h.loadDedup();
+
+      // Same envelope should be dropped as duplicate
+      const status = await h.processEnvelope(testEnvelope, "webhook");
+      expect(status).toBe("ignored");
+      expect(conversationManager.appendedEntries).toHaveLength(0);
+    });
+
+    it("loadDedup with no-op store (empty load) starts with empty set", async () => {
+      const store = new MockDedupStore([]);
+      const h = makeHandlerWithStore(store);
+      await h.loadDedup();
+
+      // Envelope not in store → should be processed
+      await h.processEnvelope(testEnvelope, "webhook");
+      expect(conversationManager.appendedEntries).toHaveLength(1);
+    });
+
+    it("save is called after each new envelope accepted", async () => {
+      const store = new MockDedupStore();
+      const h = makeHandlerWithStore(store);
+
+      const env2: Envelope = { ...testEnvelope, id: "env-002" };
+
+      await h.processEnvelope(testEnvelope, "webhook");
+      // Allow the fire-and-forget save to complete
+      await new Promise(resolve => setImmediate(resolve));
+
+      await h.processEnvelope(env2, "webhook");
+      await new Promise(resolve => setImmediate(resolve));
+
+      expect(store.saved.length).toBeGreaterThanOrEqual(2);
+      // Last save contains both IDs
+      const lastSave = store.saved[store.saved.length - 1];
+      expect(lastSave).toContain(testEnvelope.id);
+      expect(lastSave).toContain("env-002");
+    });
+
+    it("save is NOT called for duplicate envelopes (already in set)", async () => {
+      const store = new MockDedupStore();
+      const h = makeHandlerWithStore(store);
+
+      await h.processEnvelope(testEnvelope, "webhook");
+      await new Promise(resolve => setImmediate(resolve));
+      const savesAfterFirst = store.saved.length;
+
+      // Second delivery of same ID — isDuplicate returns true, no save
+      await h.processEnvelope(testEnvelope, "webhook");
+      await new Promise(resolve => setImmediate(resolve));
+
+      expect(store.saved.length).toBe(savesAfterFirst);
+    });
+
+    it("FileEnvelopeDedupStore: processing 600 envelopes writes last 500 to file", async () => {
+      const handlerTempDir = mkdtempSync(join(tmpdir(), "dedup-handler-"));
+      const fp = join(handlerTempDir, "agora_seen.json");
+      try {
+        const fileStore = new FileEnvelopeDedupStore(fp, logger, 500);
+        const h = makeHandlerWithStore(fileStore);
+        agoraService.addPeer("bulk-peer", testEnvelope.from);
+
+        for (let i = 0; i < 600; i++) {
+          await h.processEnvelope({ ...testEnvelope, id: `bulk-${i}` }, "webhook");
+        }
+        // Flush async saves
+        await new Promise(resolve => setTimeout(resolve, 50));
+
+        const content = readFileSync(fp, "utf-8");
+        const saved = JSON.parse(content) as string[];
+        expect(saved).toHaveLength(500);
+        expect(saved.includes("bulk-0")).toBe(false);   // oldest evicted
+        expect(saved.includes("bulk-599")).toBe(true);  // newest retained
+      } finally {
+        rmSync(handlerTempDir, { recursive: true, force: true });
+      }
+    });
+
+    it("FileEnvelopeDedupStore: corrupt file → loadDedup gives empty set, no crash", async () => {
+      const corruptTempDir = mkdtempSync(join(tmpdir(), "dedup-corrupt-"));
+      const fp = join(corruptTempDir, "agora_seen.json");
+      try {
+        writeFileSync(fp, "}{corrupt json!", "utf-8");
+        const fileStore = new FileEnvelopeDedupStore(fp, logger, 500);
+        const h = makeHandlerWithStore(fileStore);
+        await h.loadDedup(); // must not throw
+
+        expect(h.getProcessedEnvelopeIds()).toHaveLength(0);
+        // Should still process new envelopes normally
+        await h.processEnvelope(testEnvelope, "webhook");
+        expect(conversationManager.appendedEntries).toHaveLength(1);
+      } finally {
+        rmSync(corruptTempDir, { recursive: true, force: true });
+      }
+    });
+
+    it("FileEnvelopeDedupStore: loaded IDs survive restart simulation", async () => {
+      const restartTempDir = mkdtempSync(join(tmpdir(), "dedup-restart-"));
+      const fp = join(restartTempDir, "agora_seen.json");
+      try {
+        // First "process run": process an envelope, which persists the ID
+        const fileStore1 = new FileEnvelopeDedupStore(fp, logger, 500);
+        const h1 = makeHandlerWithStore(fileStore1);
+        await h1.processEnvelope(testEnvelope, "webhook");
+        await new Promise(resolve => setTimeout(resolve, 50)); // flush async save
+
+        // Second "process run": load from the same file
+        const cm2 = new MockConversationManager();
+        const h2 = new AgoraMessageHandler(
+          agoraService, cm2, messageInjector, eventSink, clock,
+          getState, isRateLimited, logger, 'quarantine', baseRateLimit,
+          null, null, null, null,
+          new FileEnvelopeDedupStore(fp, logger, 500),
+        );
+        await h2.loadDedup();
+
+        // Same envelope → rejected as duplicate
+        const status = await h2.processEnvelope(testEnvelope, "webhook");
+        expect(status).toBe("ignored");
+        expect(cm2.appendedEntries).toHaveLength(0);
+      } finally {
+        rmSync(restartTempDir, { recursive: true, force: true });
+      }
     });
   });
 });

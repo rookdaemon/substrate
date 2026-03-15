@@ -41,6 +41,7 @@ import { ConversationProvider } from "../tinybus/providers/ConversationProvider"
 import { AgoraMessageHandler } from "../agora/AgoraMessageHandler";
 import { AgoraOutboundProvider } from "../agora/AgoraOutboundProvider";
 import { IAgoraService } from "../agora/IAgoraService";
+import { FileEnvelopeDedupStore } from "../agora/FileEnvelopeDedupStore";
 import { buildPeerReferenceDirectory } from "../agora/utils";
 import { FlashGate } from "../gates/FlashGate";
 import { FileWatcher } from "../substrate/watcher/FileWatcher";
@@ -254,6 +255,7 @@ export async function createLoopLayer(
       getIgnoredPeersPath(),
       getSeenKeysPath(),
       flashGate, // F2 gate — null when VertexSessionLauncher is unavailable
+      new FileEnvelopeDedupStore(path.join(config.substratePath, "agora_seen.json"), logger),
     );
 
     // NOTE: connectRelay is intentionally deferred to after all startup state has been
@@ -459,7 +461,6 @@ export async function createLoopLayer(
   }
 
   const rateLimitStatePath = path.resolve(config.substratePath, "..", ".rate-limit-state");
-  const dedupStatePath = path.resolve(config.substratePath, "..", ".agora-dedup-state");
 
   orchestrator.setLauncher(launcher);
   // Set shutdown function that closes resources before exiting
@@ -481,13 +482,6 @@ export async function createLoopLayer(
       try {
         await fs.writeFile(rateLimitStatePath, orchestrator.getRateLimitUntil() ?? "");
       } catch { /* ignore */ }
-
-      // Persist Agora dedup envelope IDs to prevent replay across restarts
-      if (agoraMessageHandler) {
-        try {
-          await fs.writeFile(dedupStatePath, JSON.stringify(agoraMessageHandler.getProcessedEnvelopeIds()));
-        } catch { /* ignore */ }
-      }
 
       try {
         orchestrator.stop(); // Stop orchestrator (stops watchdog, etc.)
@@ -873,13 +867,9 @@ export async function createLoopLayer(
   } catch { /* file absent — no rate-limit state to restore */ }
 
   // Restore Agora dedup envelope IDs from before the last shutdown (prevents replay across restarts).
+  // loadDedup() reads from agora_seen.json via the FileEnvelopeDedupStore wired in the constructor.
   if (agoraMessageHandler) {
-    try {
-      const stored = await fs.readFile(dedupStatePath);
-      const ids = JSON.parse(stored) as string[];
-      agoraMessageHandler.setProcessedEnvelopeIds(ids);
-      logger.debug(`createLoopLayer: restored ${ids.length} Agora dedup envelope IDs from disk`);
-    } catch { /* file absent — no dedup state to restore */ }
+    await agoraMessageHandler.loadDedup();
   }
 
   // Connect to the Agora relay only AFTER all startup state has been fully restored.
