@@ -489,6 +489,7 @@ export class LoopOrchestrator implements IMessageInjector {
     }
 
     let result: CycleResult;
+    let llmSessionInvokedThisCycle = false;
 
     if (!dispatch) {
       this.metrics.idleCycles++;
@@ -507,6 +508,7 @@ export class LoopOrchestrator implements IMessageInjector {
         const combined = toProcess.join("\n\n---\n\n");
         try {
           const egoResponse = await this.ego.respondToMessage(combined, this.createLogCallback("EGO"));
+          llmSessionInvokedThisCycle = true;
           if (egoResponse) await this.checkEndorsement(egoResponse);
         } catch (err) {
           if (err instanceof RateLimitError) throw err;
@@ -552,6 +554,7 @@ export class LoopOrchestrator implements IMessageInjector {
         this.createLogCallback("SUBCONSCIOUS"),
         pending
       );
+      llmSessionInvokedThisCycle = true;
       const apiCallDurationMs = this.clock.now().getTime() - apiCallStartMs;
       // Best-effort — fire-and-forget so metrics never block the loop
       this.performanceMetrics?.recordApiCall(apiCallDurationMs, "SUBCONSCIOUS", "execute").catch(() => { });
@@ -687,7 +690,7 @@ export class LoopOrchestrator implements IMessageInjector {
 
     // Enqueue schedulers as deferred work (overlaps with next cycle's dispatch)
     if (this.schedulerCoordinator) {
-      this.deferredWork.enqueue(this.schedulerCoordinator.runDueSchedulers(this.pendingMessages.length));
+      this.deferredWork.enqueue(this.schedulerCoordinator.runDueSchedulers(this.pendingMessages.length, llmSessionInvokedThisCycle));
     }
 
     return result;

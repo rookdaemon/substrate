@@ -636,6 +636,7 @@ export async function createLoopLayer(
     );
     schedulers.push({
       urgent: false,
+      invokesLlm: true,
       shouldRun: async () => healthCheckScheduler.shouldRunCheck(),
       run: async () => {
         const cycleNumber = orchestrator.getCycleNumber();
@@ -677,6 +678,7 @@ export async function createLoopLayer(
     );
     schedulers.push({
       urgent: false,
+      invokesLlm: true,
       shouldRun: () => metricsScheduler.shouldRunMetrics(),
       run: async () => {
         const cycleNumber = orchestrator.getCycleNumber();
@@ -789,7 +791,7 @@ export async function createLoopLayer(
       orchestrator
     );
     schedulers.push(heartbeatScheduler);
-    orchestrator.setSchedulerCoordinator(new SchedulerCoordinator(schedulers));
+    orchestrator.setSchedulerCoordinator(new SchedulerCoordinator(schedulers, config.schedulerCoalesceEnabled ?? true));
 
     // Wire the agora message notification into AgoraMessageHandler
     if (agoraMessageHandler) {
