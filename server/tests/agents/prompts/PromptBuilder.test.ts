@@ -383,6 +383,62 @@ describe("PromptBuilder", () => {
         expect(refs).toContain("[TRUNCATED: PLAN.md exceeds context budget for groq launcher]");
       });
     });
+
+    it("applies conversationPromptWindowLines cap when CONVERSATION.md exceeds the limit", async () => {
+      // Write 300 lines to CONVERSATION.md
+      const lines = Array.from({ length: 300 }, (_, i) => `Line ${i + 1}`);
+      await fs.writeFile("/substrate/CONVERSATION.md", lines.join("\n"));
+
+      const cappedBuilder = new PromptBuilder(reader, checker, {
+        substratePath: "/substrate",
+        sourceCodePath: "/home/user/substrate",
+        conversationPromptWindowLines: 200,
+      });
+
+      const refs = await cappedBuilder.getEagerReferences(AgentRole.EGO);
+      // Should show last 200 lines (lines 101-300)
+      expect(refs).toContain("/substrate/CONVERSATION.md (last 200 lines):");
+      expect(refs).toContain("Line 300");
+      expect(refs).toContain("Line 101");
+      expect(refs).not.toContain("Line 100");
+    });
+
+    it("includes full CONVERSATION.md when shorter than the window cap", async () => {
+      // Write 100 lines to CONVERSATION.md
+      const lines = Array.from({ length: 100 }, (_, i) => `Line ${i + 1}`);
+      await fs.writeFile("/substrate/CONVERSATION.md", lines.join("\n"));
+
+      const cappedBuilder = new PromptBuilder(reader, checker, {
+        substratePath: "/substrate",
+        sourceCodePath: "/home/user/substrate",
+        conversationPromptWindowLines: 200,
+      });
+
+      const refs = await cappedBuilder.getEagerReferences(AgentRole.EGO);
+      // File is shorter than cap — use the "last N lines" path but all lines fit
+      expect(refs).toContain("/substrate/CONVERSATION.md (last 200 lines):");
+      expect(refs).toContain("Line 1");
+      expect(refs).toContain("Line 100");
+    });
+
+    it("explicit maxLines overrides conversationPromptWindowLines for CONVERSATION", async () => {
+      const lines = Array.from({ length: 300 }, (_, i) => `Line ${i + 1}`);
+      await fs.writeFile("/substrate/CONVERSATION.md", lines.join("\n"));
+
+      const cappedBuilder = new PromptBuilder(reader, checker, {
+        substratePath: "/substrate",
+        sourceCodePath: "/home/user/substrate",
+        conversationPromptWindowLines: 200,
+      });
+
+      // Explicit maxLines of 50 should take precedence over the 200-line window cap
+      const refs = await cappedBuilder.getEagerReferences(AgentRole.SUPEREGO, {
+        maxLines: { [SubstrateFileType.CONVERSATION]: 50 },
+      });
+      expect(refs).toContain("/substrate/CONVERSATION.md (last 50 lines):");
+      expect(refs).toContain("Line 300");
+      expect(refs).not.toContain("Line 250");
+    });
   });
 
   describe("getLazyReferences", () => {

@@ -76,6 +76,7 @@ export async function createAgentLayer(
     substratePath: config.substratePath,
     sourceCodePath: config.sourceCodePath,
     launcherType: config.sessionLauncher ?? "claude",
+    conversationPromptWindowLines: config.conversationPromptWindowLines ?? 200,
   });
 
   // Process tracker for zombie cleanup (created before launcher so we can pass it)

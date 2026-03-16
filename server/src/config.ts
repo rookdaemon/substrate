@@ -91,6 +91,7 @@ const AppConfigSchema = z
     apiToken: z.string().optional(),
     enableFileReadCache: z.boolean().optional(),
     progressMaxBytes: z.number().int().min(1).optional(),
+    conversationPromptWindowLines: z.number().int().min(1).optional(),
     sessionLauncher: z.enum(["claude", "gemini", "copilot", "ollama", "vertex"]).optional(),
     ollamaBaseUrl: z.string().url().optional(),
     ollamaModel: z.string().optional(),
@@ -245,6 +246,10 @@ export interface AppConfig {
   enableFileReadCache?: boolean;
   /** Maximum size of PROGRESS.md in bytes before rotation (default: 512 * 1024 = 512 KB). */
   progressMaxBytes?: number;
+  /** Maximum number of lines from CONVERSATION.md included in each prompt (default: 200).
+   *  When the file exceeds this cap, only the last N lines are inlined. The full file is
+   *  still available on disk; ConversationCompactor remains the authoritative compaction mechanism. */
+  conversationPromptWindowLines?: number;
   /** Which session launcher to use for agent reasoning sessions (default: "claude").
    *  "vertex" is NOT allowed here — Vertex is for subprocess tasks only. Use vertexKeyPath instead. */
   sessionLauncher?: "claude" | "gemini" | "copilot" | "ollama";
@@ -361,6 +366,7 @@ export async function resolveConfig(
     shutdownGraceMs: 5000,
     logLevel: "info",
     progressMaxBytes: 512 * 1024,
+    conversationPromptWindowLines: 200,
     sessionLauncher: "claude",
     defaultCodeBackend: "auto",
   };
@@ -454,6 +460,7 @@ export async function resolveConfig(
     apiToken: fileConfig.apiToken,
     enableFileReadCache: fileConfig.enableFileReadCache,
     progressMaxBytes: fileConfig.progressMaxBytes ?? defaults.progressMaxBytes,
+    conversationPromptWindowLines: fileConfig.conversationPromptWindowLines ?? defaults.conversationPromptWindowLines,
     sessionLauncher: fileConfig.sessionLauncher ?? defaults.sessionLauncher,
     ollamaBaseUrl: fileConfig.ollamaBaseUrl,
     ollamaModel: fileConfig.ollamaModel,

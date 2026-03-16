@@ -106,6 +106,10 @@ export interface PromptBuilderPaths {
    *  When unset, the per-launcher default from CONTEXT_BUDGET_LINES_BY_LAUNCHER is used.
    *  Set to 0 to disable budget enforcement regardless of launcher. */
   contextBudgetLines?: number;
+  /** Maximum number of lines from CONVERSATION.md inlined in each prompt (default: no cap).
+   *  When the file exceeds this cap, only the last N lines are included.
+   *  Explicit maxLines options passed to getEagerReferences() take precedence over this value. */
+  conversationPromptWindowLines?: number;
 }
 
 const AUTONOMY_REMINDER = `\n\n=== AUTONOMY REMINDER ===
@@ -195,7 +199,12 @@ export class PromptBuilder {
 
     const parts: string[] = [];
     for (const ft of eagerFiles) {
-      const cap = maxLines[ft];
+      // Explicit caller-supplied cap takes precedence; fall back to the conversation window cap for CONVERSATION.
+      const cap = ft in maxLines
+        ? maxLines[ft]
+        : ft === SubstrateFileType.CONVERSATION
+          ? this.paths?.conversationPromptWindowLines
+          : undefined;
       const fileName = SUBSTRATE_FILE_SPECS[ft].fileName;
 
       let content: string;

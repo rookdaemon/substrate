@@ -73,6 +73,8 @@ export interface ApplicationConfig {
   enableFileReadCache?: boolean;
   /** Maximum size of PROGRESS.md in bytes before rotation (default: 512 * 1024 = 512 KB). */
   progressMaxBytes?: number;
+  /** Maximum number of lines from CONVERSATION.md included in each prompt (default: 200). */
+  conversationPromptWindowLines?: number;
   /** Maximum concurrent Claude API sessions (default: 2). Prevents rate-limit saturation when work pipeline and conversations overlap. */
   maxConcurrentSessions?: number;
   /** Which session launcher to use for agent reasoning sessions (default: "claude").

@@ -131,6 +131,7 @@ export async function startServer(config: AppConfig, options?: StartServerOption
     logLevel: config.logLevel,
     apiToken: config.apiToken,
     progressMaxBytes: config.progressMaxBytes,
+    conversationPromptWindowLines: config.conversationPromptWindowLines,
     watchdog: config.watchdog,
     sessionLauncher: config.sessionLauncher,
     ollamaBaseUrl: config.ollamaBaseUrl,
