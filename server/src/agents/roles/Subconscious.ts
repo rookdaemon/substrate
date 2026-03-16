@@ -11,6 +11,7 @@ import { extractJson } from "../parsers/extractJson";
 import { AgentRole } from "../types";
 import { TaskClassifier } from "../TaskClassifier";
 import { ConversationManager } from "../../conversation/ConversationManager";
+import { ICycleLogWriter } from "../../substrate/io/ICycleLogWriter";
 
 export interface SubconsciousProposal {
   target: string;
@@ -141,7 +142,8 @@ export class Subconscious {
     private readonly sessionLauncher: ISessionLauncher,
     private readonly clock: IClock,
     private readonly taskClassifier: TaskClassifier,
-    private readonly workingDirectory?: string
+    private readonly workingDirectory?: string,
+    private readonly cycleLogWriter?: ICycleLogWriter,
   ) {}
 
   async execute(
@@ -209,7 +211,11 @@ export class Subconscious {
   }
 
   async logConversation(entry: string): Promise<void> {
-    await this.conversationManager.append(AgentRole.SUBCONSCIOUS, entry);
+    if (this.cycleLogWriter) {
+      await this.cycleLogWriter.write("SUBCONSCIOUS", entry);
+    } else {
+      await this.conversationManager.append(AgentRole.SUBCONSCIOUS, entry);
+    }
   }
 
   async logProgress(entry: string): Promise<void> {

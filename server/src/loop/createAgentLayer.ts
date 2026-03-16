@@ -26,6 +26,7 @@ import { Subconscious } from "../agents/roles/Subconscious";
 import { Superego } from "../agents/roles/Superego";
 import { Id } from "../agents/roles/Id";
 import { AgentRole } from "../agents/types";
+import { CycleLogWriter } from "../substrate/io/CycleLogWriter";
 import { WorkspaceManager } from "../agents/workspace/WorkspaceManager";
 import { TaskClassificationMetrics } from "../evaluation/TaskClassificationMetrics";
 import { SubstrateSizeTracker } from "../evaluation/SubstrateSizeTracker";
@@ -247,8 +248,11 @@ export async function createAgentLayer(
   const driveRatingsPath = path.resolve(config.substratePath, "..", "data", "drive-ratings.jsonl");
   const driveQualityTracker = new DriveQualityTracker(fs, driveRatingsPath, logger);
 
-  const ego = new Ego(reader, writer, conversationManager, checker, promptBuilder, gatedLauncher, clock, taskClassifier, workspaceManager.workspacePath(AgentRole.EGO), config.sourceCodePath);
-  const subconscious = new Subconscious(reader, writer, appendWriter, conversationManager, checker, promptBuilder, gatedLauncher, clock, taskClassifier, workspaceManager.workspacePath(AgentRole.SUBCONSCIOUS));
+  // Cycle log writer — routes EGO narration and task summaries to cycle_log.md (D-01 fix)
+  const cycleLogWriter = new CycleLogWriter(fs, clock, config.substratePath);
+
+  const ego = new Ego(reader, writer, conversationManager, checker, promptBuilder, gatedLauncher, clock, taskClassifier, workspaceManager.workspacePath(AgentRole.EGO), config.sourceCodePath, cycleLogWriter);
+  const subconscious = new Subconscious(reader, writer, appendWriter, conversationManager, checker, promptBuilder, gatedLauncher, clock, taskClassifier, workspaceManager.workspacePath(AgentRole.SUBCONSCIOUS), cycleLogWriter);
   const superego = new Superego(reader, appendWriter, checker, promptBuilder, gatedLauncher, clock, taskClassifier, writer, workspaceManager.workspacePath(AgentRole.SUPEREGO));
 
   // Id launcher — defaults to gatedLauncher; routes to VertexSessionLauncher when idLauncher === "vertex".

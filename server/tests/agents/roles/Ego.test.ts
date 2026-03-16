@@ -14,6 +14,7 @@ import { FixedClock } from "../../../src/substrate/abstractions/FixedClock";
 import { AgentRole } from "../../../src/agents/types";
 import { ProcessLogEntry } from "../../../src/agents/claude/ISessionLauncher";
 import { TaskClassifier } from "../../../src/agents/TaskClassifier";
+import { CycleLogWriter } from "../../../src/substrate/io/CycleLogWriter";
 
 async function makeEgo(workingDirectory?: string, sourceCodePath?: string): Promise<{ ego: Ego; launcher: InMemorySessionLauncher }> {
   const testFs = new InMemoryFileSystem();
@@ -64,7 +65,8 @@ describe("Ego agent", () => {
     );
 
     ego = new Ego(
-      reader, writer, conversationManager, checker, promptBuilder, launcher, clock, taskClassifier, "/workspace"
+      reader, writer, conversationManager, checker, promptBuilder, launcher, clock, taskClassifier, "/workspace",
+      undefined, new CycleLogWriter(fs, clock, "/substrate")
     );
 
     await fs.mkdir("/substrate", { recursive: true });
@@ -267,13 +269,18 @@ describe("Ego agent", () => {
   });
 
   describe("respondToMessage", () => {
-    it("launches a session with the user message and appends response to CONVERSATION", async () => {
+    it("writes EGO response to cycle_log.md (not CONVERSATION.md)", async () => {
       launcher.enqueueSuccess("Hello! How can I help you today?");
 
       await ego.respondToMessage("Ji!");
 
-      const content = await fs.readFile("/substrate/CONVERSATION.md");
-      expect(content).toContain("[EGO] Hello! How can I help you today?");
+      // EGO response must NOT appear in CONVERSATION.md
+      const conversation = await fs.readFile("/substrate/CONVERSATION.md");
+      expect(conversation).not.toContain("Hello! How can I help you today?");
+
+      // EGO response MUST appear in cycle_log.md with [EGO] tag
+      const cycleLog = await fs.readFile("/substrate/cycle_log.md");
+      expect(cycleLog).toContain("[EGO] Hello! How can I help you today?");
     });
 
     it("includes the user message in the launch prompt", async () => {
@@ -295,13 +302,20 @@ describe("Ego agent", () => {
       expect(launches[0].options?.onLogEntry).toBeDefined();
     });
 
-    it("does not append on session failure", async () => {
+    it("does not write to cycle_log on session failure", async () => {
       launcher.enqueueFailure("session crashed");
 
       await ego.respondToMessage("Hello");
 
-      const content = await fs.readFile("/substrate/CONVERSATION.md");
-      expect(content).not.toContain("session crashed");
+      // Neither CONVERSATION.md nor cycle_log.md should get the error text
+      const conversation = await fs.readFile("/substrate/CONVERSATION.md");
+      expect(conversation).not.toContain("session crashed");
+
+      const hasCycleLog = await fs.exists("/substrate/cycle_log.md");
+      if (hasCycleLog) {
+        const cycleLog = await fs.readFile("/substrate/cycle_log.md");
+        expect(cycleLog).not.toContain("session crashed");
+      }
     });
 
     it("passes cwd to session launcher", async () => {

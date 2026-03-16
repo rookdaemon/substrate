@@ -14,6 +14,7 @@ import { TaskClassifier } from "../TaskClassifier";
 import { AgoraReply } from "./Subconscious";
 import { RateLimitError } from "../../loop/RateLimitError";
 import { isRateLimitText } from "../../loop/rateLimitParser";
+import { ICycleLogWriter } from "../../substrate/io/ICycleLogWriter";
 
 export interface EgoDecision {
   action: "dispatch" | "update_plan" | "converse" | "idle";
@@ -83,7 +84,8 @@ export class Ego {
     private readonly clock: IClock,
     private readonly taskClassifier: TaskClassifier,
     private readonly workingDirectory?: string,
-    private readonly sourceCodePath?: string
+    private readonly sourceCodePath?: string,
+    private readonly cycleLogWriter?: ICycleLogWriter,
   ) {}
 
   async decide(onLogEntry?: (entry: ProcessLogEntry) => void, runtimeContext?: string): Promise<EgoDecision> {
@@ -188,7 +190,11 @@ export class Ego {
 
     if (result.success && result.rawOutput) {
       const response = result.rawOutput.trim();
-      await this.appendConversation(response);
+      if (this.cycleLogWriter) {
+        await this.cycleLogWriter.write("EGO", response);
+      } else {
+        await this.appendConversation(response);
+      }
       return response;
     }
     if (isRateLimitText(result.error)) throw new RateLimitError(result.error!);

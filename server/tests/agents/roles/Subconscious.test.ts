@@ -12,6 +12,7 @@ import { FixedClock } from "../../../src/substrate/abstractions/FixedClock";
 import { TaskClassifier } from "../../../src/agents/TaskClassifier";
 import { ConversationManager } from "../../../src/conversation/ConversationManager";
 import { IConversationCompactor } from "../../../src/conversation/IConversationCompactor";
+import { CycleLogWriter } from "../../../src/substrate/io/CycleLogWriter";
 
 // Mock compactor for ConversationManager
 class MockCompactor implements IConversationCompactor {
@@ -44,7 +45,8 @@ describe("Subconscious agent", () => {
     );
 
     subconscious = new Subconscious(
-      reader, writer, appendWriter, conversationManager, checker, promptBuilder, launcher, clock, taskClassifier, "/workspace"
+      reader, writer, appendWriter, conversationManager, checker, promptBuilder, launcher, clock, taskClassifier, "/workspace",
+      new CycleLogWriter(fs, clock, "/substrate")
     );
 
     await fs.mkdir("/substrate", { recursive: true });
@@ -160,12 +162,17 @@ describe("Subconscious agent", () => {
   });
 
   describe("logConversation", () => {
-    it("appends conversation entry to CONVERSATION", async () => {
+    it("writes task summary to cycle_log.md (not CONVERSATION.md)", async () => {
       await subconscious.logConversation("Task completed successfully");
 
-      const content = await fs.readFile("/substrate/CONVERSATION.md");
-      expect(content).toContain("[2025-06-15T10:00:00.000Z]");
-      expect(content).toContain("[SUBCONSCIOUS] Task completed successfully");
+      // Task summary must NOT appear in CONVERSATION.md
+      const conversation = await fs.readFile("/substrate/CONVERSATION.md");
+      expect(conversation).not.toContain("Task completed successfully");
+
+      // Task summary MUST appear in cycle_log.md with [SUBCONSCIOUS] tag
+      const cycleLog = await fs.readFile("/substrate/cycle_log.md");
+      expect(cycleLog).toContain("[2025-06-15T10:00:00.000Z]");
+      expect(cycleLog).toContain("[SUBCONSCIOUS] Task completed successfully");
     });
   });
 
