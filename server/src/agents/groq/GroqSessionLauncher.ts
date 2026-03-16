@@ -64,12 +64,6 @@ export class GroqSessionLauncher implements ISessionLauncher {
     apiKey: string,
     model?: string,
   ) {
-    if (!apiKey) {
-      throw new Error(
-        "GroqSessionLauncher: API key is missing or empty. " +
-          "Set groqKeyPath in config.json to point to a file containing the Groq API key.",
-      );
-    }
     this.apiKey = apiKey;
     this.model = model ?? DEFAULT_GROQ_MODEL;
   }
@@ -78,6 +72,16 @@ export class GroqSessionLauncher implements ISessionLauncher {
     request: ClaudeSessionRequest,
     options?: LaunchOptions,
   ): Promise<ClaudeSessionResult> {
+    if (!this.apiKey) {
+      return {
+        rawOutput: "",
+        exitCode: 1,
+        durationMs: 0,
+        success: false,
+        error: "GROQ API key not configured — set groqKeyPath in config.json",
+      };
+    }
+
     const startMs = this.clock.now().getTime();
     const modelToUse = options?.model ?? this.model;
     const timeoutMs = options?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
