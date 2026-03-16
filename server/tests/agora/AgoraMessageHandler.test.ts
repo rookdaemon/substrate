@@ -1815,4 +1815,155 @@ describe("AgoraMessageHandler", () => {
       expect(conversationMgr.appendedEntries).toHaveLength(1);
     });
   });
+
+  describe("per-sender rate-limit state persistence: getSenderWindows / setSenderWindows", () => {
+    const baseTime = new Date("2026-03-10T10:00:00Z");
+
+    it("getSenderWindows returns empty object when no messages processed", () => {
+      expect(handler.getSenderWindows()).toEqual({});
+    });
+
+    it("getSenderWindows captures active sender windows after processing", async () => {
+      await handler.processEnvelope({ ...testEnvelope, id: "e1", payload: { n: 1 } }, "webhook");
+
+      const windows = handler.getSenderWindows();
+      expect(Object.keys(windows)).toContain(testEnvelope.from);
+      expect(windows[testEnvelope.from].count).toBe(1);
+      expect(windows[testEnvelope.from].windowStart).toBeGreaterThan(0);
+    });
+
+    it("setSenderWindows restores windows so a throttled sender stays throttled", async () => {
+      const mutableClock = new MockClock(baseTime);
+      const freshHandler = new AgoraMessageHandler(
+        agoraService,
+        conversationManager,
+        messageInjector,
+        eventSink,
+        mutableClock,
+        getState,
+        isRateLimited,
+        logger,
+        'quarantine',
+        defaultRateLimitConfig,
+      );
+
+      // Build a state where the sender is already at the message limit
+      const throttledWindow = {
+        [testEnvelope.from]: {
+          count: defaultRateLimitConfig.maxMessages + 1,
+          windowStart: baseTime.getTime(),
+        },
+      };
+      freshHandler.setSenderWindows(throttledWindow);
+
+      // Next message should be dropped (count already exceeds maxMessages)
+      await freshHandler.processEnvelope({ ...testEnvelope, id: "after-restore", payload: { n: 99 } }, "webhook");
+
+      expect(conversationManager.appendedEntries).toHaveLength(0);
+      expect(messageInjector.injectedMessages).toHaveLength(0);
+    });
+
+    it("setSenderWindows discards expired windows so sender can send freely after restart", () => {
+      const mutableClock = new MockClock(baseTime);
+      const freshHandler = new AgoraMessageHandler(
+        agoraService,
+        conversationManager,
+        messageInjector,
+        eventSink,
+        mutableClock,
+        getState,
+        isRateLimited,
+        logger,
+        'quarantine',
+        defaultRateLimitConfig,
+      );
+
+      // Window that started more than windowMs ago — should be discarded
+      const expiredWindow = {
+        [testEnvelope.from]: {
+          count: defaultRateLimitConfig.maxMessages + 1,
+          windowStart: baseTime.getTime() - defaultRateLimitConfig.windowMs - 1,
+        },
+      };
+      freshHandler.setSenderWindows(expiredWindow);
+
+      expect(freshHandler.getSenderWindows()).toEqual({});
+    });
+
+    it("getSenderWindows / setSenderWindows round-trip preserves throttle state", async () => {
+      const mutableClock = new MockClock(baseTime);
+      const sourceHandler = new AgoraMessageHandler(
+        agoraService,
+        conversationManager,
+        messageInjector,
+        eventSink,
+        mutableClock,
+        getState,
+        isRateLimited,
+        logger,
+        'quarantine',
+        defaultRateLimitConfig,
+      );
+
+      // Exhaust the rate limit for the sender
+      for (let messageIndex = 0; messageIndex <= defaultRateLimitConfig.maxMessages; messageIndex++) {
+        await sourceHandler.processEnvelope(
+          { ...testEnvelope, id: `e-src-${messageIndex}`, payload: { n: messageIndex } },
+          "webhook",
+        );
+      }
+
+      const snapshot = sourceHandler.getSenderWindows();
+
+      // Restore into a fresh handler with the same clock (window has not expired)
+      const cm2 = new MockConversationManager();
+      const inj2 = new MockMessageInjector();
+      const restoredHandler = new AgoraMessageHandler(
+        agoraService,
+        cm2,
+        inj2,
+        eventSink,
+        mutableClock,
+        getState,
+        isRateLimited,
+        logger,
+        'quarantine',
+        defaultRateLimitConfig,
+      );
+      restoredHandler.setSenderWindows(snapshot);
+
+      // Sender should still be throttled on the restored handler
+      await restoredHandler.processEnvelope(
+        { ...testEnvelope, id: "e-restored", payload: { n: 999 } },
+        "webhook",
+      );
+      expect(cm2.appendedEntries).toHaveLength(0);
+    });
+
+    it("setSenderWindows caps restored entries at MAX_SENDER_ENTRIES", () => {
+      const mutableClock = new MockClock(baseTime);
+      const freshHandler = new AgoraMessageHandler(
+        agoraService,
+        conversationManager,
+        messageInjector,
+        eventSink,
+        mutableClock,
+        getState,
+        isRateLimited,
+        logger,
+        'quarantine',
+        defaultRateLimitConfig,
+      );
+
+      // Build more than MAX_SENDER_ENTRIES (500) entries, all within window
+      const bigState: Record<string, { count: number; windowStart: number }> = {};
+      for (let senderIndex = 0; senderIndex < 600; senderIndex++) {
+        bigState[`sender-${senderIndex}`] = { count: 1, windowStart: baseTime.getTime() };
+      }
+      freshHandler.setSenderWindows(bigState);
+
+      const restored = freshHandler.getSenderWindows();
+      expect(Object.keys(restored).length).toBeLessThanOrEqual(500);
+    });
+  });
 });

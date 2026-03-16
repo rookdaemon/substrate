@@ -460,6 +460,7 @@ export async function createLoopLayer(
 
   const rateLimitStatePath = path.resolve(config.substratePath, "..", ".rate-limit-state");
   const dedupStatePath = path.resolve(config.substratePath, "..", ".agora-dedup-state");
+  const senderRateLimitStatePath = path.resolve(config.substratePath, "..", ".agora-ratelimit-state");
 
   orchestrator.setLauncher(launcher);
   // Set shutdown function that closes resources before exiting
@@ -486,6 +487,11 @@ export async function createLoopLayer(
       if (agoraMessageHandler) {
         try {
           await fs.writeFile(dedupStatePath, JSON.stringify(agoraMessageHandler.getProcessedEnvelopeIds()));
+        } catch { /* ignore */ }
+
+        // Persist per-sender rate-limit windows so throttled senders stay throttled after restart
+        try {
+          await fs.writeFile(senderRateLimitStatePath, JSON.stringify(agoraMessageHandler.getSenderWindows()));
         } catch { /* ignore */ }
       }
 
@@ -880,6 +886,15 @@ export async function createLoopLayer(
       agoraMessageHandler.setProcessedEnvelopeIds(ids);
       logger.debug(`createLoopLayer: restored ${ids.length} Agora dedup envelope IDs from disk`);
     } catch { /* file absent — no dedup state to restore */ }
+
+    // Restore per-sender rate-limit windows so throttled senders remain throttled after restart.
+    try {
+      const stored = await fs.readFile(senderRateLimitStatePath);
+      const windows = JSON.parse(stored) as Record<string, { count: number; windowStart: number }>;
+      agoraMessageHandler.setSenderWindows(windows);
+      const restoredCount = Object.keys(windows).length;
+      logger.debug(`createLoopLayer: restored per-sender rate-limit windows for ${restoredCount} senders from disk`);
+    } catch { /* file absent — no sender rate-limit state to restore */ }
   }
 
   // Connect to the Agora relay only AFTER all startup state has been fully restored.

@@ -194,6 +194,38 @@ export class AgoraMessageHandler {
   }
 
   /**
+   * Return all currently tracked per-sender rate-limit windows (for persistence on shutdown).
+   * Serialized as a plain object keyed by sender public key.
+   */
+  getSenderWindows(): Record<string, SenderWindow> {
+    const result: Record<string, SenderWindow> = {};
+    for (const [key, window] of this.senderWindows.entries()) {
+      result[key] = { ...window };
+    }
+    return result;
+  }
+
+  /**
+   * Restore per-sender rate-limit windows from persistent storage (called on startup).
+   * Silently discards entries whose window has already expired so that senders whose
+   * throttle window elapsed before the restart are not unfairly kept throttled.
+   * Caps restored entries at MAX_SENDER_ENTRIES to prevent unbounded memory growth.
+   */
+  setSenderWindows(state: Record<string, SenderWindow>): void {
+    const now = this.clock.now().getTime();
+    this.senderWindows.clear();
+    for (const [key, window] of Object.entries(state)) {
+      if (this.senderWindows.size >= AgoraMessageHandler.MAX_SENDER_ENTRIES) {
+        break;
+      }
+      // Only restore windows still within the active rate-limit window
+      if ((now - window.windowStart) <= this.rateLimitConfig.windowMs) {
+        this.senderWindows.set(key, { count: window.count, windowStart: window.windowStart });
+      }
+    }
+  }
+
+  /**
    * Structural (infrastructure) message types that are expected to repeat with identical
    * content (e.g., periodic announce heartbeats). Only these types are subject to
    * content-based dedup. Conversational types (dm, publish, request, …) must never be
