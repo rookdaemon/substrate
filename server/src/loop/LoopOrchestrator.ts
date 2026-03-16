@@ -462,9 +462,6 @@ export class LoopOrchestrator implements IMessageInjector {
     this.watchdog?.recordActivity();
     const cycleStartMs = this.clock.now().getTime();
 
-    // Drain deferred work from previous cycle before dispatching
-    await this.deferredWork.drain();
-
     // Optional pre-cycle hook for runtime checks that should run once per cycle start.
     if (this.beforeCycleHook) {
       try {
@@ -692,6 +689,14 @@ export class LoopOrchestrator implements IMessageInjector {
     // Enqueue schedulers as deferred work (overlaps with next cycle's dispatch)
     if (this.schedulerCoordinator) {
       this.deferredWork.enqueue(this.schedulerCoordinator.runDueSchedulers(this.pendingMessages.length, llmSessionInvokedThisCycle));
+    }
+
+    // Drain deferred work at end-of-cycle: items enqueued during cycle N execute before cycle N ends,
+    // so cycle N+1 can begin immediately with Ego dispatch.
+    try {
+      await this.deferredWork.drain();
+    } catch (err) {
+      this.logger.warn(`deferred work drain failed: ${err instanceof Error ? err.message : String(err)}`);
     }
 
     return result;
