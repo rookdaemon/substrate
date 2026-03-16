@@ -107,6 +107,7 @@ const AppConfigSchema = z
     peers: z
       .array(z.object({ name: z.string(), port: z.number().int().min(1).max(65535) }))
       .optional(),
+    schedulerCoalesceEnabled: z.boolean().optional(),
   })
   .refine(
     (data) =>
@@ -289,6 +290,12 @@ export interface AppConfig {
    * and injects active entries as rateLimitedUntil[peerId].
    */
   peers?: Array<{ name: string; port: number }>;
+  /**
+   * When true (default), LLM-invoking schedulers (HealthCheck, Metrics) are deferred
+   * to the next cycle if a cognitive role already started an LLM session this cycle.
+   * Set to false to disable the constraint and allow multiple LLM sessions per cycle.
+   */
+  schedulerCoalesceEnabled?: boolean;
 }
 
 export interface ResolveConfigOptions {
