@@ -232,6 +232,90 @@ export function nextCronOccurrence(expression: string, after: Date): Date | null
   return null;
 }
 
+export interface HeartbeatValidationError {
+  type: "MISSING_HEADER" | "UNKNOWN_SCHEDULE";
+  blockIndex: number;
+  preview: string;
+  message: string;
+}
+
+export interface HeartbeatValidationResult {
+  valid: boolean;
+  errors: HeartbeatValidationError[];
+}
+
+/**
+ * Validate raw HEARTBEAT.md content before writing.
+ *
+ * Rules:
+ * 1. Each non-empty content block must begin with a `# ` header line.
+ * 2. The schedule portion of each header must be a recognised schedule type
+ *    (cron, ISO, @once, empty string for condition-only) — not `unknown`.
+ *
+ * Returns { valid: true, errors: [] } if all blocks are valid.
+ * Returns { valid: false, errors: [...] } listing all violations.
+ */
+export function validateHeartbeatContent(content: string): HeartbeatValidationResult {
+  const errors: HeartbeatValidationError[] = [];
+  const lines = content.split("\n");
+
+  const MISSING_HEADER_MESSAGE =
+    `HEARTBEAT_WRITE_ERROR: Entry missing required \`# <schedule>\` header.\n` +
+    `Required format:\n  # <schedule>\n  [entry content]\n` +
+    `Entry rejected. Correct and resubmit.`;
+
+  let blockIndex = 0;
+  let inBlock = false;
+  let orphanLines: string[] = [];
+
+  for (const line of lines) {
+    if (line.startsWith("# ") || line === "#") {
+      // Flush any orphaned lines collected before this header
+      if (orphanLines.length > 0) {
+        errors.push({
+          type: "MISSING_HEADER",
+          blockIndex,
+          preview: orphanLines.join("\n").slice(0, 80),
+          message: MISSING_HEADER_MESSAGE,
+        });
+        blockIndex++;
+        orphanLines = [];
+      }
+      // Validate the schedule in the header
+      const header = line.startsWith("# ") ? line.slice(2).trim() : "";
+      const { schedule } = parseHeader(header);
+      const scheduleType = detectScheduleType(schedule);
+      if (scheduleType === "unknown") {
+        errors.push({
+          type: "UNKNOWN_SCHEDULE",
+          blockIndex,
+          preview: line.slice(0, 80),
+          message:
+            `HEARTBEAT_WRITE_ERROR: Unrecognised schedule expression: "${schedule}".\n` +
+            `Valid formats: cron (5 fields), ISO timestamp, @once, or empty (condition-only).\n` +
+            `Entry rejected. Correct and resubmit.`,
+        });
+      }
+      inBlock = true;
+      blockIndex++;
+    } else if (!inBlock && line.trim() !== "") {
+      orphanLines.push(line);
+    }
+  }
+
+  // Flush any trailing orphaned lines
+  if (orphanLines.length > 0) {
+    errors.push({
+      type: "MISSING_HEADER",
+      blockIndex,
+      preview: orphanLines.join("\n").slice(0, 80),
+      message: MISSING_HEADER_MESSAGE,
+    });
+  }
+
+  return { valid: errors.length === 0, errors };
+}
+
 /**
  * Reconstruct HEARTBEAT.md content from a list of entries.
  */
