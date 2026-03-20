@@ -90,7 +90,7 @@ function createOrchestrator(substratePath?: string, fileSystem?: IFileSystem) {
 }
 
 describe("R2 pre-dispatch ceiling check", () => {
-  it("halts and returns idle when successfulCycles >= 50", async () => {
+  it("enters SLEEPING (not STOPPED) when successfulCycles >= 50", async () => {
     const { orchestrator, logger, deps } = createOrchestrator();
     await setupIdleSubstrate(deps.fs);
     // Force metrics to 50 successful cycles
@@ -101,7 +101,7 @@ describe("R2 pre-dispatch ceiling check", () => {
     const runPromise = orchestrator.runLoop();
     await runPromise;
 
-    expect(orchestrator.getState()).toBe(LoopState.STOPPED);
+    expect(orchestrator.getState()).toBe(LoopState.SLEEPING);
     const warnings = logger.getWarnEntries().filter(e => e.includes("[R2]") && e.includes("ceiling reached"));
     expect(warnings.length).toBeGreaterThanOrEqual(1);
   });

@@ -233,6 +233,23 @@ export function nextCronOccurrence(expression: string, after: Date): Date | null
 }
 
 /**
+ * Hardcoded heartbeat entries that are always present regardless of HEARTBEAT.md content.
+ * These ensure agents always have a fallback wake schedule and cannot strand themselves
+ * in SLEEPING state by clearing their HEARTBEAT.md.
+ */
+export const IMPLICIT_HEARTBEAT_ENTRIES: readonly HeartbeatEntry[] = Object.freeze([
+  { schedule: "0 */6 * * *", payload: "[SYSTEM] Periodic wake: check PLAN.md, pending messages, and HEARTBEAT.md." },
+]);
+
+/**
+ * Prepend implicit entries to user-defined entries, giving the combined list
+ * to computeNextWakeTime / HeartbeatScheduler so agents always have a wake floor.
+ */
+export function withImplicitEntries(parsed: HeartbeatEntry[]): HeartbeatEntry[] {
+  return [...IMPLICIT_HEARTBEAT_ENTRIES, ...parsed];
+}
+
+/**
  * Reconstruct HEARTBEAT.md content from a list of entries.
  */
 export function serialiseHeartbeat(entries: HeartbeatEntry[]): string {

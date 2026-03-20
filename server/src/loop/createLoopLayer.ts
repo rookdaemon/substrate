@@ -33,7 +33,7 @@ import type { AgoraService } from "@rookdaemon/agora" with { "resolution-mode": 
 import { getIgnoredPeersPath, getSeenKeysPath } from "@rookdaemon/agora";
 import { LoopWatchdog } from "./LoopWatchdog";
 import { SleepWakeTimer } from "./SleepWakeTimer";
-import { parseHeartbeat, computeNextWakeTime } from "./HeartbeatParser";
+import { parseHeartbeat, computeNextWakeTime, withImplicitEntries } from "./HeartbeatParser";
 import { getAppPaths } from "../paths";
 import { EndorsementInterceptor, EndorsementScreener } from "../agents/endorsement";
 import { TinyBus, SessionInjectionProvider, ChatMessageProvider, type Message } from "../tinybus";
@@ -205,10 +205,11 @@ export async function createLoopLayer(
     orchestrator.setSleepWakeTimer(sleepWakeTimer, () => {
       try {
         const content = nodeFs.readFileSync(heartbeatPath, "utf-8");
-        const entries = parseHeartbeat(content);
+        const entries = withImplicitEntries(parseHeartbeat(content));
         return computeNextWakeTime(entries, clock.now());
       } catch {
-        return null; // HEARTBEAT.md absent or unreadable
+        // HEARTBEAT.md absent or unreadable — still use implicit entries
+        return computeNextWakeTime(withImplicitEntries([]), clock.now());
       }
     });
 

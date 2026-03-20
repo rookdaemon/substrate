@@ -12,6 +12,7 @@ import {
   matchesCron,
   sameUtcMinute,
   entryKey,
+  withImplicitEntries,
   type HeartbeatEntry,
 } from "./HeartbeatParser";
 
@@ -49,37 +50,42 @@ export class HeartbeatScheduler {
   }
 
   async run(): Promise<void> {
-    let content: string;
+    let fileEntries: HeartbeatEntry[];
     try {
-      content = await this.fs.readFile(this.heartbeatPath);
+      const content = await this.fs.readFile(this.heartbeatPath);
+      fileEntries = parseHeartbeat(content);
     } catch {
-      return; // HEARTBEAT.md absent — graceful no-op
+      fileEntries = []; // HEARTBEAT.md absent — still process implicit entries
     }
 
-    const entries = parseHeartbeat(content);
+    const entries = withImplicitEntries(fileEntries);
     if (entries.length === 0) return;
 
     const now = this.clock.now();
-    const surviving: HeartbeatEntry[] = [];
+    const implicitCount = entries.length - fileEntries.length;
+    const survivingFileEntries: HeartbeatEntry[] = [];
     let anyShotFired = false;
 
-    for (const entry of entries) {
+    for (let i = 0; i < entries.length; i++) {
+      const entry = entries[i];
       const fired = await this.processEntry(entry, now);
+      const isFileEntry = i >= implicitCount;
+      if (!isFileEntry) continue; // implicit entries are never written to file
       const type = detectScheduleType(entry.schedule);
       const isOneShot = type === "once" || type === "iso";
       if (fired && isOneShot) {
         anyShotFired = true;
         // One-shot entries are dropped after firing
       } else {
-        surviving.push(entry);
+        survivingFileEntries.push(entry);
       }
     }
 
     if (anyShotFired) {
       try {
-        await this.fs.writeFile(this.heartbeatPath, serialiseHeartbeat(surviving));
+        await this.fs.writeFile(this.heartbeatPath, serialiseHeartbeat(survivingFileEntries));
         this.logger.debug(
-          `[HEARTBEAT] Removed ${entries.length - surviving.length} one-shot entries from HEARTBEAT.md`
+          `[HEARTBEAT] Removed ${fileEntries.length - survivingFileEntries.length} one-shot entries from HEARTBEAT.md`
         );
       } catch (err) {
         this.logger.debug(

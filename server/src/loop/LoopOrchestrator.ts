@@ -1485,10 +1485,10 @@ export class LoopOrchestrator implements IMessageInjector {
    */
   private checkR2Ceiling(): CycleResult | null {
     if (this.metrics.successfulCycles >= 50) {
-      this.logger.warn(`[R2] Session dispatch ceiling reached (${this.metrics.successfulCycles} cycles) — halting`);
-      this.pendingMessages.push(`[SYSTEM] R2 ceiling reached: ${this.metrics.successfulCycles} successful cycles. Session halted to prevent runaway dispatch cost. Escalate to partner.`);
-      this.stop();
-      return { cycleNumber: this.cycleNumber, action: "idle" as const, success: true, summary: "R2 session ceiling halt" };
+      this.logger.warn(`[R2] Session dispatch ceiling reached (${this.metrics.successfulCycles} cycles) — sleeping`);
+      this.pendingMessages.push(`[SYSTEM] R2 ceiling reached: ${this.metrics.successfulCycles} successful cycles. Session sleeping to prevent runaway dispatch cost. Escalate to partner.`);
+      this.enterSleep();
+      return { cycleNumber: this.cycleNumber, action: "idle" as const, success: true, summary: "R2 session ceiling sleep" };
     }
     if (this.metrics.successfulCycles >= 30) {
       this.logger.warn(`[R2] Session dispatch warning: ${this.metrics.successfulCycles}/50 cycles`);
