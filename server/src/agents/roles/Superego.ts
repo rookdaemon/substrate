@@ -177,7 +177,17 @@ export class Superego {
         const fileType = targetMap[proposal.target.toUpperCase()];
         if (fileType) {
           this.checker.assertCanWrite(AgentRole.SUPEREGO, fileType);
-          await this.writer.write(fileType, proposal.content);
+          const existing = await this.reader.read(fileType)
+            .then((r) => r.rawMarkdown)
+            .catch((err: unknown) => {
+              const msg = err instanceof Error ? err.message : String(err);
+              if (msg.includes("ENOENT")) return "";
+              throw err;
+            });
+          const merged = existing
+            ? `${existing.trimEnd()}\n\n---\n\n${proposal.content}`
+            : proposal.content;
+          await this.writer.write(fileType, merged);
         }
       } else {
         await this.logAudit(`Proposal for ${proposal.target} rejected: ${evaluation.reason}`);

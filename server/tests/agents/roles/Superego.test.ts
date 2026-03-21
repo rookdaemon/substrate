@@ -358,24 +358,35 @@ describe("Superego agent", () => {
   });
 
   describe("applyProposals", () => {
-    it("writes approved HABITS proposal to HABITS.md", async () => {
+    it("writes approved HABITS proposal to HABITS.md, merging with existing content", async () => {
       const proposals = [{ target: "HABITS", content: "# Habits\n\nNew habit: review daily" }];
       const evaluations = [{ approved: true, reason: "Good habit" }];
 
       await superego.applyProposals(proposals, evaluations);
 
       const habits = await fs.readFile("/substrate/HABITS.md");
-      expect(habits).toBe("# Habits\n\nNew habit: review daily");
+      expect(habits).toBe("# Habits\n\nSome habits\n\n---\n\n# Habits\n\nNew habit: review daily");
     });
 
-    it("writes approved SECURITY proposal to SECURITY.md", async () => {
+    it("writes approved HABITS proposal when file is empty", async () => {
+      await fs.writeFile("/substrate/HABITS.md", "");
+      const proposals = [{ target: "HABITS", content: "# Habits\n\nFirst habit" }];
+      const evaluations = [{ approved: true, reason: "Good habit" }];
+
+      await superego.applyProposals(proposals, evaluations);
+
+      const habits = await fs.readFile("/substrate/HABITS.md");
+      expect(habits).toBe("# Habits\n\nFirst habit");
+    });
+
+    it("writes approved SECURITY proposal to SECURITY.md, merging with existing content", async () => {
       const proposals = [{ target: "SECURITY", content: "# Security\n\nUpdated policy" }];
       const evaluations = [{ approved: true, reason: "Policy improvement" }];
 
       await superego.applyProposals(proposals, evaluations);
 
       const security = await fs.readFile("/substrate/SECURITY.md");
-      expect(security).toBe("# Security\n\nUpdated policy");
+      expect(security).toBe("# Security\n\nStay safe\n\n---\n\n# Security\n\nUpdated policy");
     });
 
     it("logs rejected proposals to PROGRESS.md with reason", async () => {
@@ -412,13 +423,42 @@ describe("Superego agent", () => {
       await superego.applyProposals(proposals, evaluations);
 
       const habits = await fs.readFile("/substrate/HABITS.md");
-      expect(habits).toBe("# Habits\n\nGood habit");
+      expect(habits).toBe("# Habits\n\nSome habits\n\n---\n\n# Habits\n\nGood habit");
 
       const security = await fs.readFile("/substrate/SECURITY.md");
       expect(security).toBe("# Security\n\nStay safe"); // unchanged
 
       const progress = await fs.readFile("/substrate/PROGRESS.md");
       expect(progress).toContain("[SUPEREGO] Proposal for SECURITY rejected: Too permissive");
+    });
+
+    it("two HABITS proposals approved in same cycle both appear in HABITS.md", async () => {
+      const proposals = [
+        { target: "HABITS", content: "First habit" },
+        { target: "HABITS", content: "Second habit" },
+      ];
+      const evaluations = [
+        { approved: true, reason: "Good" },
+        { approved: true, reason: "Also good" },
+      ];
+
+      await superego.applyProposals(proposals, evaluations);
+
+      const habits = await fs.readFile("/substrate/HABITS.md");
+      expect(habits).toContain("First habit");
+      expect(habits).toContain("Second habit");
+    });
+
+    it("preserves existing HABITS.md content when a new proposal is approved", async () => {
+      await fs.writeFile("/substrate/HABITS.md", "# Habits\n\nExisting habit");
+      const proposals = [{ target: "HABITS", content: "New habit" }];
+      const evaluations = [{ approved: true, reason: "Good" }];
+
+      await superego.applyProposals(proposals, evaluations);
+
+      const habits = await fs.readFile("/substrate/HABITS.md");
+      expect(habits).toContain("Existing habit");
+      expect(habits).toContain("New habit");
     });
 
     it("logs a warning when a proposal has no evaluation", async () => {
