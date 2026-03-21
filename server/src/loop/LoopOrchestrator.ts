@@ -267,6 +267,10 @@ export class LoopOrchestrator implements IMessageInjector {
     }
     this.logger.debug("wake() called");
     this.sleepWakeTimer?.clear();
+    // Reset R2 ceiling counter — a wake is a new session context.
+    // Without this, the ceiling check fires immediately on every wake and
+    // re-enters sleep before any work is done.
+    this.metrics.successfulCycles = 0;
     this.transition(LoopState.RUNNING);
     this.onSleepExit?.().catch((err) => {
       this.logger.debug(`wake: onSleepExit failed — ${err instanceof Error ? err.message : String(err)}`);

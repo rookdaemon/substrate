@@ -651,3 +651,34 @@ describe("LoopOrchestrator: INS messages do not reset idle counter", () => {
     orchestrator.stop();
   });
 });
+
+describe("LoopOrchestrator: wake resets R2 ceiling counter", () => {
+  it("resets successfulCycles to 0 on wake so R2 ceiling does not trap the loop", async () => {
+    const deps = createDeps();
+    const logger = new InMemoryLogger();
+    const eventSink = new InMemoryEventSink();
+    const config = defaultLoopConfig({ maxConsecutiveIdleCycles: 1, idleSleepEnabled: true });
+    const orchestrator = new LoopOrchestrator(
+      deps.ego, deps.subconscious, deps.superego, deps.id,
+      deps.appendWriter, deps.clock, new ImmediateTimer(), eventSink,
+      config, logger
+    );
+
+    await setupIdleSubstrate(deps.fs);
+    orchestrator.start();
+    // Force R2 ceiling
+    (orchestrator as unknown as { metrics: { successfulCycles: number } }).metrics.successfulCycles = 50;
+
+    // Run loop — should enter sleep due to R2 ceiling
+    await orchestrator.runLoop();
+    expect(orchestrator.getState()).toBe(LoopState.SLEEPING);
+    expect(orchestrator.getMetrics().successfulCycles).toBe(50);
+
+    // Wake — should reset counter
+    orchestrator.wake();
+    expect(orchestrator.getState()).toBe(LoopState.RUNNING);
+    expect(orchestrator.getMetrics().successfulCycles).toBe(0);
+
+    orchestrator.stop();
+  });
+});
