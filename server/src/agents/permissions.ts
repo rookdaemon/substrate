@@ -13,6 +13,15 @@ function append(fileType: SubstrateFileType): FilePermission {
   return { fileType, accessLevel: FileAccessLevel.APPEND };
 }
 
+/**
+ * ROLE_PERMISSIONS governs structured substrate API calls only
+ * (SubstrateFileWriter, AppendOnlyWriter). It does NOT restrict direct
+ * file-system writes made via LLM tool calls (Bash/Write/Edit tools).
+ *
+ * Behavioral constraints on direct tool writes (e.g., "no modifying
+ * source code") are enforced at the prompt/BOUNDARIES.md layer, not here.
+ * This table is not a complete access-control specification.
+ */
 export const ROLE_PERMISSIONS: Record<AgentRole, FilePermission[]> = {
   [AgentRole.EGO]: [
     read(SubstrateFileType.PLAN, SubstrateFileLoadStrategy.EAGER),
