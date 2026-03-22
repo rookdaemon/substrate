@@ -3,6 +3,7 @@ import { ILogger } from "../../logging";
 import { SubstrateConfig } from "../config";
 import { SubstrateFileType, SUBSTRATE_FILE_SPECS, WriteMode } from "../types";
 import { validateSubstrateContent } from "../validation/validators";
+import { validateHeartbeatContent } from "../../loop/HeartbeatParser";
 import { scan } from "../validation/SecretDetector";
 import { FileLock } from "./FileLock";
 import { SubstrateFileReader } from "./FileReader";
@@ -30,6 +31,13 @@ export class SubstrateFileWriter {
       throw new Error(
         `Validation failed for ${fileType}: ${validation.errors.join(", ")}`
       );
+    }
+
+    if (fileType === SubstrateFileType.HEARTBEAT) {
+      const hbValidation = validateHeartbeatContent(content);
+      if (!hbValidation.valid) {
+        throw new Error(hbValidation.errors.map((e) => e.message).join("\n\n"));
+      }
     }
 
     // Redact secrets if detected, warn but don't block

@@ -6,6 +6,7 @@ import {
   sameUtcMinute,
   nextCronOccurrence,
   computeNextWakeTime,
+  validateHeartbeatContent,
   IMPLICIT_HEARTBEAT_ENTRIES,
   withImplicitEntries,
 } from "../../src/loop/HeartbeatParser";
@@ -326,6 +327,79 @@ describe("computeNextWakeTime", () => {
     const result = computeNextWakeTime(entries, now);
     // */30 next fires at 20:30, ISO fires at 22:00 → 20:30 is earliest
     expect(result).toEqual(new Date("2026-03-09T20:30:00Z"));
+  });
+});
+
+describe("validateHeartbeatContent", () => {
+  it("accepts valid content with # <schedule> headers", () => {
+    const content = `# 0 * * * *\npayload\n\n# when: peer:bishop.available\nother payload\n`;
+    expect(validateHeartbeatContent(content).valid).toBe(true);
+  });
+
+  it("rejects content block missing # header (orphaned payload before first header)", () => {
+    const content = `orphaned line\n# 0 * * * *\npayload\n`;
+    const result = validateHeartbeatContent(content);
+    expect(result.valid).toBe(false);
+    expect(result.errors[0].type).toBe("MISSING_HEADER");
+    expect(result.errors[0].message).toContain("HEARTBEAT_WRITE_ERROR");
+  });
+
+  it("rejects content with only payload (no header at all)", () => {
+    const content = `just payload\nno header\n`;
+    const result = validateHeartbeatContent(content);
+    expect(result.valid).toBe(false);
+    expect(result.errors[0].type).toBe("MISSING_HEADER");
+  });
+
+  it("accepts empty content", () => {
+    expect(validateHeartbeatContent("").valid).toBe(true);
+    expect(validateHeartbeatContent("\n\n").valid).toBe(true);
+  });
+
+  it("reports UNKNOWN_SCHEDULE for unrecognised schedule expression", () => {
+    const content = `# every-tuesday\npayload\n`;
+    const result = validateHeartbeatContent(content);
+    expect(result.valid).toBe(false);
+    expect(result.errors[0].type).toBe("UNKNOWN_SCHEDULE");
+  });
+
+  it("collects all errors across multiple invalid blocks", () => {
+    const content = `orphan1\n# bad-schedule\npayload1\norphan2\n`;
+    const result = validateHeartbeatContent(content);
+    expect(result.valid).toBe(false);
+    expect(result.errors.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("accepts @once header", () => {
+    expect(validateHeartbeatContent("# @once\npayload\n").valid).toBe(true);
+  });
+
+  it("accepts ISO timestamp header", () => {
+    expect(validateHeartbeatContent("# 2026-06-01T09:00Z\npayload\n").valid).toBe(true);
+  });
+
+  it("accepts condition-only header (bare #)", () => {
+    expect(validateHeartbeatContent("# when: peer:nova.available\npayload\n").valid).toBe(true);
+  });
+
+  it("includes preview of orphaned content in error", () => {
+    const content = `some orphaned content here\n# 0 * * * *\npayload\n`;
+    const result = validateHeartbeatContent(content);
+    expect(result.errors[0].preview).toContain("some orphaned content");
+  });
+
+  it("truncates preview to 80 chars", () => {
+    const longOrphan = "x".repeat(200);
+    const result = validateHeartbeatContent(longOrphan);
+    expect(result.errors[0].preview.length).toBeLessThanOrEqual(80);
+  });
+
+  it("error message contains required format example and rejection text", () => {
+    const result = validateHeartbeatContent("orphaned\n");
+    const msg = result.errors[0].message;
+    expect(msg).toContain("HEARTBEAT_WRITE_ERROR");
+    expect(msg).toContain("# <schedule>");
+    expect(msg).toContain("Entry rejected. Correct and resubmit.");
   });
 });
 
