@@ -92,9 +92,10 @@ const AppConfigSchema = z
     enableFileReadCache: z.boolean().optional(),
     progressMaxBytes: z.number().int().min(1).optional(),
     conversationPromptWindowLines: z.number().int().min(1).optional(),
-    sessionLauncher: z.enum(["claude", "gemini", "copilot", "ollama", "vertex"]).optional(),
+    sessionLauncher: z.enum(["claude", "gemini", "copilot", "ollama", "vertex", "groq", "anthropic"]).optional(),
     ollamaBaseUrl: z.string().url().optional(),
     ollamaModel: z.string().optional(),
+    ollamaKeyPath: z.string().optional(),
     defaultCodeBackend: z.enum(["claude", "copilot", "gemini", "auto"]).optional(),
     ollamaOffload: z
       .object({
@@ -103,8 +104,14 @@ const AppConfigSchema = z
       .optional(),
     vertexKeyPath: z.string().optional(),
     vertexModel: z.string().optional(),
-    idLauncher: z.enum(["claude", "vertex", "ollama"]).optional(),
+    groqKeyPath: z.string().optional(),
+    groqModel: z.string().optional(),
+    idLauncher: z.enum(["claude", "vertex", "ollama", "groq", "anthropic"]).optional(),
     idOllamaModel: z.string().optional(),
+    idGroqModel: z.string().optional(),
+    claudeOAuthKeyPath: z.string().optional(),
+    anthropicModel: z.string().optional(),
+    idAnthropicModel: z.string().optional(),
     peers: z
       .array(z.object({ name: z.string(), port: z.number().int().min(1).max(65535) }))
       .optional(),
@@ -274,10 +281,12 @@ export interface AppConfig {
   /** Which session launcher to use for the Id cognitive role (default: "claude" — same as other roles).
    *  Set to "vertex" to route Id through VertexSessionLauncher. Requires vertexKeyPath to be set.
    *  Set to "ollama" to route Id through OllamaSessionLauncher. Uses ollamaBaseUrl and idOllamaModel (falls back to ollamaModel). */
-  idLauncher?: "claude" | "vertex" | "ollama";
+  idLauncher?: "claude" | "vertex" | "ollama" | "groq" | "anthropic";
   /** Model name for Ollama when idLauncher is "ollama" (default: falls back to ollamaModel, then OllamaSessionLauncher built-in default "qwen3:14b").
    *  Separate from ollamaModel to allow independent model selection per role. */
   idOllamaModel?: string;
+  /** Model name for Groq when idLauncher is "groq". Falls back to groqModel, then GroqSessionLauncher default. */
+  idGroqModel?: string;
   /** Configuration for the loop watchdog that detects stalls and injects reminders */
   watchdog?: {
     /** Disable the watchdog entirely (default: false) */
