@@ -99,6 +99,25 @@ export async function createAgentLayer(
   // API semaphore — caps concurrent Claude sessions for rate-limit safety
   const apiSemaphore = new ApiSemaphore(config.maxConcurrentSessions ?? 2);
 
+  // Ollama API key — read from key file if configured (never from env vars)
+  // Required for authenticated remote Ollama endpoints (e.g. ollama.lbsa71.net).
+  let ollamaApiKey: string | undefined;
+  if (config.ollamaKeyPath) {
+    try {
+      const { readFileSync } = await import("node:fs");
+      const key = readFileSync(config.ollamaKeyPath, "utf8").trim();
+      if (key) {
+        ollamaApiKey = key;
+      } else {
+        logger.debug("agent-layer: Ollama key file is empty — unauthenticated requests will be used");
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const redacted = msg.replaceAll(config.ollamaKeyPath, "[REDACTED]");
+      logger.debug(`agent-layer: Cannot read Ollama key file — unauthenticated requests will be used (${redacted})`);
+    }
+  }
+
   // Groq API key — read from key file if configured (never from env vars)
   let groqApiKey: string | undefined;
   if (config.groqKeyPath) {
@@ -153,7 +172,7 @@ export async function createAgentLayer(
   } else if (config.sessionLauncher === "ollama") {
     const ollamaBaseUrl = config.ollamaBaseUrl ?? "http://localhost:11434";
     logger.debug(`agent-layer: using OllamaSessionLauncher for cognitive roles (${ollamaBaseUrl}, model: ${config.ollamaModel ?? "default"})`);
-    const ollamaLauncher = new OllamaSessionLauncher(new FetchHttpClient(), clock, config.ollamaModel, ollamaBaseUrl);
+    const ollamaLauncher = new OllamaSessionLauncher(new FetchHttpClient(), clock, config.ollamaModel, ollamaBaseUrl, ollamaApiKey);
     gatedLauncher = new SemaphoreSessionLauncher(ollamaLauncher, apiSemaphore);
   } else if (config.sessionLauncher === "groq") {
     if (groqApiKey) {
@@ -207,6 +226,7 @@ export async function createAgentLayer(
       ollamaBaseUrl,
       ollamaModel,
       logger,
+      ollamaApiKey,
     );
     ollamaOffloadService = new OllamaOffloadService(inferenceClient, clock, logger);
   }
@@ -298,7 +318,7 @@ export async function createAgentLayer(
   } else if (config.idLauncher === "ollama") {
     const ollamaBaseUrl = config.ollamaBaseUrl ?? "http://localhost:11434";
     const ollamaModel = config.idOllamaModel ?? config.ollamaModel;
-    const ollamaLauncher = new OllamaSessionLauncher(new FetchHttpClient(), clock, ollamaModel, ollamaBaseUrl);
+    const ollamaLauncher = new OllamaSessionLauncher(new FetchHttpClient(), clock, ollamaModel, ollamaBaseUrl, ollamaApiKey);
     idGatedLauncher = new SemaphoreSessionLauncher(ollamaLauncher, apiSemaphore);
     logger.debug(`agent-layer: Id using OllamaSessionLauncher (idLauncher: ollama, model: ${ollamaModel ?? "default"})`);
   } else if (config.idLauncher === "groq") {

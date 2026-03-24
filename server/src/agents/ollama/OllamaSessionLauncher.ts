@@ -75,7 +75,8 @@ export class OllamaSessionLauncher implements ISessionLauncher {
     private readonly httpClient: IHttpClient,
     private readonly clock: IClock,
     model?: string,
-    baseUrl?: string
+    baseUrl?: string,
+    private readonly apiKey?: string
   ) {
     this.model = model ?? DEFAULT_MODEL;
     this.baseUrl = (baseUrl ?? DEFAULT_BASE_URL).replace(/\/$/, "");
@@ -114,6 +115,9 @@ export class OllamaSessionLauncher implements ISessionLauncher {
     const format: unknown = options?.outputSchema ?? "json";
 
     try {
+      const authHeaders = this.apiKey
+        ? { Authorization: `Bearer ${this.apiKey}` }
+        : undefined;
       const stream = await this.httpClient.postStream(
         `${this.baseUrl}/api/chat`,
         {
@@ -122,7 +126,7 @@ export class OllamaSessionLauncher implements ISessionLauncher {
           stream: true,
           format,
         },
-        { timeoutMs }
+        { timeoutMs, headers: authHeaders }
       );
 
       let finalChunk: OllamaResponse | null = null;

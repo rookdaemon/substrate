@@ -30,6 +30,7 @@ export class OllamaInferenceClient implements IOllamaInferenceClient {
     private readonly baseUrl: string,
     private readonly defaultModel: string = "qwen3:14b",
     private readonly logger?: ILogger,
+    private readonly apiKey?: string,
   ) {}
 
   /**
@@ -38,11 +39,14 @@ export class OllamaInferenceClient implements IOllamaInferenceClient {
    */
   async infer(prompt: string, model?: string): Promise<InferenceResult> {
     const targetModel = model ?? this.defaultModel;
+    const authHeaders = this.apiKey
+      ? { Authorization: `Bearer ${this.apiKey}` }
+      : undefined;
     try {
       const response = await this.httpClient.post(
         `${this.baseUrl}/api/generate`,
         { model: targetModel, prompt, stream: false },
-        { timeoutMs: 120000 }, // 2 minutes for inference
+        { timeoutMs: 120000, headers: authHeaders }, // 2 minutes for inference
       );
 
       if (!response.ok) {
@@ -72,10 +76,13 @@ export class OllamaInferenceClient implements IOllamaInferenceClient {
    * Health probe: GET /api/tags — returns true if Ollama is reachable and responding.
    */
   async probe(): Promise<boolean> {
+    const authHeaders = this.apiKey
+      ? { Authorization: `Bearer ${this.apiKey}` }
+      : undefined;
     try {
       const response = await this.httpClient.get(
         `${this.baseUrl}/api/tags`,
-        { timeoutMs: 5000 },
+        { timeoutMs: 5000, headers: authHeaders },
       );
       return response.ok;
     } catch {

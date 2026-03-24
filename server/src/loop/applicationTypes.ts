@@ -93,6 +93,10 @@ export interface ApplicationConfig {
   ollamaBaseUrl?: string;
   /** Model name for Ollama when sessionLauncher is "ollama" (default: "qwen3:14b"). Separate from `model` which is the Claude/Gemini model name. */
   ollamaModel?: string;
+  /** Path to Ollama API key file for authenticated remote endpoints (e.g. ollama.lbsa71.net).
+   *  Key is read from this file at startup (never from env vars). Never logged.
+   *  When set, all Ollama requests include `Authorization: Bearer <key>`. */
+  ollamaKeyPath?: string;
   /** Default code backend to use for code dispatch tasks (default: "claude"). */
   defaultCodeBackend?: "claude" | "copilot" | "gemini" | "auto";
   /** Configuration for Ollama offload — offloads maintenance tasks (compaction) to local Ollama.

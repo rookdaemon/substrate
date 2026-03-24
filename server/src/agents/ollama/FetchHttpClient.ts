@@ -95,6 +95,7 @@ export class FetchHttpClient implements IHttpClient {
     try {
       const response = await fetch(url, {
         method: "GET",
+        headers: options?.headers,
         signal: controller.signal,
       });
 
