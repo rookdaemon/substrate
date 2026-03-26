@@ -218,6 +218,144 @@ describe("IdleHandler", () => {
     expect(result.action).toBe("all_rejected");
   });
 
+  it("preserves existing PLAN.md content outside ## Tasks when writing new goals", async () => {
+    // Set up PLAN.md with freeform content outside ## Tasks
+    await deps.fs.writeFile("/substrate/PLAN.md", [
+      "# Plan",
+      "",
+      "## Current Goal",
+      "Ongoing governance analysis",
+      "",
+      "## NEW GC PATTERNS",
+      "Phase 3 analysis: anticipatory capture confirmed.",
+      "VPCC cluster: 5-case audit in progress.",
+      "",
+      "## Tasks",
+      "- [x] Complete initial analysis",
+      "",
+      "## Notes",
+      "Operational knowledge that must not be lost.",
+    ].join("\n"));
+
+    deps.launcher.enqueueSuccess(JSON.stringify({
+      goalCandidates: [
+        { title: "New Goal", description: "Do something new", priority: "high" },
+      ],
+    }));
+
+    deps.launcher.enqueueSuccess(JSON.stringify({
+      proposalEvaluations: [
+        { approved: true, reason: "Aligned" },
+      ],
+    }));
+
+    const result = await handler.handleIdle();
+
+    expect(result.action).toBe("plan_created");
+
+    const plan = await deps.fs.readFile("/substrate/PLAN.md");
+    // New task appended
+    expect(plan).toContain("New Goal");
+    // Freeform content preserved
+    expect(plan).toContain("## NEW GC PATTERNS");
+    expect(plan).toContain("Phase 3 analysis: anticipatory capture confirmed.");
+    expect(plan).toContain("VPCC cluster: 5-case audit in progress.");
+    expect(plan).toContain("## Notes");
+    expect(plan).toContain("Operational knowledge that must not be lost.");
+  });
+
+  it("appends new tasks after existing tasks in ## Tasks section", async () => {
+    await deps.fs.writeFile("/substrate/PLAN.md", [
+      "# Plan",
+      "",
+      "## Tasks",
+      "- [x] Existing completed task",
+      "- [x] Another completed task",
+    ].join("\n"));
+
+    deps.launcher.enqueueSuccess(JSON.stringify({
+      goalCandidates: [
+        { title: "Appended Goal", description: "Should appear after existing tasks", priority: "high" },
+      ],
+    }));
+
+    deps.launcher.enqueueSuccess(JSON.stringify({
+      proposalEvaluations: [
+        { approved: true, reason: "Good" },
+      ],
+    }));
+
+    await handler.handleIdle();
+
+    const plan = await deps.fs.readFile("/substrate/PLAN.md");
+    expect(plan).toContain("- [x] Existing completed task");
+    expect(plan).toContain("- [x] Another completed task");
+    expect(plan).toContain("Appended Goal");
+    // Appended task should come after existing tasks
+    const existingIdx = plan.indexOf("Another completed task");
+    const newIdx = plan.indexOf("Appended Goal");
+    expect(newIdx).toBeGreaterThan(existingIdx);
+  });
+
+  it("creates ## Tasks section when PLAN.md has no tasks section", async () => {
+    await deps.fs.writeFile("/substrate/PLAN.md", [
+      "# Plan",
+      "",
+      "## Notes",
+      "Some important notes.",
+    ].join("\n"));
+
+    deps.launcher.enqueueSuccess(JSON.stringify({
+      goalCandidates: [
+        { title: "First Goal", description: "Brand new", priority: "high" },
+      ],
+    }));
+
+    deps.launcher.enqueueSuccess(JSON.stringify({
+      proposalEvaluations: [
+        { approved: true, reason: "Good" },
+      ],
+    }));
+
+    await handler.handleIdle();
+
+    const plan = await deps.fs.readFile("/substrate/PLAN.md");
+    expect(plan).toContain("## Tasks");
+    expect(plan).toContain("First Goal");
+    expect(plan).toContain("## Notes");
+    expect(plan).toContain("Some important notes.");
+  });
+
+  it("updates ## Current Goal when writing new goals", async () => {
+    await deps.fs.writeFile("/substrate/PLAN.md", [
+      "# Plan",
+      "",
+      "## Current Goal",
+      "Old goal that should be updated",
+      "",
+      "## Tasks",
+      "- [x] Done",
+    ].join("\n"));
+
+    deps.launcher.enqueueSuccess(JSON.stringify({
+      goalCandidates: [
+        { title: "New Direction", description: "Fresh start", priority: "high" },
+      ],
+    }));
+
+    deps.launcher.enqueueSuccess(JSON.stringify({
+      proposalEvaluations: [
+        { approved: true, reason: "Good" },
+      ],
+    }));
+
+    await handler.handleIdle();
+
+    const plan = await deps.fs.readFile("/substrate/PLAN.md");
+    expect(plan).toContain("New Direction");
+    expect(plan).toContain("## Current Goal");
+  });
+
   it("handles plan with empty task list as idle", async () => {
     await deps.fs.writeFile("/substrate/PLAN.md", "# Plan\n\n## Tasks\n");
 
