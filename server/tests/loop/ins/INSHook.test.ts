@@ -294,6 +294,28 @@ describe("INSHook", () => {
     expect(archiveAction).toBeUndefined();
   });
 
+  it("does not flag old files with lowercase 'superseded' in prose (no uppercase SUPERSEDED marker)", async () => {
+    // Regression: case-insensitive regex would match "superseded" in regular prose,
+    // causing false positives for active workflow documents that reference superseded files.
+    const memoryPath = `${substratePath}/memory`;
+    await fs.mkdir(memoryPath, { recursive: true });
+    await fs.writeFile(
+      `${memoryPath}/self_improvement_workflow.md`,
+      "# Self Improvement Workflow\n\n## Related Files\n- @memory/self_improvement_review_2026_02_14.md (superseded by this workflow)\n",
+    );
+
+    const fortyDaysAgo = now.getTime() - 40 * 24 * 60 * 60 * 1000;
+    jest.spyOn(fs, "stat").mockImplementation(async () => {
+      return { mtimeMs: fortyDaysAgo, isFile: true, isDirectory: false, size: 100 };
+    });
+
+    const hook = await createHook({ archiveAgeDays: 30, memoryPath });
+    const result = await hook.evaluate(1);
+
+    const archiveAction = result.actions.find(a => a.type === "archive_tag");
+    expect(archiveAction).toBeUndefined();
+  });
+
   it("handles missing memory directory gracefully", async () => {
     const hook = await createHook({ memoryPath: "/nonexistent/memory" });
     const result = await hook.evaluate(1);

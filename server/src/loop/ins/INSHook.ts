@@ -438,7 +438,7 @@ export class INSHook {
           if (ageMs < ageThresholdMs) continue;
 
           const content = await this.fs.readFile(filePath);
-          if (/SUPERSEDED/i.test(content)) {
+          if (/\bSUPERSEDED\b/.test(content)) {
             const ageDays = Math.round(ageMs / (24 * 60 * 60 * 1000));
             actions.push({
               type: "archive_tag",
