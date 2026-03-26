@@ -72,4 +72,58 @@ describe("CanaryLogger", () => {
       expect(parsed.pass).toBe(false);
     });
   });
+
+  describe("lastResultPath", () => {
+    const lastResultPath = "/substrate/canary_last_result.json";
+
+    beforeEach(() => {
+      fs = new InMemoryFileSystem();
+      logger = new CanaryLogger(fs, filePath, lastResultPath);
+    });
+
+    it("writes the latest record as pretty JSON to lastResultPath", async () => {
+      await logger.recordCycle(makeRecord());
+
+      const content = await fs.readFile(lastResultPath);
+      const parsed = JSON.parse(content) as CanaryRecord;
+      expect(parsed.cycle).toBe(42);
+      expect(parsed.pass).toBe(true);
+    });
+
+    it("overwrites lastResultPath on each call, keeping only the most recent record", async () => {
+      await logger.recordCycle(makeRecord({ cycle: 1, pass: true }));
+      await logger.recordCycle(makeRecord({ cycle: 2, pass: false }));
+
+      const content = await fs.readFile(lastResultPath);
+      const parsed = JSON.parse(content) as CanaryRecord;
+      expect(parsed.cycle).toBe(2);
+      expect(parsed.pass).toBe(false);
+    });
+
+    it("still appends all records to the JSONL log file", async () => {
+      await logger.recordCycle(makeRecord({ cycle: 1 }));
+      await logger.recordCycle(makeRecord({ cycle: 2 }));
+
+      const content = await fs.readFile(filePath);
+      const lines = content.trim().split("\n");
+      expect(lines).toHaveLength(2);
+    });
+
+    it("creates the lastResultPath directory if it does not exist", async () => {
+      const deepLastResultPath = "/new/deep/dir/canary_last_result.json";
+      const loggerWithDeepPath = new CanaryLogger(fs, filePath, deepLastResultPath);
+
+      await loggerWithDeepPath.recordCycle(makeRecord());
+
+      const content = await fs.readFile(deepLastResultPath);
+      expect(JSON.parse(content)).toBeTruthy();
+    });
+
+    it("does not write lastResultPath when not provided", async () => {
+      const loggerWithoutLast = new CanaryLogger(fs, filePath);
+      await loggerWithoutLast.recordCycle(makeRecord());
+
+      await expect(fs.readFile(lastResultPath)).rejects.toThrow();
+    });
+  });
 });
