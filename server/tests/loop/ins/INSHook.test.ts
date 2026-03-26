@@ -302,6 +302,67 @@ describe("INSHook", () => {
     expect(archiveActions).toHaveLength(0);
   });
 
+  // --- memory/ subdirectory accumulation ---
+
+  it("flags memory/ subdirectory when total line count exceeds threshold", async () => {
+    const memoryPath = `${substratePath}/memory`;
+    await fs.mkdir(memoryPath, { recursive: true });
+
+    // Create files totalling > 500 lines
+    const lines200 = Array.from({ length: 200 }, (_, i) => `Line ${i + 1}`).join("\n");
+    const lines350 = Array.from({ length: 350 }, (_, i) => `Entry ${i + 1}`).join("\n");
+    await fs.writeFile(`${memoryPath}/file-a.md`, lines200);
+    await fs.writeFile(`${memoryPath}/file-b.md`, lines350);
+
+    const hook = await createHook({ memorySubdirectoryLineThreshold: 500, memoryPath });
+    const result = await hook.evaluate(1);
+
+    const subdirAction = result.actions.find(a => a.target === "memory/");
+    expect(subdirAction).toBeDefined();
+    expect(subdirAction!.type).toBe("compaction");
+    expect(subdirAction!.detail).toContain("550");
+    expect(subdirAction!.detail).toContain("500");
+    expect(subdirAction!.detail).toContain("compaction recommended");
+  });
+
+  it("does not flag memory/ subdirectory when total line count is within threshold", async () => {
+    const memoryPath = `${substratePath}/memory`;
+    await fs.mkdir(memoryPath, { recursive: true });
+
+    const lines100 = Array.from({ length: 100 }, (_, i) => `Line ${i + 1}`).join("\n");
+    await fs.writeFile(`${memoryPath}/small.md`, lines100);
+
+    const hook = await createHook({ memorySubdirectoryLineThreshold: 500, memoryPath });
+    const result = await hook.evaluate(1);
+
+    const subdirAction = result.actions.find(a => a.target === "memory/");
+    expect(subdirAction).toBeUndefined();
+  });
+
+  it("handles missing memory/ directory gracefully for subdirectory check", async () => {
+    const hook = await createHook({ memorySubdirectoryLineThreshold: 500, memoryPath: "/nonexistent/memory" });
+    const result = await hook.evaluate(1);
+    const subdirAction = result.actions.find(a => a.target === "memory/");
+    expect(subdirAction).toBeUndefined();
+  });
+
+  it("skips subdirectories inside memory/ when counting lines", async () => {
+    const memoryPath = `${substratePath}/memory`;
+    await fs.mkdir(memoryPath, { recursive: true });
+    await fs.mkdir(`${memoryPath}/subdir`, { recursive: true });
+
+    // Only one small file — subdir should not be read as a file
+    await fs.writeFile(`${memoryPath}/small.md`, "Line 1\nLine 2\n");
+
+    const hook = await createHook({ memorySubdirectoryLineThreshold: 1, memoryPath });
+    const result = await hook.evaluate(1);
+
+    const subdirAction = result.actions.find(a => a.target === "memory/");
+    // 2 lines from small.md > threshold of 1 => should flag
+    expect(subdirAction).toBeDefined();
+    expect(subdirAction!.type).toBe("compaction");
+  });
+
   // --- Logging ---
 
   it("logs when actions are produced", async () => {

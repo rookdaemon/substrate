@@ -94,6 +94,10 @@ export class INSHook {
       // Rule 5: Archive candidates
       const archiveActions = await this.checkArchiveCandidates();
       actions.push(...archiveActions);
+
+      // Rule 6: memory/ subdirectory accumulation
+      const subdirAction = await this.checkSubdirectoryAccumulation();
+      if (subdirAction) actions.push(subdirAction);
     } catch (err) {
       // INS never blocks the cycle
       this.logger.debug(
@@ -371,6 +375,38 @@ export class INSHook {
       if (match?.[1]) {
         return match[1].trim();
       }
+    }
+    return null;
+  }
+
+  private async checkSubdirectoryAccumulation(): Promise<INSAction | null> {
+    try {
+      const dirExists = await this.fs.exists(this.config.memoryPath);
+      if (!dirExists) return null;
+
+      const entries = await this.fs.readdir(this.config.memoryPath);
+      let totalLines = 0;
+      for (const entry of entries) {
+        const filePath = `${this.config.memoryPath}/${entry}`;
+        try {
+          const stat = await this.fs.stat(filePath);
+          if (!stat.isFile) continue;
+          const content = await this.fs.readFile(filePath);
+          totalLines += content.split("\n").length;
+        } catch {
+          // Individual file errors are not fatal
+        }
+      }
+
+      if (totalLines > this.config.memorySubdirectoryLineThreshold) {
+        return {
+          type: "compaction",
+          target: "memory/",
+          detail: `memory/ subdirectory total line count ${totalLines} exceeds threshold ${this.config.memorySubdirectoryLineThreshold} — compaction recommended`,
+        };
+      }
+    } catch {
+      // Directory read errors are not fatal
     }
     return null;
   }

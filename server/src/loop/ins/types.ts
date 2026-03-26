@@ -60,6 +60,8 @@ export interface INSConfig {
   progressLineThreshold: number;
   /** MEMORY.md character threshold for summary flag (default: 120000 ≈ 30K tokens) */
   memoryCharThreshold: number;
+  /** Total line count across all files in memory/ subdirectory before compaction flag (default: 500) */
+  memorySubdirectoryLineThreshold: number;
   /** Consecutive partial results with same precondition before flagging (default: 3) */
   consecutivePartialThreshold: number;
   /** Days since last modified before a SUPERSEDED file is archive-eligible (default: 30) */
@@ -75,6 +77,7 @@ export function defaultINSConfig(substratePath: string): INSConfig {
     conversationLineThreshold: 80,
     progressLineThreshold: 200,
     memoryCharThreshold: 120_000, // ~30K tokens at 4 chars/token
+    memorySubdirectoryLineThreshold: 500,
     consecutivePartialThreshold: 3,
     archiveAgeDays: 30,
     statePath: `${substratePath}/../.ins/state`,
