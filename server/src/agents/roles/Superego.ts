@@ -35,6 +35,26 @@ export interface Proposal {
   content: string;
 }
 
+/** Governed domains whose proposals require Superego approval. */
+const GOVERNED_DOMAINS = new Set(["HABITS", "SECURITY"]);
+
+/**
+ * Patterns that indicate an INVISIBLE-OUTPUT BYPASS attempt:
+ * proposals claiming "internal reasoning", "no file modifications", or
+ * "cognitive-only" scope to argue the governance gate does not apply.
+ */
+const SCOPE_BYPASS_PATTERNS = [
+  /internal\s+(cognitive\s+model|reasoning(\s+task)?)/i,
+  /no\s+file\s+modifications?/i,
+  /cognitive[\s-]only/i,
+  /no\s+auditable\s+output/i,
+];
+
+function detectsScopeBypass(proposal: Proposal): boolean {
+  const text = `${proposal.target} ${proposal.content}`;
+  return SCOPE_BYPASS_PATTERNS.some((pattern) => pattern.test(text));
+}
+
 export class Superego {
   constructor(
     private readonly reader: SubstrateFileReader,
@@ -108,6 +128,32 @@ export class Superego {
   }
 
   async evaluateProposals(proposals: Proposal[], onLogEntry?: (entry: ProcessLogEntry) => void): Promise<ProposalEvaluation[]> {
+    // Pre-filter: SCOPE_BYPASS_ATTEMPT — governance scope is determined by
+    // domain/target, not by whether work produces a file modification.
+    const preRejected = new Map<number, ProposalEvaluation>();
+    for (let i = 0; i < proposals.length; i++) {
+      const proposal = proposals[i];
+      const isGoverned = GOVERNED_DOMAINS.has(proposal.target.toUpperCase());
+      if (isGoverned && detectsScopeBypass(proposal)) {
+        preRejected.set(i, {
+          approved: false,
+          reason:
+            'SCOPE_BYPASS_ATTEMPT: governance scope is determined by domain/target, not by output type. ' +
+            'Proposals claiming "internal reasoning," "no file modifications," or "cognitive-only" scope ' +
+            'are evaluated on the same criteria as all other proposals.',
+        });
+      }
+    }
+
+    // Collect indices that still need Claude evaluation
+    const pendingIndices = proposals.map((_, i) => i).filter((i) => !preRejected.has(i));
+
+    if (pendingIndices.length === 0) {
+      return proposals.map((_, i) => preRejected.get(i)!);
+    }
+
+    const pendingProposals = pendingIndices.map((i) => proposals[i]);
+
     try {
       const systemPrompt = this.promptBuilder.buildSystemPrompt(AgentRole.SUPEREGO);
       const eagerRefs = await this.promptBuilder.getEagerReferences(AgentRole.SUPEREGO);
@@ -116,7 +162,7 @@ export class Superego {
       let message = this.promptBuilder.buildAgentMessage(
         eagerRefs,
         lazyRefs,
-        `Evaluate these proposals:\n${JSON.stringify(proposals, null, 2)}`
+        `Evaluate these proposals:\n${JSON.stringify(pendingProposals, null, 2)}`
       );
       
       const model = this.taskClassifier.getModel({ role: AgentRole.SUPEREGO, operation: "evaluateProposals" });
@@ -125,26 +171,34 @@ export class Superego {
         message,
       }, { model, onLogEntry, cwd: this.workingDirectory, continueSession: true, persistSession: true });
 
+      let claudeEvaluations: ProposalEvaluation[];
       if (!result.success) {
         if (isRateLimitText(result.error)) throw new RateLimitError(result.error!);
-        return proposals.map(() => ({
+        claudeEvaluations = pendingProposals.map(() => ({
           approved: false,
           reason: `Evaluation failed: ${result.error || "Claude session error"}`,
         }));
+      } else {
+        const parsed = extractJson(result.rawOutput);
+        claudeEvaluations = (parsed.proposalEvaluations as ProposalEvaluation[] | undefined) ??
+          pendingProposals.map(() => ({
+            approved: false,
+            reason: "No evaluation returned",
+          }));
       }
 
-      const parsed = extractJson(result.rawOutput);
-      return (parsed.proposalEvaluations as ProposalEvaluation[] | undefined) ?? proposals.map(() => ({
-        approved: false,
-        reason: "No evaluation returned",
-      }));
+      return proposals.map((_, i) => {
+        if (preRejected.has(i)) return preRejected.get(i)!;
+        const pendingPos = pendingIndices.indexOf(i);
+        return claudeEvaluations[pendingPos] ?? { approved: false, reason: "No evaluation returned" };
+      });
     } catch (err) {
       if (err instanceof RateLimitError) throw err;
       const msg = err instanceof Error ? err.message : String(err);
-      return proposals.map(() => ({
-        approved: false,
-        reason: `Evaluation failed: ${msg}`,
-      }));
+      return proposals.map((_, i) => {
+        if (preRejected.has(i)) return preRejected.get(i)!;
+        return { approved: false, reason: `Evaluation failed: ${msg}` };
+      });
     }
   }
 

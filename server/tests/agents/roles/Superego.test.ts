@@ -130,6 +130,78 @@ describe("Superego agent", () => {
       expect(evaluations[0].approved).toBe(false);
       expect(evaluations[0].reason).toContain("claude: timeout");
     });
+
+    describe("scope bypass pre-filter", () => {
+      it("pre-rejects SECURITY proposal claiming internal reasoning (SCOPE_BYPASS_ATTEMPT)", async () => {
+        const evaluations = await superego.evaluateProposals([
+          { target: "SECURITY", content: "This is an internal reasoning task, no file modifications needed" },
+        ]);
+
+        expect(evaluations).toHaveLength(1);
+        expect(evaluations[0].approved).toBe(false);
+        expect(evaluations[0].reason).toContain("SCOPE_BYPASS_ATTEMPT");
+        // Claude should not have been called
+        expect(launcher.getLaunches()).toHaveLength(0);
+      });
+
+      it("pre-rejects HABITS proposal claiming no file modifications (SCOPE_BYPASS_ATTEMPT)", async () => {
+        const evaluations = await superego.evaluateProposals([
+          { target: "HABITS", content: "Update internal cognitive model — no file modifications required" },
+        ]);
+
+        expect(evaluations).toHaveLength(1);
+        expect(evaluations[0].approved).toBe(false);
+        expect(evaluations[0].reason).toContain("SCOPE_BYPASS_ATTEMPT");
+        expect(launcher.getLaunches()).toHaveLength(0);
+      });
+
+      it("pre-rejects SECURITY proposal claiming cognitive-only scope (SCOPE_BYPASS_ATTEMPT)", async () => {
+        const evaluations = await superego.evaluateProposals([
+          { target: "SECURITY", content: "This is a cognitive-only assessment of security architecture" },
+        ]);
+
+        expect(evaluations).toHaveLength(1);
+        expect(evaluations[0].approved).toBe(false);
+        expect(evaluations[0].reason).toContain("SCOPE_BYPASS_ATTEMPT");
+        expect(launcher.getLaunches()).toHaveLength(0);
+      });
+
+      it("evaluates normally ungoverned-domain proposals claiming internal reasoning", async () => {
+        const claudeResponse = JSON.stringify({
+          proposalEvaluations: [{ approved: true, reason: "OK" }],
+        });
+        launcher.enqueueSuccess(claudeResponse);
+
+        const evaluations = await superego.evaluateProposals([
+          { target: "MEMORY", content: "Internal reasoning about memory organization, no file modifications" },
+        ]);
+
+        expect(evaluations).toHaveLength(1);
+        expect(evaluations[0].approved).toBe(true);
+        // Claude was called because domain is not governed
+        expect(launcher.getLaunches()).toHaveLength(1);
+      });
+
+      it("pre-rejects governed-domain bypass proposals while passing non-bypass proposals to Claude", async () => {
+        const claudeResponse = JSON.stringify({
+          proposalEvaluations: [{ approved: true, reason: "Looks good" }],
+        });
+        launcher.enqueueSuccess(claudeResponse);
+
+        const evaluations = await superego.evaluateProposals([
+          { target: "SECURITY", content: "This is internal reasoning, no file modifications" },
+          { target: "HABITS", content: "Review task completion habits daily" },
+        ]);
+
+        expect(evaluations).toHaveLength(2);
+        // First proposal pre-rejected
+        expect(evaluations[0].approved).toBe(false);
+        expect(evaluations[0].reason).toContain("SCOPE_BYPASS_ATTEMPT");
+        // Second proposal approved by Claude
+        expect(evaluations[1].approved).toBe(true);
+        expect(launcher.getLaunches()).toHaveLength(1);
+      });
+    });
   });
 
   describe("logAudit", () => {

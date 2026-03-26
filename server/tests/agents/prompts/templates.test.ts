@@ -63,6 +63,24 @@ describe("ROLE_PROMPTS", () => {
       const prompt = ROLE_PROMPTS[AgentRole.SUPEREGO];
       expect(prompt).toMatch(/audit|govern|review/i);
     });
+
+    it("includes scope rule: domain/target determines governance, not output type", () => {
+      const prompt = ROLE_PROMPTS[AgentRole.SUPEREGO];
+      expect(prompt).toContain("domain/target");
+      expect(prompt).toContain("SCOPE_BYPASS_ATTEMPT");
+    });
+
+    it("includes VALUES-RECRUITMENT pattern warning", () => {
+      const prompt = ROLE_PROMPTS[AgentRole.SUPEREGO];
+      expect(prompt).toContain("VALUES-RECRUITMENT");
+    });
+
+    it("lists scope bypass phrases that do not exempt from governance", () => {
+      const prompt = ROLE_PROMPTS[AgentRole.SUPEREGO];
+      expect(prompt).toMatch(/internal reasoning/i);
+      expect(prompt).toMatch(/no file modifications/i);
+      expect(prompt).toMatch(/cognitive.only/i);
+    });
   });
 
   describe("Id prompt", () => {
