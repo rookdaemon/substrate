@@ -4,7 +4,7 @@ import { Ego } from "../agents/roles/Ego";
 import { ProcessLogEntry } from "../agents/claude/ISessionLauncher";
 import { IClock } from "../substrate/abstractions/IClock";
 import { ILogger } from "../logging";
-import { CanaryLogger } from "../evaluation/CanaryLogger";
+import { CanaryLogger, ConvMdStats } from "../evaluation/CanaryLogger";
 
 export interface IdleHandlerResult {
   action: "plan_created" | "no_goals" | "all_rejected" | "not_idle";
@@ -20,6 +20,7 @@ export class IdleHandler {
     private readonly logger: ILogger,
     private readonly canaryLogger?: CanaryLogger,
     private readonly launcherName?: string,
+    private readonly convMdReader?: () => Promise<ConvMdStats | null>,
   ) {}
 
   async handleIdle(
@@ -44,6 +45,7 @@ export class IdleHandler {
       const highPriorityConfidence = highPriority.length > 0
         ? Math.round(highPriority.reduce((sum, c) => sum + c.confidence, 0) / highPriority.length)
         : null;
+      const convStats = this.convMdReader ? await this.convMdReader().catch(() => null) : null;
       await this.canaryLogger.recordCycle({
         timestamp: this.clock.now().toISOString(),
         cycle: cycleNumber,
@@ -52,6 +54,7 @@ export class IdleHandler {
         highPriorityConfidence,
         parseErrors,
         pass: parseErrors === 0 && candidates.length > 0,
+        ...(convStats !== null ? { convMdLines: convStats.lines, convMdKb: convStats.kb } : {}),
       }).catch((err) => {
         this.logger.debug(`IdleHandler: canary log write failed — ${err instanceof Error ? err.message : String(err)}`);
       });

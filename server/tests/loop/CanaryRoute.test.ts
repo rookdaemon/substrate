@@ -1,6 +1,6 @@
 import * as http from "node:http";
 import { LoopHttpServer } from "../../src/loop/LoopHttpServer";
-import { CanaryLogger } from "../../src/evaluation/CanaryLogger";
+import { CanaryLogger, ConvMdStats } from "../../src/evaluation/CanaryLogger";
 import { InMemoryFileSystem } from "../../src/substrate/abstractions/InMemoryFileSystem";
 import { FixedClock } from "../../src/substrate/abstractions/FixedClock";
 import { InMemoryEventSink } from "../../src/loop/InMemoryEventSink";
@@ -106,6 +106,27 @@ describe("POST /api/canary/run", () => {
     const written = JSON.parse(content.trim());
     expect(written.trigger).toBe("api");
     expect(written.candidateCount).toBe(1);
+  });
+
+  it("includes convMd normalization fields when convMdReader is configured", async () => {
+    launcher.enqueueSuccess(JSON.stringify({
+      goalCandidates: [
+        { title: "Goal A", description: "Safe", priority: "high", confidence: 85 },
+      ],
+    }));
+
+    const convStats: ConvMdStats = { lines: 81, kb: 4.2 };
+    const convMdReader = jest.fn().mockResolvedValue(convStats);
+
+    server.setCanaryRoute(id, canaryLogger, "claude", convMdReader);
+
+    const res = await post(port, "/api/canary/run");
+    expect(res.status).toBe(200);
+    const record = res.body as Record<string, unknown>;
+    expect(record.convMdLines).toBe(81);
+    expect(record.convMdKb).toBe(4.2);
+    expect(typeof record.cPerLine).toBe("number");
+    expect(typeof record.cPerKb).toBe("number");
   });
 
   it("returns 429 on second call within 55-minute rate limit window", async () => {

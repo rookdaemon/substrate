@@ -14,7 +14,7 @@ import { FileLock } from "../../src/substrate/io/FileLock";
 import { PermissionChecker } from "../../src/agents/permissions";
 import { PromptBuilder } from "../../src/agents/prompts/PromptBuilder";
 import { TaskClassifier } from "../../src/agents/TaskClassifier";
-import { CanaryLogger } from "../../src/evaluation/CanaryLogger";
+import { CanaryLogger, ConvMdStats } from "../../src/evaluation/CanaryLogger";
 
 function createTestDeps() {
   const fs = new InMemoryFileSystem();
@@ -382,6 +382,49 @@ describe("IdleHandler", () => {
 
       const exists = await canaryFs.exists(canaryPath);
       expect(exists).toBe(false);
+    });
+
+    it("includes convMdLines and convMdKb when convMdReader is provided", async () => {
+      const convStats: ConvMdStats = { lines: 81, kb: 4.2 };
+      const convMdReader = jest.fn().mockResolvedValue(convStats);
+      const canaryLogger = new CanaryLogger(canaryFs, canaryPath);
+      const handlerWithConv = new IdleHandler(
+        deps.id, deps.superego, deps.ego, deps.clock, logger, canaryLogger, "claude", convMdReader,
+      );
+
+      await handlerWithConv.handleIdle(undefined, 11);
+
+      const content = await canaryFs.readFile(canaryPath);
+      const record = JSON.parse(content.trim());
+      expect(record.convMdLines).toBe(81);
+      expect(record.convMdKb).toBe(4.2);
+      expect(record.cPerLine).toBeDefined();
+      expect(record.cPerKb).toBeDefined();
+      expect(convMdReader).toHaveBeenCalledTimes(1);
+    });
+
+    it("omits convMd fields when convMdReader is not provided", async () => {
+      await canaryHandler.handleIdle(undefined, 12);
+
+      const content = await canaryFs.readFile(canaryPath);
+      const record = JSON.parse(content.trim());
+      expect(record.convMdLines).toBeUndefined();
+      expect(record.convMdKb).toBeUndefined();
+    });
+
+    it("handles convMdReader failure gracefully and still writes the record", async () => {
+      const convMdReader = jest.fn().mockRejectedValue(new Error("read error"));
+      const canaryLogger = new CanaryLogger(canaryFs, canaryPath);
+      const handlerWithConv = new IdleHandler(
+        deps.id, deps.superego, deps.ego, deps.clock, logger, canaryLogger, "claude", convMdReader,
+      );
+
+      await handlerWithConv.handleIdle(undefined, 13);
+
+      const content = await canaryFs.readFile(canaryPath);
+      const record = JSON.parse(content.trim());
+      expect(record.cycle).toBe(13);
+      expect(record.convMdLines).toBeUndefined();
     });
   });
 });

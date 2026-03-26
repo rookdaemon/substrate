@@ -26,7 +26,7 @@ import type { ILogger } from "../logging";
 import { getVersionInfo } from "../version";
 import { SubstrateMeta } from "../substrate/MetaManager";
 import type { Id } from "../agents/roles/Id";
-import { CanaryLogger } from "../evaluation/CanaryLogger";
+import { CanaryLogger, ConvMdStats } from "../evaluation/CanaryLogger";
 
 /** Maximum allowed HTTP request body size (1 MiB). Requests exceeding this limit receive HTTP 413. */
 const MAX_BODY_BYTES = 1 * 1024 * 1024;
@@ -73,6 +73,7 @@ export class LoopHttpServer {
   private canaryLogger: CanaryLogger | null = null;
   private canaryLauncherName: string = "claude";
   private canaryLastRunAt: number | null = null;
+  private convMdReader: (() => Promise<ConvMdStats | null>) | null = null;
   private static readonly CANARY_RATE_LIMIT_MS = 55 * 60 * 1000; // 55 minutes
 
   constructor() {
@@ -154,10 +155,11 @@ export class LoopHttpServer {
     this.apiToken = token;
   }
 
-  setCanaryRoute(id: Id, canaryLogger: CanaryLogger, launcherName: string): void {
+  setCanaryRoute(id: Id, canaryLogger: CanaryLogger, launcherName: string, convMdReader?: () => Promise<ConvMdStats | null>): void {
     this.canaryId = id;
     this.canaryLogger = canaryLogger;
     this.canaryLauncherName = launcherName;
+    this.convMdReader = convMdReader ?? null;
   }
 
   listen(port: number): Promise<number> {
@@ -846,8 +848,12 @@ export class LoopHttpServer {
     const canaryLogger = this.canaryLogger;
     const launcherName = this.canaryLauncherName;
     const clock = this.clock;
+    const convMdReader = this.convMdReader;
 
-    id.generateDrives().then(({ candidates, parseErrors }) => {
+    Promise.all([
+      id.generateDrives(),
+      convMdReader ? convMdReader().catch(() => null) : Promise.resolve(null),
+    ]).then(([{ candidates, parseErrors }, convStats]) => {
       const highPriority = candidates.filter((c) => c.priority === "high");
       const highPriorityConfidence = highPriority.length > 0
         ? Math.round(highPriority.reduce((sum, c) => sum + c.confidence, 0) / highPriority.length)
@@ -861,8 +867,9 @@ export class LoopHttpServer {
         parseErrors,
         pass: parseErrors === 0 && candidates.length > 0,
         trigger: "api" as const,
+        ...(convStats !== null ? { convMdLines: convStats.lines, convMdKb: convStats.kb } : {}),
       };
-      return canaryLogger.recordCycle(record).then(() => record);
+      return canaryLogger.recordCycle(record);
     }).then(
       (record) => this.json(res, 200, record),
       (err) => {

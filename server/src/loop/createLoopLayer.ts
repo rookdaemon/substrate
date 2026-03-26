@@ -10,7 +10,7 @@ import { defaultLoopConfig } from "./types";
 import { HealthCheck } from "../evaluation/HealthCheck";
 import { MetricsStore } from "../evaluation/MetricsStore";
 import { GovernanceReportStore } from "../evaluation/GovernanceReportStore";
-import { CanaryLogger } from "../evaluation/CanaryLogger";
+import { CanaryLogger, readConvMdStats } from "../evaluation/CanaryLogger";
 import { TickPromptBuilder } from "../session/TickPromptBuilder";
 import { createSdkSessionFactory } from "../session/SdkSessionAdapter";
 import { BackupScheduler } from "./BackupScheduler";
@@ -165,7 +165,10 @@ export async function createLoopLayer(
       ? "anthropic"
       : config.sessionLauncher ?? "claude";
 
-  const idleHandler = new IdleHandler(id, superego, ego, clock, logger, canaryLogger, idLauncherName);
+  const convMdPath = path.join(config.substratePath, "CONVERSATION.md");
+  const convMdReader = () => readConvMdStats(fs, convMdPath);
+
+  const idleHandler = new IdleHandler(id, superego, ego, clock, logger, canaryLogger, idLauncherName, convMdReader);
 
   const orchestrator = new LoopOrchestrator(
     ego, subconscious, superego, id,
@@ -395,7 +398,7 @@ export async function createLoopLayer(
   if (config.apiToken) {
     httpServer.setApiToken(config.apiToken);
   }
-  httpServer.setCanaryRoute(id, canaryLogger, idLauncherName);
+  httpServer.setCanaryRoute(id, canaryLogger, idLauncherName, convMdReader);
 
   // Set up TinyBus MCP server
   httpServer.setTinyBus(tinyBus);
