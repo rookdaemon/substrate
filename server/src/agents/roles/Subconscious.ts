@@ -249,10 +249,15 @@ export class Subconscious {
     let score = 5; // baseline
     if (result.memoryUpdates || result.skillUpdates) score += 3;
     if (result.result === "failure") score -= 2;
+    const entry = result.progressEntry.toLowerCase();
     if (
-      result.progressEntry.toLowerCase().includes("blog") ||
-      result.progressEntry.toLowerCase().includes(" pr ") ||
-      result.progressEntry.toLowerCase().includes("pull request")
+      entry.includes("blog") ||
+      entry.includes(" pr ") ||
+      entry.includes("pull request") ||
+      entry.includes("challenge") ||
+      entry.includes("adversarial") ||
+      entry.includes("so-") ||
+      entry.includes("sprint")
     ) {
       score += 4;
     }

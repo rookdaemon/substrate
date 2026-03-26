@@ -272,6 +272,63 @@ describe("Subconscious agent", () => {
       expect(rating).toBe(9);
     });
 
+    it("adds 4 points for adversarial work progress entries (challenge keyword)", () => {
+      const rating = Subconscious.computeDriveRating({
+        result: "success",
+        summary: "Created challenge file",
+        progressEntry: "Completed challenge SO-42 for adversarial protocol",
+        skillUpdates: null,
+        memoryUpdates: null,
+        proposals: [],
+      });
+      expect(rating).toBe(9);
+    });
+
+    it("adds 4 points for adversarial keyword in progress entry", () => {
+      const rating = Subconscious.computeDriveRating({
+        result: "success",
+        summary: "Adversarial audit update",
+        progressEntry: "Updated adversarial_protocol_audit with new findings",
+        skillUpdates: null,
+        memoryUpdates: null,
+        proposals: [],
+      });
+      expect(rating).toBe(9);
+    });
+
+    it("adds 4 points for SO- sprint reference in progress entry", () => {
+      const rating = Subconscious.computeDriveRating({
+        result: "success",
+        summary: "Sprint delivery",
+        progressEntry: "Delivered SO-17 sprint work and governance synthesis",
+        skillUpdates: null,
+        memoryUpdates: null,
+        proposals: [],
+      });
+      expect(rating).toBe(9);
+    });
+
+    it("Bishop adversarial session with memory updates reaches same ceiling as Rook blog session", () => {
+      const bishopRating = Subconscious.computeDriveRating({
+        result: "success",
+        summary: "VPCC certification work",
+        progressEntry: "Completed challenge and updated adversarial_protocol_audit",
+        skillUpdates: "updated",
+        memoryUpdates: null,
+        proposals: [],
+      });
+      const rookRating = Subconscious.computeDriveRating({
+        result: "success",
+        summary: "Blog post published",
+        progressEntry: "Merged a PR and wrote blog",
+        skillUpdates: "updated",
+        memoryUpdates: null,
+        proposals: [],
+      });
+      expect(bishopRating).toBe(rookRating);
+      expect(bishopRating).toBe(10);
+    });
+
     it("clamps score to the 0-10 range", () => {
       // Max: 5 + 3 + 4 = 12 → clamped to 10
       const maxRating = Subconscious.computeDriveRating({
