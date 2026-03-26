@@ -8,6 +8,7 @@ import { PromptBuilder, SubstrateSnapshot } from "../prompts/PromptBuilder";
 import { ISessionLauncher, ProcessLogEntry } from "../claude/ISessionLauncher";
 import { PlanParser } from "../parsers/PlanParser";
 import { extractJson } from "../parsers/extractJson";
+import { parseRejections, buildRejectionConstraints } from "../parsers/ProgressRejectionReader";
 import { AgentRole } from "../types";
 import { TaskClassifier } from "../TaskClassifier";
 import { ConversationManager } from "../../conversation/ConversationManager";
@@ -157,7 +158,12 @@ export class Subconscious {
       const eagerRefs = await this.promptBuilder.getEagerReferences(AgentRole.SUBCONSCIOUS, undefined, snapshot);
       const lazyRefs = this.promptBuilder.getLazyReferences(AgentRole.SUBCONSCIOUS);
 
-      let message = this.promptBuilder.buildAgentMessage(eagerRefs, lazyRefs, "");
+      // Read prior rejection constraints from PROGRESS.md (use snapshot if available)
+      const progressContent = snapshot?.files[SubstrateFileType.PROGRESS]
+        ?? await this.reader.read(SubstrateFileType.PROGRESS).then((r) => r.rawMarkdown).catch(() => "");
+      const rejectionConstraints = buildRejectionConstraints(parseRejections(progressContent));
+
+      let message = this.promptBuilder.buildAgentMessage(eagerRefs, lazyRefs, "", rejectionConstraints);
       if (pendingMessages && pendingMessages.length > 0) {
         message += `[PENDING MESSAGES — process first]\nProcess and respond to these before the task below. Include any Agora replies in the \`agoraReplies\` field of your JSON response. The orchestrator will send them.\n\n`;
         message += pendingMessages.join("\n\n---\n\n");

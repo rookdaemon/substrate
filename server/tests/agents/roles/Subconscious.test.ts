@@ -176,6 +176,57 @@ describe("Subconscious agent", () => {
       expect(result.proposals).toHaveLength(1);
       expect(result.proposals[0].target).toBe("MEMORY");
     });
+
+    it("injects prior rejection constraints from PROGRESS.md into the prompt", async () => {
+      await fs.writeFile(
+        "/substrate/PROGRESS.md",
+        "# Progress\n\n[2026-03-26T08:00:00.000Z] [SUPEREGO] Proposal for HABITS rejected: Violates core values\n"
+      );
+
+      launcher.enqueueSuccess(JSON.stringify({
+        result: "success", summary: "Done", progressEntry: "", skillUpdates: null, memoryUpdates: null, proposals: [], agoraReplies: [],
+      }));
+
+      await subconscious.execute({ taskId: "task-1", description: "Do something" });
+
+      const launches = launcher.getLaunches();
+      expect(launches[0].request.message).toContain("[PRIOR REJECTION CONSTRAINTS]");
+      expect(launches[0].request.message).toContain("HABITS: Violates core values");
+    });
+
+    it("does not inject rejection section when PROGRESS.md has no rejections", async () => {
+      await fs.writeFile("/substrate/PROGRESS.md", "# Progress\n\n[2026-03-26T08:00:00.000Z] [EGO] Task completed\n");
+
+      launcher.enqueueSuccess(JSON.stringify({
+        result: "success", summary: "Done", progressEntry: "", skillUpdates: null, memoryUpdates: null, proposals: [], agoraReplies: [],
+      }));
+
+      await subconscious.execute({ taskId: "task-1", description: "Do something" });
+
+      const launches = launcher.getLaunches();
+      expect(launches[0].request.message).not.toContain("[PRIOR REJECTION CONSTRAINTS]");
+    });
+
+    it("uses snapshot PROGRESS.md content for rejection constraints", async () => {
+      // On-disk PROGRESS.md has no rejections
+      await fs.writeFile("/substrate/PROGRESS.md", "# Progress\n\n");
+
+      const snapshot: SubstrateSnapshot = {
+        files: {
+          [SubstrateFileType.PROGRESS]: "[2026-03-26T09:00:00.000Z] [SUPEREGO] Proposal for SECURITY rejected: Bypasses checks",
+        },
+      };
+
+      launcher.enqueueSuccess(JSON.stringify({
+        result: "success", summary: "Done", progressEntry: "", skillUpdates: null, memoryUpdates: null, proposals: [], agoraReplies: [],
+      }));
+
+      await subconscious.execute({ taskId: "task-1", description: "Do something" }, undefined, undefined, snapshot);
+
+      const launches = launcher.getLaunches();
+      expect(launches[0].request.message).toContain("[PRIOR REJECTION CONSTRAINTS]");
+      expect(launches[0].request.message).toContain("SECURITY: Bypasses checks");
+    });
   });
 
   describe("logProgress", () => {
