@@ -67,7 +67,6 @@ describe("SUBSTRATE_FILE_SPECS", () => {
       SubstrateFileType.BOUNDARIES,
       SubstrateFileType.PEERS,
       SubstrateFileType.ESCALATE_TO_STEFAN,
-      SubstrateFileType.RESTART_CONTEXT,
       SubstrateFileType.HEARTBEAT,
     ];
     for (const type of Object.values(SubstrateFileType)) {

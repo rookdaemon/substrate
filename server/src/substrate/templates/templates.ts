@@ -162,15 +162,6 @@ This file contains critical issues that require human intervention. Issues are a
 ---
 `;
 
-export const RESTART_CONTEXT_TEMPLATE = `# Restart Context
-
-This file captures the agent's state when entering rate-limited hibernation. It enables seamless resumption after the rate limit resets.
-
-## Status
-
-No rate limit hibernation in progress.
-`;
-
 export const HEARTBEAT_TEMPLATE = `# HEARTBEAT
 
 This file is read by the HeartbeatScheduler every agent cycle. When a scheduled

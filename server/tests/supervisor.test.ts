@@ -11,7 +11,7 @@
  */
 
 import { EventEmitter } from "events";
-import { validateRestartSafety } from "../src/supervisor";
+import { validateRestartSafety, hasPendingRestartTask } from "../src/supervisor";
 import { InMemoryFileSystem } from "../src/substrate/abstractions/InMemoryFileSystem";
 
 jest.mock("node:child_process", () => ({
@@ -365,10 +365,42 @@ describe("health check ordering", () => {
   });
 });
 
+describe("hasPendingRestartTask", () => {
+  it("returns true when PLAN.md has a pending [restart] task", () => {
+    const plan = `# Plan\n\n## Tasks\n\n- [ ] [restart] Resume from rate-limit hibernation\n`;
+    expect(hasPendingRestartTask(plan)).toBe(true);
+  });
+
+  it("returns false when no [restart] task is present", () => {
+    const plan = `# Plan\n\n## Tasks\n\n- [ ] Some other task\n`;
+    expect(hasPendingRestartTask(plan)).toBe(false);
+  });
+
+  it("returns false when [restart] task is already completed", () => {
+    const plan = `# Plan\n\n## Tasks\n\n- [x] [restart] Resume from rate-limit hibernation\n`;
+    expect(hasPendingRestartTask(plan)).toBe(false);
+  });
+
+  it("returns false when [restart] tag is part of a longer word (e.g. [restart-related])", () => {
+    const plan = `# Plan\n\n## Tasks\n\n- [ ] [restart-related] Some task\n`;
+    expect(hasPendingRestartTask(plan)).toBe(false);
+  });
+
+  it("returns false for empty content", () => {
+    expect(hasPendingRestartTask("")).toBe(false);
+  });
+
+  it("returns true when [restart] task is indented (sub-task)", () => {
+    const plan = `# Plan\n\n## Tasks\n\n- [ ] Parent\n  - [ ] [restart] sub restart\n`;
+    expect(hasPendingRestartTask(plan)).toBe(true);
+  });
+});
+
 describe("validateRestartSafety", () => {
   const serverDir = "/srv";
   const dataDir = "/data";
-  const contextPath = "/data/memory/restart-context.md";
+  const planPath = "/data/PLAN.md";
+  const planWithRestart = `# Plan\n\n## Tasks\n\n- [ ] [restart] Resume from hibernation\n`;
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -382,7 +414,7 @@ describe("validateRestartSafety", () => {
     expect(result).toBe(false);
   });
 
-  it("returns false when restart-context.md is missing", async () => {
+  it("returns false when PLAN.md does not exist", async () => {
     mockSpawn.mockReturnValueOnce(fakeProcess(0) as ReturnType<typeof spawn>);
 
     const fs = new InMemoryFileSystem();
@@ -390,12 +422,12 @@ describe("validateRestartSafety", () => {
     expect(result).toBe(false);
   });
 
-  it("returns false when restart-context.md is empty", async () => {
+  it("returns false when PLAN.md has no pending [restart] task", async () => {
     mockSpawn.mockReturnValueOnce(fakeProcess(0) as ReturnType<typeof spawn>);
 
     const fs = new InMemoryFileSystem();
-    await fs.mkdir("/data/memory", { recursive: true });
-    await fs.writeFile(contextPath, "");
+    await fs.mkdir("/data", { recursive: true });
+    await fs.writeFile(planPath, "# Plan\n\n## Tasks\n\n- [ ] Some regular task\n");
     const result = await validateRestartSafety(serverDir, dataDir, fs);
     expect(result).toBe(false);
   });
@@ -406,8 +438,8 @@ describe("validateRestartSafety", () => {
       .mockReturnValueOnce(fakeProcess(1) as ReturnType<typeof spawn>); // git diff-index
 
     const fs = new InMemoryFileSystem();
-    await fs.mkdir("/data/memory", { recursive: true });
-    await fs.writeFile(contextPath, "# Context\nSome content");
+    await fs.mkdir("/data", { recursive: true });
+    await fs.writeFile(planPath, planWithRestart);
     const result = await validateRestartSafety(serverDir, dataDir, fs);
     expect(result).toBe(false);
   });
@@ -418,8 +450,8 @@ describe("validateRestartSafety", () => {
       .mockImplementationOnce(() => fakeProcess(0) as ReturnType<typeof spawn>);  // git diff-index
 
     const fs = new InMemoryFileSystem();
-    await fs.mkdir("/data/memory", { recursive: true });
-    await fs.writeFile(contextPath, "# Context\nSome content");
+    await fs.mkdir("/data", { recursive: true });
+    await fs.writeFile(planPath, planWithRestart);
     const result = await validateRestartSafety(serverDir, dataDir, fs);
     expect(result).toBe(true);
   });
