@@ -10,7 +10,7 @@
  * - Any other exit code: propagate (clean exit; no restart).
  *
  * Safety gates (pre-restart):
- * - Runs tests, checks restart-context.md exists/non-empty, and verifies clean git state.
+ * - Runs tests, checks PLAN.md contains a pending [restart] task, and verifies clean git state.
  * - Skip with --skip-safety-gates flag.
  *
  * Rollback behavior (post-restart):
@@ -100,6 +100,14 @@ async function waitForHealthy(port: number, maxAttempts = HEALTH_CHECK_ATTEMPTS)
   return { healthy: false, body: lastBody };
 }
 
+/**
+ * Returns true if the given PLAN.md content contains at least one pending [restart] task.
+ * A pending restart task is a line matching `- [ ] ...[restart]...`.
+ */
+export function hasPendingRestartTask(planContent: string): boolean {
+  return planContent.split("\n").some((line) => /^\s*- \[ \].*\[restart\](?=\s|$)/.test(line));
+}
+
 export async function validateRestartSafety(
   serverDir: string,
   dataDir: string,
@@ -112,17 +120,17 @@ export async function validateRestartSafety(
     return false;
   }
 
-  // 2. Check restart-context.md (posix for cross-platform tests with in-memory fs)
+  // 2. Check PLAN.md contains a pending [restart] task (posix for cross-platform tests with in-memory fs)
   const dataDirPosix = dataDir.replace(/\\/g, "/");
-  const restartContextPath = path.posix.join(dataDirPosix, "memory", "restart-context.md");
-  const contextExists = await fs.exists(restartContextPath);
-  if (!contextExists) {
-    console.error("[supervisor] Safety gate failed: memory/restart-context.md does not exist");
+  const planPath = path.posix.join(dataDirPosix, "PLAN.md");
+  const planExists = await fs.exists(planPath);
+  if (!planExists) {
+    console.error("[supervisor] Safety gate failed: PLAN.md does not exist");
     return false;
   }
-  const stat = await fs.stat(restartContextPath);
-  if (stat.size === 0) {
-    console.error("[supervisor] Safety gate failed: memory/restart-context.md is empty");
+  const planContent = await fs.readFile(planPath);
+  if (!hasPendingRestartTask(planContent)) {
+    console.error("[supervisor] Safety gate failed: PLAN.md has no pending [restart] task");
     return false;
   }
 
@@ -181,19 +189,6 @@ async function main(): Promise<void> {
         console.error(`[supervisor] Health check failed after restart (${consecutiveUnhealthyRestarts}/${MAX_CONSECUTIVE_UNHEALTHY}):`, JSON.stringify(healthBody, null, 2));
 
         if (consecutiveUnhealthyRestarts >= MAX_CONSECUTIVE_UNHEALTHY) {
-          // Save health diagnostics to restart-context.md before rollback
-          const restartContextPath = path.posix.join(
-            config.workingDirectory.replace(/\\/g, "/"),
-            "memory",
-            "restart-context.md"
-          );
-          const healthSection = `\n## Health Check at Rollback Trigger\n\`\`\`json\n${JSON.stringify(healthBody, null, 2)}\n\`\`\`\n`;
-          try {
-            await env.fs.mkdir(path.posix.join(config.workingDirectory.replace(/\\/g, "/"), "memory"), { recursive: true });
-            const existing = await env.fs.exists(restartContextPath) ? await env.fs.readFile(restartContextPath) : "";
-            await env.fs.writeFile(restartContextPath, existing + healthSection);
-          } catch { /* best effort — don't block rollback */ }
-
           console.error("[supervisor] 3 consecutive unhealthy restarts — rolling back to last-known-good");
           const checkoutCode = await run("git", ["checkout", "last-known-good"], SERVER_DIR);
           if (checkoutCode !== 0) {
