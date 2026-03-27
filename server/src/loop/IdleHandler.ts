@@ -5,6 +5,7 @@ import { ProcessLogEntry } from "../agents/claude/ISessionLauncher";
 import { IClock } from "../substrate/abstractions/IClock";
 import { ILogger } from "../logging";
 import { CanaryLogger, ConvMdStats } from "../evaluation/CanaryLogger";
+import { PlanParser } from "../agents/parsers/PlanParser";
 
 export interface IdleHandlerResult {
   action: "plan_created" | "no_goals" | "all_rejected" | "not_idle";
@@ -97,61 +98,13 @@ export class IdleHandler {
     });
 
     const existingPlan = await this.ego.readPlan();
-    const mergedPlan = this.appendTasksToExistingPlan(
+    const mergedPlan = PlanParser.appendTasksToExistingPlan(
       existingPlan,
-      approved.map((g) => g.title).join(", "),
       newTaskLines,
     );
     await this.ego.writePlan(mergedPlan);
 
     this.logger.debug("IdleHandler: plan written successfully");
     return { action: "plan_created", goalCount: approved.length };
-  }
-
-  /**
-   * Append new task lines to an existing PLAN.md, preserving all content
-   * outside the ## Tasks section. Updates ## Current Goal if present.
-   */
-  appendTasksToExistingPlan(
-    existing: string,
-    currentGoal: string,
-    newTaskLines: string[],
-  ): string {
-    const lines = existing.split("\n");
-
-    // Update ## Current Goal in place if it exists
-    const goalHeaderIdx = lines.findIndex((l) => /^## Current Goal\s*$/.test(l));
-    if (goalHeaderIdx !== -1) {
-      let goalContentEnd = lines.length;
-      for (let i = goalHeaderIdx + 1; i < lines.length; i++) {
-        if (/^## /.test(lines[i])) {
-          goalContentEnd = i;
-          break;
-        }
-      }
-      lines.splice(goalHeaderIdx + 1, goalContentEnd - goalHeaderIdx - 1, currentGoal, "");
-    }
-
-    // Find ## Tasks section
-    const tasksHeaderIdx = lines.findIndex((l) => /^## Tasks\s*$/.test(l));
-
-    if (tasksHeaderIdx === -1) {
-      // No ## Tasks section — append one at the end
-      return [...lines, "", "## Tasks", ...newTaskLines].join("\n");
-    }
-
-    // Find end of ## Tasks section (next heading or EOF)
-    let tasksEndIdx = lines.length;
-    for (let i = tasksHeaderIdx + 1; i < lines.length; i++) {
-      if (/^## /.test(lines[i])) {
-        tasksEndIdx = i;
-        break;
-      }
-    }
-
-    // Insert new tasks at the end of the ## Tasks section
-    const before = lines.slice(0, tasksEndIdx);
-    const after = lines.slice(tasksEndIdx);
-    return [...before, ...newTaskLines, ...after].join("\n");
   }
 }

@@ -326,12 +326,12 @@ describe("IdleHandler", () => {
     expect(plan).toContain("Some important notes.");
   });
 
-  it("updates ## Current Goal when writing new goals", async () => {
+  it("preserves ## Current Goal section unchanged when writing new goals", async () => {
     await deps.fs.writeFile("/substrate/PLAN.md", [
       "# Plan",
       "",
       "## Current Goal",
-      "Old goal that should be updated",
+      "Old goal that should NOT be changed",
       "",
       "## Tasks",
       "- [x] Done",
@@ -354,6 +354,8 @@ describe("IdleHandler", () => {
     const plan = await deps.fs.readFile("/substrate/PLAN.md");
     expect(plan).toContain("New Direction");
     expect(plan).toContain("## Current Goal");
+    // Critical: Current Goal section content must NOT be replaced
+    expect(plan).toContain("Old goal that should NOT be changed");
   });
 
   it("handles plan with empty task list as idle", async () => {
