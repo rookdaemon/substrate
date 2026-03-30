@@ -484,6 +484,72 @@ describe("PlanParser", () => {
     });
   });
 
+  describe("appendTasksToExistingPlan", () => {
+    it("appends tasks to existing ## Tasks section", () => {
+      const result = PlanParser.appendTasksToExistingPlan(SIMPLE_PLAN, ["- [ ] New task"]);
+      expect(result).toContain("- [ ] New task");
+      expect(result).toContain("- [ ] Design login form");
+    });
+
+    it("preserves multi-line ## Current Goal section intact", () => {
+      const plan = [
+        "# Plan",
+        "",
+        "## Current Goal",
+        "Line one of the goal",
+        "Line two of the goal",
+        "Line three — 250+ lines of operational record",
+        "",
+        "## Tasks",
+        "- [x] Done task",
+      ].join("\n");
+
+      const result = PlanParser.appendTasksToExistingPlan(plan, ["- [ ] New task"]);
+
+      expect(result).toContain("Line one of the goal");
+      expect(result).toContain("Line two of the goal");
+      expect(result).toContain("Line three — 250+ lines of operational record");
+      expect(result).toContain("- [ ] New task");
+    });
+
+    it("empty existing produces valid plan structure (bootstrap case)", () => {
+      const result = PlanParser.appendTasksToExistingPlan("", ["- [ ] First task"]);
+      expect(result).toBe("# Plan\n\n## Tasks\n- [ ] First task\n");
+    });
+
+    it("whitespace-only existing is treated as bootstrap case", () => {
+      const result = PlanParser.appendTasksToExistingPlan("   \n  ", ["- [ ] First task"]);
+      expect(result).toBe("# Plan\n\n## Tasks\n- [ ] First task\n");
+    });
+
+    it("creates ## Tasks section when none exists", () => {
+      const plan = "# Plan\n\n## Notes\nSome notes.";
+      const result = PlanParser.appendTasksToExistingPlan(plan, ["- [ ] New task"]);
+      expect(result).toContain("## Tasks");
+      expect(result).toContain("- [ ] New task");
+      expect(result).toContain("## Notes");
+    });
+
+    it("inserts tasks before a section that follows ## Tasks", () => {
+      const plan = [
+        "# Plan",
+        "",
+        "## Tasks",
+        "- [x] Existing",
+        "",
+        "## Notes",
+        "Keep this.",
+      ].join("\n");
+
+      const result = PlanParser.appendTasksToExistingPlan(plan, ["- [ ] New task"]);
+
+      expect(result).toContain("- [ ] New task");
+      expect(result).toContain("## Notes");
+      // New task must appear before ## Notes
+      expect(result.indexOf("- [ ] New task")).toBeLessThan(result.indexOf("## Notes"));
+    });
+  });
+
   describe("blockedUntil HTML comment annotation (<!-- blockedUntil: ISO8601 -->)", () => {
     const FUTURE = new Date("2026-03-12T17:00Z"); // after the annotation timestamp
     const BEFORE = new Date("2026-03-12T15:00Z"); // before the annotation timestamp

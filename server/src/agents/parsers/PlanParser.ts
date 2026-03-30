@@ -262,6 +262,43 @@ export class PlanParser {
     return null;
   }
 
+  /**
+   * Append new task lines to an existing PLAN.md, preserving all content
+   * outside the ## Tasks section. Does not modify any other section.
+   */
+  static appendTasksToExistingPlan(
+    existing: string,
+    newTaskLines: string[],
+  ): string {
+    if (existing.trim() === "") {
+      return `# Plan\n\n## Tasks\n${newTaskLines.join("\n")}\n`;
+    }
+
+    const lines = existing.split("\n");
+
+    // Find ## Tasks section
+    const tasksHeaderIdx = lines.findIndex((l) => /^## Tasks\s*$/.test(l));
+
+    if (tasksHeaderIdx === -1) {
+      // No ## Tasks section — append one at the end
+      return [...lines, "", "## Tasks", ...newTaskLines].join("\n");
+    }
+
+    // Find end of ## Tasks section (next heading or EOF)
+    let tasksEndIdx = lines.length;
+    for (let i = tasksHeaderIdx + 1; i < lines.length; i++) {
+      if (/^## /.test(lines[i])) {
+        tasksEndIdx = i;
+        break;
+      }
+    }
+
+    // Insert new tasks at the end of the ## Tasks section
+    const before = lines.slice(0, tasksEndIdx);
+    const after = lines.slice(tasksEndIdx);
+    return [...before, ...newTaskLines, ...after].join("\n");
+  }
+
   private static flattenTasks(tasks: PlanTask[]): PlanTask[] {
     const result: PlanTask[] = [];
     for (const task of tasks) {
