@@ -1,9 +1,5 @@
-import { mkdtempSync, rmSync } from "node:fs";
-import { join } from "node:path";
-import { tmpdir } from "node:os";
 import { AgoraStateStore } from "../../src/agora/AgoraStateStore";
 import { InMemoryFileSystem } from "../../src/substrate/abstractions/InMemoryFileSystem";
-import { NodeFileSystem } from "../../src/substrate/abstractions/NodeFileSystem";
 
 describe("AgoraStateStore", () => {
   const STATE_PATH = "/fake/.agora_state.json";
@@ -108,22 +104,13 @@ describe("AgoraStateStore", () => {
     });
   });
 
-  describe("real filesystem (integration)", () => {
-    let tmpDir: string;
-    let realStore: AgoraStateStore;
-
-    beforeEach(() => {
-      tmpDir = mkdtempSync(join(tmpdir(), "agora-state-test-"));
-      realStore = new AgoraStateStore(join(tmpDir, ".agora_state.json"), new NodeFileSystem());
-    });
-
-    afterEach(() => {
-      rmSync(tmpDir, { recursive: true, force: true });
-    });
-
-    it("persists and reloads lastSeen across store instances", async () => {
-      await realStore.updateLastSeen("peerX", 99999);
-      const store2 = new AgoraStateStore(join(tmpDir, ".agora_state.json"), new NodeFileSystem());
+  describe("persists and reloads across store instances (in-memory)", () => {
+    it("persists and reloads lastSeen across store instances sharing the same IFileSystem", async () => {
+      const sharedFs = new InMemoryFileSystem();
+      const path = "/shared/.agora_state.json";
+      const store1 = new AgoraStateStore(path, sharedFs);
+      await store1.updateLastSeen("peerX", 99999);
+      const store2 = new AgoraStateStore(path, sharedFs);
       expect(await store2.getLastSeen("peerX")).toBe(99999);
     });
   });

@@ -1,9 +1,8 @@
-import { mkdtempSync, rmSync } from "fs";
-import { join } from "path";
-import { tmpdir } from "os";
 import { createApplication, ApplicationConfig, Application } from "../../src/loop/createApplication";
 import { LoopState } from "../../src/loop/types";
 import type { SdkQueryFn } from "../../src/agents/claude/AgentSdkLauncher";
+import { InMemoryFileSystem } from "../../src/substrate/abstractions/InMemoryFileSystem";
+import { InMemoryLogger } from "../../src/logging";
 
 const mockSdkQuery: SdkQueryFn = async function* () {
   yield { type: "unused" };
@@ -11,11 +10,6 @@ const mockSdkQuery: SdkQueryFn = async function* () {
 
 describe("createApplication", () => {
   const createdApps: Application[] = [];
-  let tempDir: string;
-
-  beforeEach(() => {
-    tempDir = mkdtempSync(join(tmpdir(), "substrate-test-"));
-  });
 
   afterEach(async () => {
     for (const app of createdApps) {
@@ -26,20 +20,22 @@ describe("createApplication", () => {
       }
     }
     createdApps.length = 0;
-    rmSync(tempDir, { recursive: true, force: true });
   });
 
   function baseConfig(overrides?: Partial<ApplicationConfig>): ApplicationConfig {
     return {
-      substratePath: join(tempDir, "substrate"),
+      substratePath: "/substrate",
       sdkQueryFn: mockSdkQuery,
+      env: {
+        fs: new InMemoryFileSystem(),
+        logger: new InMemoryLogger(),
+      },
       ...overrides,
     };
   }
 
   it("creates an application with all components wired", async () => {
     const app = await createApplication(baseConfig({
-      httpPort: 0,
       cycleDelayMs: 1000,
       superegoAuditInterval: 10,
       maxConsecutiveIdleCycles: 5,
@@ -54,7 +50,6 @@ describe("createApplication", () => {
 
   it("orchestrator starts in STOPPED state", async () => {
     const app = await createApplication(baseConfig({
-      httpPort: 0,
       cycleDelayMs: 500,
       superegoAuditInterval: 5,
       maxConsecutiveIdleCycles: 3,
@@ -66,7 +61,6 @@ describe("createApplication", () => {
 
   it("provides start and stop methods", async () => {
     const app = await createApplication(baseConfig({
-      httpPort: 0,
       cycleDelayMs: 1000,
       superegoAuditInterval: 10,
       maxConsecutiveIdleCycles: 5,
@@ -87,7 +81,6 @@ describe("createApplication", () => {
 
   it("creates application successfully with watchdog disabled", async () => {
     const app = await createApplication(baseConfig({
-      httpPort: 0,
       watchdog: { disabled: true },
     }));
     createdApps.push(app);
@@ -98,7 +91,6 @@ describe("createApplication", () => {
 
   it("creates application successfully with custom watchdog timing", async () => {
     const app = await createApplication(baseConfig({
-      httpPort: 0,
       watchdog: { stallThresholdMs: 5 * 60 * 1000, checkIntervalMs: 60 * 1000 },
     }));
     createdApps.push(app);
@@ -109,26 +101,21 @@ describe("createApplication", () => {
 
   describe("sleep-preservation: forceStart when sleeping", () => {
     it("forceStart=true does not wake loop when initialized in SLEEPING state", async () => {
-      // Create app with idle sleep enabled so the sleep state is persisted
       const app = await createApplication(baseConfig({
-        httpPort: 0,
         idleSleepConfig: { enabled: true, idleCyclesBeforeSleep: 1 },
         watchdog: { disabled: true },
       }));
       createdApps.push(app);
 
-      // Manually initialize the orchestrator in SLEEPING state (simulating a restart after sleep)
       app.orchestrator.initializeSleeping();
       expect(app.orchestrator.getState()).toBe(LoopState.SLEEPING);
 
-      // Start with forceStart=true — should NOT wake because we were sleeping
       await app.start(0, true);
       expect(app.orchestrator.getState()).toBe(LoopState.SLEEPING);
     });
 
     it("forceStart=true does start loop when initialized in STOPPED state", async () => {
       const app = await createApplication(baseConfig({
-        httpPort: 0,
         idleSleepConfig: { enabled: true, idleCyclesBeforeSleep: 1 },
         watchdog: { disabled: true },
       }));
@@ -145,7 +132,6 @@ describe("createApplication", () => {
   describe("idLauncher config", () => {
     it("creates application with idLauncher: 'claude' (explicit default)", async () => {
       const app = await createApplication(baseConfig({
-        httpPort: 0,
         idLauncher: "claude",
       }));
       createdApps.push(app);
@@ -155,9 +141,7 @@ describe("createApplication", () => {
     });
 
     it("creates application without idLauncher (implicit default = claude behavior)", async () => {
-      const app = await createApplication(baseConfig({
-        httpPort: 0,
-      }));
+      const app = await createApplication(baseConfig());
       createdApps.push(app);
 
       expect(app).toBeDefined();
@@ -165,12 +149,9 @@ describe("createApplication", () => {
     });
 
     it("creates application with idLauncher: 'vertex' and missing key file (falls back to default launcher)", async () => {
-      // When vertexKeyPath points to a missing file, the vertex launcher is unavailable.
-      // Id should fall back to the default gatedLauncher — the app must still start.
       const app = await createApplication(baseConfig({
-        httpPort: 0,
         idLauncher: "vertex",
-        vertexKeyPath: join(tempDir, "nonexistent-api-key.txt"),
+        vertexKeyPath: "/nonexistent-api-key.txt",
       }));
       createdApps.push(app);
 
@@ -179,9 +160,7 @@ describe("createApplication", () => {
     });
 
     it("creates application with idLauncher: 'ollama'", async () => {
-      // OllamaSessionLauncher is constructed eagerly — app must start even if Ollama is not reachable.
       const app = await createApplication(baseConfig({
-        httpPort: 0,
         idLauncher: "ollama",
         idOllamaModel: "deepseek-r1:70b",
         ollamaBaseUrl: "http://localhost:11434",

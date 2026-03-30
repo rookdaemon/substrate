@@ -1,8 +1,5 @@
-import * as realFs from "fs";
-import * as os from "os";
 import * as path from "path";
 import { IFileSystem } from "../../src/substrate/abstractions/IFileSystem";
-import { NodeFileSystem } from "../../src/substrate/abstractions/NodeFileSystem";
 import { LoopOrchestrator } from "../../src/loop/LoopOrchestrator";
 import { InMemoryEventSink } from "../../src/loop/InMemoryEventSink";
 import { ImmediateTimer } from "../../src/loop/ImmediateTimer";
@@ -137,80 +134,67 @@ describe("R2 pre-dispatch ceiling check", () => {
 });
 
 describe("readEndpointState() private helper", () => {
-  let tempDir: string;
+  const SUBSTRATE_PATH = "/substrate";
 
-  beforeEach(() => {
-    tempDir = realFs.mkdtempSync(path.join(os.tmpdir(), "substrate-ep-test-"));
-  });
-
-  afterEach(() => {
-    realFs.rmSync(tempDir, { recursive: true, force: true });
-  });
-
-  async function callReadEndpointState(substratePath: string): Promise<string> {
-    const nodeFs = new NodeFileSystem();
-    const { orchestrator } = createOrchestrator(substratePath, nodeFs);
+  async function callReadEndpointState(stateJson?: string): Promise<string> {
+    const memFs = new InMemoryFileSystem();
+    await memFs.mkdir(SUBSTRATE_PATH, { recursive: true });
+    if (stateJson !== undefined) {
+      await memFs.writeFile(path.join(SUBSTRATE_PATH, ".endpoint_state.json"), stateJson);
+    }
+    const { orchestrator } = createOrchestrator(SUBSTRATE_PATH, memFs);
     return (orchestrator as unknown as { readEndpointState(): Promise<string> }).readEndpointState();
   }
 
   it("T4: returns UNKNOWN string when state file is missing (ENOENT)", async () => {
-    const result = await callReadEndpointState(tempDir);
+    const result = await callReadEndpointState();
     expect(result).toContain("UNKNOWN");
   });
 
   it("T5: returns UNKNOWN string when state file contains malformed JSON", async () => {
-    realFs.writeFileSync(path.join(tempDir, ".endpoint_state.json"), "{ not valid json {{");
-    const result = await callReadEndpointState(tempDir);
+    const result = await callReadEndpointState("{ not valid json {{");
     expect(result).toContain("UNKNOWN");
   });
 
   it("T1: UP state → contains 'Status: UP' and 'Ollama-gated tasks: GO'", async () => {
     const state = { status: "up", lastChecked: "2026-01-01T00:00:00.000Z", consecutiveDown: 0 };
-    realFs.writeFileSync(path.join(tempDir, ".endpoint_state.json"), JSON.stringify(state));
-    const result = await callReadEndpointState(tempDir);
+    const result = await callReadEndpointState(JSON.stringify(state));
     expect(result).toContain("Status: UP");
     expect(result).toContain("Ollama-gated tasks: GO");
   });
 
   it("T2: DOWN state → contains 'Status: DOWN' and 'Skip ALL Ollama-gated tasks'", async () => {
     const state = { status: "down", lastChecked: "2026-01-01T00:00:00.000Z", lastSeen: "2026-01-01T00:00:00.000Z", consecutiveDown: 3 };
-    realFs.writeFileSync(path.join(tempDir, ".endpoint_state.json"), JSON.stringify(state));
-    const result = await callReadEndpointState(tempDir);
+    const result = await callReadEndpointState(JSON.stringify(state));
     expect(result).toContain("Status: DOWN");
     expect(result).toContain("Skip ALL Ollama-gated tasks");
   });
 
   it("T3: DEGRADED state → contains 'Status: DEGRADED' and 'Skip inference-gated tasks'", async () => {
     const state = { status: "degraded", lastChecked: "2026-01-01T00:00:00.000Z", lastSeen: "2026-01-01T00:00:00.000Z", consecutiveDegraded: 2 };
-    realFs.writeFileSync(path.join(tempDir, ".endpoint_state.json"), JSON.stringify(state));
-    const result = await callReadEndpointState(tempDir);
+    const result = await callReadEndpointState(JSON.stringify(state));
     expect(result).toContain("Status: DEGRADED");
     expect(result).toContain("Skip inference-gated tasks");
   });
 
   it("'unknown' status → returns UNKNOWN string", async () => {
     const state = { status: "unknown", lastChecked: "2026-01-01T00:00:00.000Z" };
-    realFs.writeFileSync(path.join(tempDir, ".endpoint_state.json"), JSON.stringify(state));
-    const result = await callReadEndpointState(tempDir);
+    const result = await callReadEndpointState(JSON.stringify(state));
     expect(result).toContain("UNKNOWN");
   });
 
   it("T6: stale state (>2h old) → returns UNKNOWN with staleness message regardless of status", async () => {
     // Fixed clock is 2025-06-15T10:00:00Z; 3h before = 2025-06-15T07:00:00Z
-    const staleTs = "2025-06-15T07:00:00.000Z";
-    const state = { status: "up", checkedAt: staleTs, consecutiveDown: 0 };
-    realFs.writeFileSync(path.join(tempDir, ".endpoint_state.json"), JSON.stringify(state));
-    const result = await callReadEndpointState(tempDir);
+    const state = { status: "up", checkedAt: "2025-06-15T07:00:00.000Z", consecutiveDown: 0 };
+    const result = await callReadEndpointState(JSON.stringify(state));
     expect(result).toContain("UNKNOWN");
     expect(result).toContain("stale");
   });
 
   it("T7: checkedAt field (external monitoring format) within 2h → parses as UP correctly", async () => {
     // Fixed clock is 2025-06-15T10:00:00Z; 30min before = 2025-06-15T09:30:00Z
-    const recentTs = "2025-06-15T09:30:00.000Z";
-    const state = { status: "up", checkedAt: recentTs, consecutiveDown: 0 };
-    realFs.writeFileSync(path.join(tempDir, ".endpoint_state.json"), JSON.stringify(state));
-    const result = await callReadEndpointState(tempDir);
+    const state = { status: "up", checkedAt: "2025-06-15T09:30:00.000Z", consecutiveDown: 0 };
+    const result = await callReadEndpointState(JSON.stringify(state));
     expect(result).toContain("Status: UP");
     expect(result).toContain("Ollama-gated tasks: GO");
   });

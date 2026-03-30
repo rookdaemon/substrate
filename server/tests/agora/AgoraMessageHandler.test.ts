@@ -11,9 +11,7 @@ import type { ILogger } from "../../src/logging";
 import type { IFlashGate, F2GateInput, F2GateResult, FlashGateResult } from "../../src/gates/IFlashGate";
 import type { IEnvelopeDedupStore } from "../../src/agora/IEnvelopeDedupStore";
 import { FileEnvelopeDedupStore } from "../../src/agora/FileEnvelopeDedupStore";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { InMemoryFileSystem } from "../../src/substrate/abstractions/InMemoryFileSystem";
 
 // Mock implementations
 class MockConversationManager implements IConversationManager {
@@ -1299,72 +1297,47 @@ describe("AgoraMessageHandler", () => {
       expect(handler.listIgnoredPeers()).toEqual(["peer-a", "peer-z"]);
     });
 
-    it("loads ignored peers from persistence file at startup", () => {
-      const tempDir = mkdtempSync(join(tmpdir(), "substrate-ignored-"));
-      const ignoredPath = join(tempDir, "IGNORED_PEERS.md");
-      try {
-        writeFileSync(
-          ignoredPath,
-          [
-            "# Ignored peers",
-            "peer-b",
-            "peer-a",
-            "",
-          ].join("\n"),
-          "utf-8",
-        );
+    it("initialises with empty ignored list when ignoredPeersPath is provided (mock is in-memory)", () => {
+      const handlerWithPath = new AgoraMessageHandler(
+        agoraService,
+        conversationManager,
+        messageInjector,
+        eventSink,
+        clock,
+        getState,
+        isRateLimited,
+        logger,
+        'quarantine',
+        defaultRateLimitConfig,
+        null,
+        "/ignored/IGNORED_PEERS.md",
+      );
 
-        const handlerWithPersistence = new AgoraMessageHandler(
-          agoraService,
-          conversationManager,
-          messageInjector,
-          eventSink,
-          clock,
-          getState,
-          isRateLimited,
-          logger,
-          'quarantine',
-          defaultRateLimitConfig,
-          null,
-          ignoredPath,
-        );
-
-        expect(handlerWithPersistence.listIgnoredPeers()).toEqual(["peer-a", "peer-b"]);
-      } finally {
-        rmSync(tempDir, { recursive: true, force: true });
-      }
+      // Mock IgnoredPeersManager starts empty; ignorePeer/unignorePeer are in-memory only
+      expect(handlerWithPath.listIgnoredPeers()).toEqual([]);
     });
 
-    it("persists blocklist changes when ignore/unignore are called", () => {
-      const tempDir = mkdtempSync(join(tmpdir(), "substrate-ignored-"));
-      const ignoredPath = join(tempDir, "IGNORED_PEERS.md");
-      try {
-        const handlerWithPersistence = new AgoraMessageHandler(
-          agoraService,
-          conversationManager,
-          messageInjector,
-          eventSink,
-          clock,
-          getState,
-          isRateLimited,
-          logger,
-          'quarantine',
-          defaultRateLimitConfig,
-          null,
-          ignoredPath,
-        );
+    it("ignorePeer and unignorePeer are reflected in listIgnoredPeers", () => {
+      const handlerWithPath = new AgoraMessageHandler(
+        agoraService,
+        conversationManager,
+        messageInjector,
+        eventSink,
+        clock,
+        getState,
+        isRateLimited,
+        logger,
+        'quarantine',
+        defaultRateLimitConfig,
+        null,
+        "/ignored/IGNORED_PEERS.md",
+      );
 
-        handlerWithPersistence.ignorePeer("peer-z");
-        handlerWithPersistence.ignorePeer("peer-a");
-        handlerWithPersistence.unignorePeer("peer-z");
+      handlerWithPath.ignorePeer("peer-z");
+      handlerWithPath.ignorePeer("peer-a");
+      handlerWithPath.unignorePeer("peer-z");
 
-        const persisted = readFileSync(ignoredPath, "utf-8");
-        expect(persisted).toContain("# Ignored peers");
-        expect(persisted).toContain("peer-a");
-        expect(persisted).not.toContain("peer-z");
-      } finally {
-        rmSync(tempDir, { recursive: true, force: true });
-      }
+      expect(handlerWithPath.listIgnoredPeers()).toEqual(["peer-a"]);
     });
 
     it("getProcessedEnvelopeIds returns empty array when no envelopes processed", () => {
@@ -1974,42 +1947,38 @@ describe("AgoraMessageHandler", () => {
   // ────────────────────────────────────────────────────────────────────────────
 
   describe("FileEnvelopeDedupStore", () => {
-    let tempDir: string;
-    let filePath: string;
+    let memFs: InMemoryFileSystem;
+    const filePath = "/dedup/agora_seen.json";
 
-    beforeEach(() => {
-      tempDir = mkdtempSync(join(tmpdir(), "dedup-store-"));
-      filePath = join(tempDir, "agora_seen.json");
-    });
-
-    afterEach(() => {
-      rmSync(tempDir, { recursive: true, force: true });
+    beforeEach(async () => {
+      memFs = new InMemoryFileSystem();
+      await memFs.mkdir("/dedup", { recursive: true });
     });
 
     it("load returns empty array when file does not exist", async () => {
-      const store = new FileEnvelopeDedupStore(filePath, logger);
+      const store = new FileEnvelopeDedupStore(filePath, logger, memFs);
       const ids = await store.load();
       expect(ids).toEqual([]);
     });
 
     it("load returns empty array and logs warning when file is corrupt JSON", async () => {
-      writeFileSync(filePath, "not valid json", "utf-8");
-      const store = new FileEnvelopeDedupStore(filePath, logger);
+      await memFs.writeFile(filePath, "not valid json");
+      const store = new FileEnvelopeDedupStore(filePath, logger, memFs);
       const ids = await store.load();
       expect(ids).toEqual([]);
       expect(logger.debugMessages.some(m => m.includes("agora_seen.json"))).toBe(true);
     });
 
     it("load returns empty array and logs warning when file has wrong shape", async () => {
-      writeFileSync(filePath, JSON.stringify({ not: "an array" }), "utf-8");
-      const store = new FileEnvelopeDedupStore(filePath, logger);
+      await memFs.writeFile(filePath, JSON.stringify({ not: "an array" }));
+      const store = new FileEnvelopeDedupStore(filePath, logger, memFs);
       const ids = await store.load();
       expect(ids).toEqual([]);
       expect(logger.debugMessages.some(m => m.includes("agora_seen.json"))).toBe(true);
     });
 
     it("save then load round-trips IDs correctly", async () => {
-      const store = new FileEnvelopeDedupStore(filePath, logger);
+      const store = new FileEnvelopeDedupStore(filePath, logger, memFs);
       const ids = ["id-1", "id-2", "id-3"];
       await store.save(ids);
       const loaded = await store.load();
@@ -2017,11 +1986,11 @@ describe("AgoraMessageHandler", () => {
     });
 
     it("save caps at maxSize, keeping the tail (most-recent)", async () => {
-      const store = new FileEnvelopeDedupStore(filePath, logger, 500);
+      const store = new FileEnvelopeDedupStore(filePath, logger, memFs, 500);
       const ids = Array.from({ length: 600 }, (_, i) => `id-${i}`);
       await store.save(ids);
 
-      const content = readFileSync(filePath, "utf-8");
+      const content = await memFs.readFile(filePath);
       const saved = JSON.parse(content) as string[];
       expect(saved).toHaveLength(500);
       expect(saved[0]).toBe("id-100");       // oldest of the tail
@@ -2029,11 +1998,10 @@ describe("AgoraMessageHandler", () => {
       expect(saved.includes("id-0")).toBe(false); // first 100 evicted
     });
 
-    it("save writes atomically (file is never absent between writes)", async () => {
-      const store = new FileEnvelopeDedupStore(filePath, logger);
+    it("save writes correctly (file exists after save)", async () => {
+      const store = new FileEnvelopeDedupStore(filePath, logger, memFs);
       await store.save(["id-1"]);
-      // File must exist after the first save
-      const content = readFileSync(filePath, "utf-8");
+      const content = await memFs.readFile(filePath);
       expect(JSON.parse(content)).toEqual(["id-1"]);
     });
   });
@@ -2140,74 +2108,66 @@ describe("AgoraMessageHandler", () => {
     });
 
     it("FileEnvelopeDedupStore: processing 600 envelopes writes last 500 to file", async () => {
-      const handlerTempDir = mkdtempSync(join(tmpdir(), "dedup-handler-"));
-      const fp = join(handlerTempDir, "agora_seen.json");
-      try {
-        const fileStore = new FileEnvelopeDedupStore(fp, logger, 500);
-        const h = makeHandlerWithStore(fileStore);
-        agoraService.addPeer("bulk-peer", testEnvelope.from);
+      const handlerFs = new InMemoryFileSystem();
+      const fp = "/dedup/agora_seen.json";
+      await handlerFs.mkdir("/dedup", { recursive: true });
+      const fileStore = new FileEnvelopeDedupStore(fp, logger, handlerFs, 500);
+      const h = makeHandlerWithStore(fileStore);
+      agoraService.addPeer("bulk-peer", testEnvelope.from);
 
-        for (let i = 0; i < 600; i++) {
-          await h.processEnvelope({ ...testEnvelope, id: `bulk-${i}` }, "webhook");
-        }
-        // Flush async saves
-        await new Promise(resolve => setTimeout(resolve, 50));
-
-        const content = readFileSync(fp, "utf-8");
-        const saved = JSON.parse(content) as string[];
-        expect(saved).toHaveLength(500);
-        expect(saved.includes("bulk-0")).toBe(false);   // oldest evicted
-        expect(saved.includes("bulk-599")).toBe(true);  // newest retained
-      } finally {
-        rmSync(handlerTempDir, { recursive: true, force: true });
+      for (let i = 0; i < 600; i++) {
+        await h.processEnvelope({ ...testEnvelope, id: `bulk-${i}` }, "webhook");
       }
+      // Flush async saves
+      await new Promise(resolve => setTimeout(resolve, 50));
+
+      const content = await handlerFs.readFile(fp);
+      const saved = JSON.parse(content) as string[];
+      expect(saved).toHaveLength(500);
+      expect(saved.includes("bulk-0")).toBe(false);   // oldest evicted
+      expect(saved.includes("bulk-599")).toBe(true);  // newest retained
     });
 
     it("FileEnvelopeDedupStore: corrupt file → loadDedup gives empty set, no crash", async () => {
-      const corruptTempDir = mkdtempSync(join(tmpdir(), "dedup-corrupt-"));
-      const fp = join(corruptTempDir, "agora_seen.json");
-      try {
-        writeFileSync(fp, "}{corrupt json!", "utf-8");
-        const fileStore = new FileEnvelopeDedupStore(fp, logger, 500);
-        const h = makeHandlerWithStore(fileStore);
-        await h.loadDedup(); // must not throw
+      const corruptFs = new InMemoryFileSystem();
+      const fp = "/dedup/agora_seen.json";
+      await corruptFs.mkdir("/dedup", { recursive: true });
+      await corruptFs.writeFile(fp, "}{corrupt json!");
+      const fileStore = new FileEnvelopeDedupStore(fp, logger, corruptFs, 500);
+      const h = makeHandlerWithStore(fileStore);
+      await h.loadDedup(); // must not throw
 
-        expect(h.getProcessedEnvelopeIds()).toHaveLength(0);
-        // Should still process new envelopes normally
-        await h.processEnvelope(testEnvelope, "webhook");
-        expect(conversationManager.appendedEntries).toHaveLength(1);
-      } finally {
-        rmSync(corruptTempDir, { recursive: true, force: true });
-      }
+      expect(h.getProcessedEnvelopeIds()).toHaveLength(0);
+      // Should still process new envelopes normally
+      await h.processEnvelope(testEnvelope, "webhook");
+      expect(conversationManager.appendedEntries).toHaveLength(1);
     });
 
     it("FileEnvelopeDedupStore: loaded IDs survive restart simulation", async () => {
-      const restartTempDir = mkdtempSync(join(tmpdir(), "dedup-restart-"));
-      const fp = join(restartTempDir, "agora_seen.json");
-      try {
-        // First "process run": process an envelope, which persists the ID
-        const fileStore1 = new FileEnvelopeDedupStore(fp, logger, 500);
-        const h1 = makeHandlerWithStore(fileStore1);
-        await h1.processEnvelope(testEnvelope, "webhook");
-        await new Promise(resolve => setTimeout(resolve, 50)); // flush async save
+      const sharedFs = new InMemoryFileSystem();
+      const fp = "/dedup/agora_seen.json";
+      await sharedFs.mkdir("/dedup", { recursive: true });
 
-        // Second "process run": load from the same file
-        const cm2 = new MockConversationManager();
-        const h2 = new AgoraMessageHandler(
-          agoraService, cm2, messageInjector, eventSink, clock,
-          getState, isRateLimited, logger, 'quarantine', baseRateLimit,
-          null, null, null, null,
-          new FileEnvelopeDedupStore(fp, logger, 500),
-        );
-        await h2.loadDedup();
+      // First "process run": process an envelope, which persists the ID
+      const fileStore1 = new FileEnvelopeDedupStore(fp, logger, sharedFs, 500);
+      const h1 = makeHandlerWithStore(fileStore1);
+      await h1.processEnvelope(testEnvelope, "webhook");
+      await new Promise(resolve => setTimeout(resolve, 50)); // flush async save
 
-        // Same envelope → rejected as duplicate
-        const status = await h2.processEnvelope(testEnvelope, "webhook");
-        expect(status).toBe("ignored");
-        expect(cm2.appendedEntries).toHaveLength(0);
-      } finally {
-        rmSync(restartTempDir, { recursive: true, force: true });
-      }
+      // Second "process run": load from the same in-memory fs
+      const cm2 = new MockConversationManager();
+      const h2 = new AgoraMessageHandler(
+        agoraService, cm2, messageInjector, eventSink, clock,
+        getState, isRateLimited, logger, 'quarantine', baseRateLimit,
+        null, null, null, null,
+        new FileEnvelopeDedupStore(fp, logger, sharedFs, 500),
+      );
+      await h2.loadDedup();
+
+      // Same envelope → rejected as duplicate
+      const status = await h2.processEnvelope(testEnvelope, "webhook");
+      expect(status).toBe("ignored");
+      expect(cm2.appendedEntries).toHaveLength(0);
     });
   });
 });

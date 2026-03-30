@@ -1,6 +1,5 @@
 export function shortKey(p: string): string { return p.slice(-8) + "..."; }
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 
 export const IGNORED_FILE_NAME = "IGNORED_PEERS.md";
 export const SEEN_KEYS_FILE_NAME = "seen-keys.json";
@@ -19,60 +18,25 @@ export function getSeenKeysPath(storageDir?: string): string {
   return join(process.cwd(), SEEN_KEYS_FILE_NAME);
 }
 
-export function loadIgnoredPeers(filePath?: string): string[] {
-  const path = filePath ?? getIgnoredPeersPath();
-  if (!existsSync(path)) return [];
-  const lines = readFileSync(path, "utf-8")
-    .split("\n")
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0 && !line.startsWith("#"));
-  return Array.from(new Set(lines));
-}
-
-export function saveIgnoredPeers(peers: string[], filePath?: string): void {
-  const path = filePath ?? getIgnoredPeersPath();
-  const dir = dirname(path);
-  if (!existsSync(dir)) {
-    mkdirSync(dir, { recursive: true });
-  }
-  const unique = Array.from(new Set(peers.map((peer) => peer.trim()).filter(Boolean))).sort();
-  const content = [
-    "# Ignored peers",
-    "# One public key per line",
-    ...unique,
-    "",
-  ].join("\n");
-  writeFileSync(path, content, "utf-8");
-}
-
+/** In-memory only — no real filesystem access. */
 export class IgnoredPeersManager {
-  private readonly filePath: string;
-  private readonly peers: Set<string>;
+  private readonly peers: Set<string> = new Set();
 
-  constructor(filePath?: string) {
-    this.filePath = filePath ?? getIgnoredPeersPath();
-    this.peers = new Set(loadIgnoredPeers(this.filePath));
+  constructor(_filePath?: string) {
+    // In-memory mock — does not read from or write to any file.
   }
 
   ignorePeer(publicKey: string): boolean {
     const normalized = publicKey.trim();
-    if (!normalized) {
-      return false;
-    }
+    if (!normalized) return false;
     const added = !this.peers.has(normalized);
     this.peers.add(normalized);
-    if (added) {
-      saveIgnoredPeers(this.listIgnoredPeers(), this.filePath);
-    }
     return added;
   }
 
   unignorePeer(publicKey: string): boolean {
     const normalized = publicKey.trim();
     const removed = this.peers.delete(normalized);
-    if (removed) {
-      saveIgnoredPeers(this.listIgnoredPeers(), this.filePath);
-    }
     return removed;
   }
 

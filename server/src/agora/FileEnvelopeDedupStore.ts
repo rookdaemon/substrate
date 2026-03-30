@@ -1,4 +1,4 @@
-import { rename, writeFile, readFile, unlink } from "node:fs/promises";
+import type { IFileSystem } from "../substrate/abstractions/IFileSystem";
 import { IEnvelopeDedupStore } from "./IEnvelopeDedupStore";
 import type { ILogger } from "../logging";
 
@@ -26,12 +26,13 @@ export class FileEnvelopeDedupStore implements IEnvelopeDedupStore {
   constructor(
     private readonly filePath: string,
     private readonly logger: ILogger,
+    private readonly fs: IFileSystem,
     private readonly maxSize: number = 500,
   ) {}
 
   async load(): Promise<string[]> {
     try {
-      const content = await readFile(this.filePath, "utf-8");
+      const content = await this.fs.readFile(this.filePath);
       const parsed = JSON.parse(content);
       if (!Array.isArray(parsed) || !parsed.every((v) => typeof v === "string")) {
         this.logger.debug(`[AGORA] agora_seen.json has unexpected shape — starting with empty dedup set`);
@@ -40,7 +41,7 @@ export class FileEnvelopeDedupStore implements IEnvelopeDedupStore {
       return parsed.slice(-this.maxSize);
     } catch (err: unknown) {
       const code = (err as NodeJS.ErrnoException).code;
-      if (code !== "ENOENT") {
+      if (code !== "ENOENT" && !(err instanceof Error && err.message.includes("ENOENT"))) {
         // File present but unreadable / corrupt
         this.logger.debug(`[AGORA] Failed to load agora_seen.json (${code ?? String(err)}) — starting with empty dedup set`);
       }
@@ -77,12 +78,12 @@ export class FileEnvelopeDedupStore implements IEnvelopeDedupStore {
     const capped = ids.length > this.maxSize ? ids.slice(-this.maxSize) : ids;
     const tmpPath = `${this.filePath}.tmp`;
     try {
-      await writeFile(tmpPath, JSON.stringify(capped), "utf-8");
-      await rename(tmpPath, this.filePath);
+      await this.fs.writeFile(tmpPath, JSON.stringify(capped));
+      await this.fs.rename(tmpPath, this.filePath);
     } catch (err: unknown) {
       this.logger.debug(`[AGORA] Failed to persist agora_seen.json: ${err instanceof Error ? err.message : String(err)}`);
       // Best-effort cleanup of the temp file; ignore errors.
-      try { await unlink(tmpPath); } catch { /* ignore */ }
+      try { await this.fs.unlink(tmpPath); } catch { /* ignore */ }
     }
   }
 }

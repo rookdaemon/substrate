@@ -14,5 +14,6 @@ export interface IFileSystem {
   stat(path: string): Promise<FileStat>;
   readdir(path: string): Promise<string[]>;
   copyFile(src: string, dest: string): Promise<void>;
+  rename(src: string, dest: string): Promise<void>;
   unlink(path: string): Promise<void>;
 }

@@ -139,6 +139,17 @@ export class InMemoryFileSystem implements IFileSystem {
     this.files.set(normalizedDest, { content: entry.content, mtimeMs: this.nextMtime++ });
   }
 
+  async rename(src: string, dest: string): Promise<void> {
+    const normalizedSrc = this.normalizePath(src);
+    const normalizedDest = this.normalizePath(dest);
+    const entry = this.files.get(normalizedSrc);
+    if (!entry) {
+      throw new Error(`ENOENT: no such file '${normalizedSrc}'`);
+    }
+    this.files.set(normalizedDest, { content: entry.content, mtimeMs: this.nextMtime++ });
+    this.files.delete(normalizedSrc);
+  }
+
   async unlink(path: string): Promise<void> {
     const normalizedPath = this.normalizePath(path);
     if (!this.files.has(normalizedPath)) {

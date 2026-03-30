@@ -45,6 +45,10 @@ export class NodeFileSystem implements IFileSystem {
     await fs.copyFile(src, dest);
   }
 
+  async rename(src: string, dest: string): Promise<void> {
+    await fs.rename(src, dest);
+  }
+
   async unlink(path: string): Promise<void> {
     await fs.unlink(path);
   }

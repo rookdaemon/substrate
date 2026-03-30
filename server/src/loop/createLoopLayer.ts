@@ -270,7 +270,7 @@ export async function createLoopLayer(
       getIgnoredPeersPath(),
       getSeenKeysPath(),
       flashGate, // F2 gate — null when VertexSessionLauncher is unavailable
-      new FileEnvelopeDedupStore(path.join(config.substratePath, "agora_seen.json"), logger),
+      new FileEnvelopeDedupStore(path.join(config.substratePath, "agora_seen.json"), logger, fs),
       agoraStateStore, // lastSeen anchor for wake polling
     );
 
