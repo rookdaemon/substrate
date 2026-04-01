@@ -483,10 +483,23 @@ export class LoopOrchestrator implements IMessageInjector {
     const r2Halt = this.checkR2Ceiling();
     if (r2Halt) return r2Halt;
 
-    const { dispatch, blockedTaskIds, timeBlockedTasks, snapshot } = await this.ego.dispatchNext();
+    const { dispatch: rawDispatch, blockedTaskIds, timeBlockedTasks, snapshot } = await this.ego.dispatchNext();
 
     for (const { taskId, blockedUntil } of timeBlockedTasks) {
       this.logger.debug(`[SCHEDULER] task skipped — blockedUntil: ${blockedUntil.toISOString()} (task: "${taskId}")`);
+    }
+
+    // Enforce HOLD_UNTIL timestamp in task descriptions before dispatch
+    let dispatch = rawDispatch;
+    if (dispatch) {
+      const holdUntilMatch = dispatch.description?.match(/HOLD_UNTIL:\s*(\d{4}-\d{2}-\d{2}T[\d:.]+Z)/);
+      if (holdUntilMatch) {
+        const holdUntil = new Date(holdUntilMatch[1]);
+        if (holdUntil > this.clock.now()) {
+          this.logger.debug(`[HOLD_UNTIL] cycle ${this.cycleNumber}: task "${dispatch.taskId}" held until ${holdUntil.toISOString()}`);
+          dispatch = null;
+        }
+      }
     }
 
     let result: CycleResult;
