@@ -856,14 +856,15 @@ export class LoopHttpServer {
     Promise.all([
       id.generateDrives(),
       convMdReader ? convMdReader().catch(() => null) : Promise.resolve(null),
-    ]).then(([{ candidates, parseErrors }, convStats]) => {
+      canaryLogger.nextApiCycle(),
+    ]).then(([{ candidates, parseErrors }, convStats, cycle]) => {
       const highPriority = candidates.filter((c) => c.priority === "high");
       const highPriorityConfidence = highPriority.length > 0
         ? Math.round(highPriority.reduce((sum, c) => sum + c.confidence, 0) / highPriority.length)
         : null;
       const record = {
         timestamp: clock.now().toISOString(),
-        cycle: -1, // not a loop cycle — sentinel for API-triggered runs
+        cycle,
         launcher: launcherName,
         candidateCount: candidates.length,
         highPriorityConfidence,

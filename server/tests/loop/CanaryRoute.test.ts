@@ -99,7 +99,7 @@ describe("POST /api/canary/run", () => {
     expect(record.pass).toBe(true);
     expect(record.parseErrors).toBe(0);
     expect(record.highPriorityConfidence).toBe(85);
-    expect(record.cycle).toBe(-1);
+    expect(record.cycle).toBe(0);
 
     // Verify record is appended to canary-log.jsonl
     const content = await fs.readFile(canaryPath);
@@ -127,6 +127,21 @@ describe("POST /api/canary/run", () => {
     expect(record.convMdKb).toBe(4.2);
     expect(typeof record.cPerLine).toBe("number");
     expect(typeof record.cPerKb).toBe("number");
+  });
+
+  it("cycle counter increments across successive runs when counterPath is configured", async () => {
+    const counterPath = "/substrate/canary_api_cycle.json";
+    const loggerWithCounter = new CanaryLogger(fs, canaryPath, undefined, counterPath);
+    server.setCanaryRoute(id, loggerWithCounter, "claude");
+
+    launcher.enqueueSuccess(JSON.stringify({ goalCandidates: [{ title: "G", description: "D", priority: "high", confidence: 80 }] }));
+    const res1 = await post(port, "/api/canary/run");
+    expect(res1.status).toBe(200);
+    expect((res1.body as Record<string, unknown>).cycle).toBe(0);
+
+    // Verify the counter file was persisted
+    const storedCounter = await fs.readFile(counterPath);
+    expect(storedCounter).toBe("0");
   });
 
   it("returns 429 on second call within 55-minute rate limit window", async () => {

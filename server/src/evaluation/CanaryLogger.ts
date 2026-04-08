@@ -48,6 +48,9 @@ export async function readConvMdStats(fs: IFileSystem, convMdPath: string): Prom
  *
  * When `convMdLines` and `convMdKb` are present on the record, derived normalization
  * fields (`cPerLine`, `cPerKb`) and the `postCompaction` flag are computed automatically.
+ *
+ * If `counterPath` is provided, `nextApiCycle()` persists a monotonically-incrementing
+ * counter across substrate restarts for API-triggered canary runs.
  */
 export class CanaryLogger {
   private lastConvMdLines: number | null = null;
@@ -56,7 +59,36 @@ export class CanaryLogger {
     private readonly fs: IFileSystem,
     private readonly filePath: string,
     private readonly lastResultPath?: string,
+    private readonly counterPath?: string,
   ) { }
+
+  /**
+   * Reads the persistent API cycle counter from `counterPath`, increments it,
+   * writes it back, and returns the new value. Starts from 0 on the first call
+   * (when the counter file is absent or unreadable).
+   *
+   * Falls back to 0 on every call when `counterPath` is not configured.
+   */
+  async nextApiCycle(): Promise<number> {
+    if (!this.counterPath) {
+      return 0;
+    }
+    let current = -1;
+    try {
+      const raw = await this.fs.readFile(this.counterPath);
+      const parsed = parseInt(raw.trim(), 10);
+      if (!isNaN(parsed) && parsed >= 0) {
+        current = parsed;
+      }
+    } catch {
+      // Counter file absent — treat as -1 so the first incremented value is 0.
+    }
+    const next = current + 1;
+    const dir = path.dirname(this.counterPath);
+    await this.fs.mkdir(dir, { recursive: true });
+    await this.fs.writeFile(this.counterPath, String(next));
+    return next;
+  }
 
   /**
    * Appends the record to the log file, enriching it with computed normalization fields

@@ -152,7 +152,8 @@ export async function createLoopLayer(
 
   const canaryLogPath = path.resolve(config.substratePath, "..", "data", "canary-log.jsonl");
   const canaryLastResultPath = path.resolve(config.substratePath, "canary_last_result.json");
-  const canaryLogger = new CanaryLogger(fs, canaryLogPath, canaryLastResultPath);
+  const canaryCounterPath = path.resolve(config.substratePath, "canary_api_cycle.json");
+  const canaryLogger = new CanaryLogger(fs, canaryLogPath, canaryLastResultPath, canaryCounterPath);
 
   // Determine the effective launcher name for canary observability records
   const idLauncherName =
