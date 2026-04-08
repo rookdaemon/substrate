@@ -7,6 +7,7 @@ import { PermissionChecker } from "../permissions";
 import { PromptBuilder } from "../prompts/PromptBuilder";
 import { ISessionLauncher, ProcessLogEntry } from "../claude/ISessionLauncher";
 import { extractJson } from "../parsers/extractJson";
+import { PlanParser } from "../parsers/PlanParser";
 import { AgentRole } from "../types";
 import { TaskClassifier } from "../TaskClassifier";
 import { SuperegoFindingTracker, Finding } from "./SuperegoFindingTracker";
@@ -33,7 +34,7 @@ export interface Proposal {
 }
 
 /** Governed domains whose proposals require Superego approval. */
-const GOVERNED_DOMAINS = new Set(["HABITS", "SECURITY"]);
+const GOVERNED_DOMAINS = new Set(["HABITS", "SECURITY", "PLAN"]);
 
 /**
  * Patterns that indicate an INVISIBLE-OUTPUT BYPASS attempt:
@@ -213,6 +214,7 @@ export class Superego {
     const targetMap: Record<string, SubstrateFileType> = {
       HABITS: SubstrateFileType.HABITS,
       SECURITY: SubstrateFileType.SECURITY,
+      PLAN: SubstrateFileType.PLAN,
     };
 
     for (let i = 0; i < proposals.length; i++) {
@@ -235,10 +237,17 @@ export class Superego {
               if (msg.includes("ENOENT")) return "";
               throw err;
             });
-          const merged = existing
-            ? `${existing.trimEnd()}\n\n---\n\n${proposal.content}`
-            : proposal.content;
+          let merged: string;
+          if (fileType === SubstrateFileType.PLAN) {
+            merged = PlanParser.appendTasksToExistingPlan(existing, [proposal.content]);
+          } else {
+            merged = existing
+              ? `${existing.trimEnd()}\n\n---\n\n${proposal.content}`
+              : proposal.content;
+          }
           await this.writer.write(fileType, merged);
+        } else {
+          await this.logAudit(`Proposal for ${proposal.target} approved but no target handler — dropped`);
         }
       } else {
         await this.logAudit(`Proposal for ${proposal.target} rejected: ${evaluation.reason}`);
