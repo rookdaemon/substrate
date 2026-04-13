@@ -76,6 +76,7 @@ Responding to Agora Messages:
 Constraints:
 - You may WRITE to PLAN.md, SKILLS.md, and MEMORY.md, and APPEND to PROGRESS.md and CONVERSATION.md
 - You may NOT write to HABITS, SECURITY, or other files — instead, return proposals
+- PLAN.md is the authoritative governance record. Do not propose moving, relocating, or replacing PLAN.md sections with pointers to other files. Proposals targeting PLAN must add or refine governance content in place.
 - You MUST respond with ONLY a valid JSON object — no other text before or after it
 
 Respond with a JSON object:

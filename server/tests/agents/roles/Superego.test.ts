@@ -202,6 +202,99 @@ describe("Superego agent", () => {
         expect(launcher.getLaunches()).toHaveLength(1);
       });
     });
+
+    describe("authority inversion pre-filter", () => {
+      it("pre-rejects subtractive PLAN proposal without invoking LLM", async () => {
+        const evaluations = await superego.evaluateProposals([
+          {
+            target: "PLAN",
+            content: "Move completed tasks to PROGRESS.md to keep PLAN lean.",
+          },
+        ]);
+
+        expect(evaluations).toHaveLength(1);
+        expect(evaluations[0].approved).toBe(false);
+        expect(evaluations[0].reason).toContain("AUTHORITY INVERSION (subtractive)");
+        // LLM must not have been called
+        expect(launcher.getLaunches()).toHaveLength(0);
+      });
+
+      it("pre-rejects reference-replacing PLAN proposal without invoking LLM", async () => {
+        const evaluations = await superego.evaluateProposals([
+          {
+            target: "PLAN",
+            content:
+              "Replace the architecture section with a pointer to memory/arch.md.",
+          },
+        ]);
+
+        expect(evaluations).toHaveLength(1);
+        expect(evaluations[0].approved).toBe(false);
+        expect(evaluations[0].reason).toContain("AUTHORITY INVERSION (reference-replacing)");
+        expect(launcher.getLaunches()).toHaveLength(0);
+      });
+
+      it("logs the AUTHORITY INVERSION rejection to PROGRESS via applyProposals", async () => {
+        const proposals = [
+          {
+            target: "PLAN",
+            content: "PLAN.md is too long — move background context to memory/.",
+          },
+        ];
+
+        const evaluations = await superego.evaluateProposals(proposals);
+        await superego.applyProposals(proposals, evaluations);
+
+        const progress = await fs.readFile("/substrate/PROGRESS.md");
+        expect(progress).toContain("[SUPEREGO] Proposal for PLAN rejected:");
+        expect(progress).toContain("AUTHORITY INVERSION");
+      });
+
+      it("passes additive PLAN proposals through to LLM", async () => {
+        const claudeResponse = JSON.stringify({
+          proposalEvaluations: [{ approved: true, reason: "Good addition" }],
+        });
+        launcher.enqueueSuccess(claudeResponse);
+
+        const evaluations = await superego.evaluateProposals([
+          {
+            target: "PLAN",
+            content: "- [ ] Implement exponential backoff for rate-limit retries",
+          },
+        ]);
+
+        expect(evaluations).toHaveLength(1);
+        expect(evaluations[0].approved).toBe(true);
+        // LLM was called for the legitimate proposal
+        expect(launcher.getLaunches()).toHaveLength(1);
+      });
+
+      it("pre-rejects inverted proposal while passing legitimate proposal to LLM", async () => {
+        const claudeResponse = JSON.stringify({
+          proposalEvaluations: [{ approved: true, reason: "Looks good" }],
+        });
+        launcher.enqueueSuccess(claudeResponse);
+
+        const evaluations = await superego.evaluateProposals([
+          {
+            target: "PLAN",
+            content: "Move old milestones out of PLAN to PROGRESS.md.",
+          },
+          {
+            target: "HABITS",
+            content: "Review task completion habits daily",
+          },
+        ]);
+
+        expect(evaluations).toHaveLength(2);
+        // Inverted PLAN proposal pre-rejected
+        expect(evaluations[0].approved).toBe(false);
+        expect(evaluations[0].reason).toContain("AUTHORITY INVERSION");
+        // HABITS proposal approved by LLM
+        expect(evaluations[1].approved).toBe(true);
+        expect(launcher.getLaunches()).toHaveLength(1);
+      });
+    });
   });
 
   describe("logAudit", () => {

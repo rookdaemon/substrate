@@ -13,6 +13,7 @@ import { TaskClassifier } from "../TaskClassifier";
 import { SuperegoFindingTracker, Finding } from "./SuperegoFindingTracker";
 import { RateLimitError } from "../../loop/RateLimitError";
 import { isRateLimitText } from "../../loop/rateLimitParser";
+import { detectAuthorityInversion } from "../parsers/AuthorityInversionDetector";
 
 export type { Finding };
 
@@ -139,6 +140,21 @@ export class Superego {
             'SCOPE_BYPASS_ATTEMPT: governance scope is determined by domain/target, not by output type. ' +
             'Proposals claiming "internal reasoning," "no file modifications," or "cognitive-only" scope ' +
             'are evaluated on the same criteria as all other proposals.',
+        });
+      }
+    }
+
+    // Pre-filter: AUTHORITY_INVERSION — subtractive or reference-replacing PLAN proposals
+    // are rejected without reaching LLM evaluation so the rejection is logged consistently
+    // and ProgressRejectionReader can pick it up.
+    for (let i = 0; i < proposals.length; i++) {
+      if (preRejected.has(i)) continue;
+      const proposal = proposals[i];
+      const detection = detectAuthorityInversion(proposal);
+      if (detection.inverted) {
+        preRejected.set(i, {
+          approved: false,
+          reason: detection.reason!,
         });
       }
     }
