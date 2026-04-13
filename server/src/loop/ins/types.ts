@@ -41,6 +41,15 @@ export interface INSResult {
   actions: INSAction[];
 }
 
+/**
+ * Risk tier for compaction actions — differentiates authorization requirements by file type.
+ *
+ * - `low`:    CONVERSATION.md, PROGRESS.md — low cost, mostly recoverable. Ego self-authorized.
+ * - `medium`: MEMORY.md, memory/ subdirectory — higher cost, selective loss hard to detect. Peer review required.
+ * - `high`:   PLAN.md — dangerous; overwrite incidents tracked separately. Stefan authorization required.
+ */
+export type CompactionRiskTier = 'low' | 'medium' | 'high';
+
 export interface INSAction {
   type: "compaction" | "archive_tag" | "compliance_flag";
   target: string;
@@ -51,20 +60,58 @@ export interface INSAction {
   patternId?: string;
   cyclesCount?: number;
   firstSeenCycle?: number;
+  /**
+   * Compaction risk tier (compaction actions only).
+   * Determines who must authorize the compaction before it is executed.
+   */
+  riskTier?: CompactionRiskTier;
+  /**
+   * When true, this compliance flag must be routed to Stefan (always) and peer agents for
+   * independent verification. Must not be resolved by Ego alone — Ego acknowledgment is
+   * not sufficient for patterns flagged requiresStefanReview=true.
+   *
+   * Set on all compliance_flag actions to prevent SUPEREGO-DIAGNOSIS CAPTURE / INS bypass.
+   */
+  requiresStefanReview?: boolean;
 }
 
 export interface INSConfig {
-  /** CONVERSATION.md line threshold for compaction flag (default: 80) */
+  /**
+   * CONVERSATION.md line threshold for compaction flag (default: 80).
+   * @stefanGated — not adjustable via Ego or peer proposal.
+   */
   conversationLineThreshold: number;
-  /** PROGRESS.md line threshold for compaction flag (default: 200) */
+  /**
+   * PROGRESS.md line threshold for compaction flag (default: 200).
+   * @stefanGated — not adjustable via Ego or peer proposal.
+   */
   progressLineThreshold: number;
-  /** MEMORY.md character threshold for summary flag (default: 120000 ≈ 30K tokens) */
+  /**
+   * PLAN.md line threshold for compaction flag (default: 150).
+   * @stefanGated — not adjustable via Ego or peer proposal.
+   * Risk tier: high — PLAN.md overwrite incidents tracked separately.
+   */
+  planLineThreshold: number;
+  /**
+   * MEMORY.md character threshold for summary flag (default: 120000 ≈ 30K tokens).
+   * @stefanGated — not adjustable via Ego or peer proposal.
+   */
   memoryCharThreshold: number;
-  /** Total line count across all files in memory/ subdirectory before compaction flag (default: 500) */
+  /**
+   * Total line count across all files in memory/ subdirectory before compaction flag (default: 500).
+   * @stefanGated — not adjustable via Ego or peer proposal.
+   */
   memorySubdirectoryLineThreshold: number;
-  /** Consecutive partial results with same precondition before flagging (default: 3) */
+  /**
+   * Consecutive partial results with same precondition before flagging (default: 3).
+   * @stefanGated — not adjustable via Ego or peer proposal.
+   * Threshold-adjustment proposals for this value are a bypass class analogous to GC-208.
+   */
   consecutivePartialThreshold: number;
-  /** Days since last modified before a SUPERSEDED file is archive-eligible (default: 30) */
+  /**
+   * Days since last modified before a SUPERSEDED file is archive-eligible (default: 30).
+   * @stefanGated — not adjustable via Ego or peer proposal.
+   */
   archiveAgeDays: number;
   /** Path to compliance state directory */
   statePath: string;
@@ -76,6 +123,7 @@ export function defaultINSConfig(substratePath: string): INSConfig {
   return {
     conversationLineThreshold: 80,
     progressLineThreshold: 200,
+    planLineThreshold: 150,
     memoryCharThreshold: 120_000, // ~30K tokens at 4 chars/token
     memorySubdirectoryLineThreshold: 500,
     consecutivePartialThreshold: 3,
@@ -83,6 +131,45 @@ export function defaultINSConfig(substratePath: string): INSConfig {
     statePath: `${substratePath}/../.ins/state`,
     memoryPath: `${substratePath}/memory`,
   };
+}
+
+/**
+ * Stefan-gated threshold governance: the numeric threshold values defined in defaultINSConfig
+ * (conversationLineThreshold, progressLineThreshold, planLineThreshold, memoryCharThreshold,
+ * memorySubdirectoryLineThreshold, consecutivePartialThreshold, archiveAgeDays) are locked.
+ *
+ * These values must not be modified via Ego or peer proposal. Threshold-adjustment proposals
+ * are a bypass class analogous to THRESHOLD-LEGITIMACY CHALLENGE (GC-208) — adjusting thresholds
+ * is structurally equivalent to disabling the check they gate.
+ *
+ * Threshold changes require explicit Stefan authorization and a tracked GitHub issue.
+ */
+export const INS_THRESHOLD_GOVERNANCE = {
+  conversationLineThreshold: 80,
+  progressLineThreshold: 200,
+  planLineThreshold: 150,
+  memoryCharThreshold: 120_000,
+  memorySubdirectoryLineThreshold: 500,
+  consecutivePartialThreshold: 3,
+  archiveAgeDays: 30,
+} as const;
+
+/**
+ * Assert that no Stefan-gated threshold in the provided config differs from the locked defaults.
+ * Throws if any threshold has been modified outside of Stefan authorization.
+ */
+export function assertINSThresholdsAreStefanGated(config: INSConfig): void {
+  const keys = Object.keys(INS_THRESHOLD_GOVERNANCE) as Array<keyof typeof INS_THRESHOLD_GOVERNANCE>;
+  for (const key of keys) {
+    const expected = INS_THRESHOLD_GOVERNANCE[key];
+    const actual = config[key];
+    if (actual !== expected) {
+      throw new Error(
+        `INS threshold governance violation: "${key}" is Stefan-gated and must not be changed via Ego or peer proposal. ` +
+        `Expected ${expected}, got ${actual}. Threshold changes require explicit Stefan authorization.`,
+      );
+    }
+  }
 }
 
 /** Persisted compliance state — Phase 3 schema */
