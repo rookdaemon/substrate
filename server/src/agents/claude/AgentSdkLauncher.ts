@@ -91,7 +91,7 @@ export class AgentSdkLauncher implements ISessionLauncher {
     processTracker?: ProcessTracker,
     mcpServers?: Record<string, { type: string; url: string }>,
   ) {
-    this.model = model ?? "sonnet";
+    this.model = model ?? "claude-sonnet-4-6";
     this.logger = logger ?? noopLogger;
     this.processTracker = processTracker ?? null;
     this.mcpServers = mcpServers ?? {};

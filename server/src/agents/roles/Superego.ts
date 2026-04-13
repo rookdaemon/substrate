@@ -7,16 +7,14 @@ import { PermissionChecker } from "../permissions";
 import { PromptBuilder } from "../prompts/PromptBuilder";
 import { ISessionLauncher, ProcessLogEntry } from "../claude/ISessionLauncher";
 import { extractJson } from "../parsers/extractJson";
+import { PlanParser } from "../parsers/PlanParser";
 import { AgentRole } from "../types";
 import { TaskClassifier } from "../TaskClassifier";
-import { SuperegoFindingTracker } from "./SuperegoFindingTracker";
+import { SuperegoFindingTracker, Finding } from "./SuperegoFindingTracker";
 import { RateLimitError } from "../../loop/RateLimitError";
 import { isRateLimitText } from "../../loop/rateLimitParser";
 
-export interface Finding {
-  severity: "info" | "warning" | "critical";
-  message: string;
-}
+export type { Finding };
 
 export interface ProposalEvaluation {
   approved: boolean;
@@ -36,7 +34,7 @@ export interface Proposal {
 }
 
 /** Governed domains whose proposals require Superego approval. */
-const GOVERNED_DOMAINS = new Set(["HABITS", "SECURITY"]);
+const GOVERNED_DOMAINS = new Set(["HABITS", "SECURITY", "PLAN"]);
 
 /**
  * Patterns that indicate an INVISIBLE-OUTPUT BYPASS attempt:
@@ -216,6 +214,7 @@ export class Superego {
     const targetMap: Record<string, SubstrateFileType> = {
       HABITS: SubstrateFileType.HABITS,
       SECURITY: SubstrateFileType.SECURITY,
+      PLAN: SubstrateFileType.PLAN,
     };
 
     for (let i = 0; i < proposals.length; i++) {
@@ -238,10 +237,17 @@ export class Superego {
               if (msg.includes("ENOENT")) return "";
               throw err;
             });
-          const merged = existing
-            ? `${existing.trimEnd()}\n\n---\n\n${proposal.content}`
-            : proposal.content;
+          let merged: string;
+          if (fileType === SubstrateFileType.PLAN) {
+            merged = PlanParser.appendTasksToExistingPlan(existing, [proposal.content]);
+          } else {
+            merged = existing
+              ? `${existing.trimEnd()}\n\n---\n\n${proposal.content}`
+              : proposal.content;
+          }
           await this.writer.write(fileType, merged);
+        } else {
+          await this.logAudit(`Proposal for ${proposal.target} approved but no target handler — dropped`);
         }
       } else {
         await this.logAudit(`Proposal for ${proposal.target} rejected: ${evaluation.reason}`);
@@ -250,7 +256,10 @@ export class Superego {
   }
 
   /**
-   * Process findings to detect and escalate recurring critical issues.
+   * Process findings to detect and escalate recurring issues.
+   * CRITICAL findings escalate after 3 consecutive occurrences (CONSECUTIVE_THRESHOLD).
+   * WARNING findings escalate after 5 consecutive occurrences (WARNING_THRESHOLD).
+   * INFO and other severities pass through unchanged.
    * Returns filtered list of findings (excluding escalated ones).
    */
   private async processFindings(
@@ -261,8 +270,8 @@ export class Superego {
     const nonEscalatedFindings: Finding[] = [];
 
     for (const finding of findings) {
-      // Only track CRITICAL findings for escalation
-      if (finding.severity !== "critical") {
+      // Track CRITICAL and WARNING findings for escalation; pass INFO through unchanged
+      if (finding.severity !== "critical" && finding.severity !== "warning") {
         nonEscalatedFindings.push(finding);
         continue;
       }

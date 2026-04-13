@@ -21,7 +21,7 @@ describe("resolveConfig", () => {
     expect(config.workingDirectory).toBe("/xdg/data/substrate");
     expect(config.backupPath).toBe("/xdg/data/substrate-backups");
     expect(config.port).toBe(3000);
-    expect(config.model).toBe("sonnet");
+    expect(config.model).toBe("claude-sonnet-4-6");
   });
 
   it("loads from explicit configPath", async () => {
@@ -689,7 +689,7 @@ describe("resolveConfig", () => {
         env: {},
       });
 
-      expect(config.model).toBe("sonnet");
+      expect(config.model).toBe("claude-sonnet-4-6");
       expect(config.models).toEqual({ gemini: { model: "gemini-2.5-pro" } });
     });
 
@@ -713,7 +713,7 @@ describe("resolveConfig", () => {
 
       expect(config.model).toBe("legacy-model");
       expect(config.strategicModel).toBe("claude-opus-4-5");
-      expect(config.tacticalModel).toBe("sonnet");
+      expect(config.tacticalModel).toBe("claude-sonnet-4-6");
     });
 
     it("preserves models map in resolved config", async () => {

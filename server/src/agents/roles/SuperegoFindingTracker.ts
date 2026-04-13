@@ -1,9 +1,15 @@
-import * as crypto from "crypto";
 import { IFileSystem } from "../../substrate/abstractions/IFileSystem";
 import { ILogger } from "../../logging";
 
 export interface Finding {
   severity: "info" | "warning" | "critical";
+  /** Stable UPPER_SNAKE_CASE identifier for the finding type. Must NOT include
+   *  dynamic data (cycle numbers, GC-NNN, etc.) — the category is the key used
+   *  to accumulate history across cycles and reach the escalation threshold.
+   *  Valid values: ESCALATE_FILE_EMPTY, CLAUDE_BOUNDARIES_CONFLICT,
+   *  SGAB_RECLASSIFICATION, VALUES_RECRUITMENT, SOURCE_CODE_BYPASS,
+   *  AUDIT_FAILURE, UNKNOWN_FINDING (and any domain-specific additions). */
+  category: string;
   message: string;
 }
 
@@ -16,57 +22,88 @@ export interface EscalationInfo {
   lastOccurrenceCycle: number;
 }
 
+/** Internal representation of a single finding occurrence. */
+interface OccurrenceRecord {
+  cycle: number;
+  /** Unix timestamp in milliseconds (Date.now()). A value of 0 is a sentinel
+   *  for legacy entries loaded from pre-Fix-2 state files that stored only
+   *  cycle numbers; these are treated as having an unknown (infinitely old)
+   *  timestamp and will not contribute to gap-based escalation decisions. */
+  ts: number;
+}
+
 export class SuperegoFindingTracker {
-  private findingHistory: Map<string, number[]> = new Map();
+  private findingHistory: Map<string, OccurrenceRecord[]> = new Map();
   private readonly CONSECUTIVE_THRESHOLD = 3;
+  private readonly WARNING_THRESHOLD = 5;
+  /**
+   * Maximum time gap (ms) between any two consecutive occurrences for them to
+   * be considered part of the same escalation series.  30 days covers any
+   * realistic audit-interval variation, including extended Stefan-offline
+   * periods, while still detecting stale-then-recurred findings correctly.
+   */
+  private readonly GAP_THRESHOLD_MS = 30 * 24 * 60 * 60 * 1000;
 
   /**
-   * Generate a stable signature for a finding based on severity and message content.
-   * Uses first 200 chars of message to balance uniqueness with minor wording variations.
+   * Generate a stable signature for a finding based on severity and category.
+   * Returns a human-readable key of the form "severity:CATEGORY_KEY".
+   *
+   * Using category (not message content) ensures the signature is stable across
+   * cycles even when the message text includes dynamic data (cycle numbers,
+   * timestamps, GC-NNN references).  A stable key is required for the
+   * CONSECUTIVE_THRESHOLD escalation gate to function correctly.
    */
   generateSignature(finding: Finding): string {
-    const content = finding.severity + finding.message.substring(0, 200);
-    return crypto.createHash("sha256").update(content).digest("hex").substring(0, 16);
+    return `${finding.severity}:${finding.category}`;
   }
 
   /**
    * Track a finding occurrence at the given cycle number.
-   * Returns true if this finding should be escalated (3+ consecutive occurrences).
+   * Returns true if this finding should be escalated (threshold consecutive
+   * occurrences within the gap window).
+   *
+   * @param timestamp  Optional Unix ms timestamp for this occurrence.  Defaults
+   *                   to Date.now().  Inject an explicit value in tests.
    */
-  track(finding: Finding, cycleNumber: number): boolean {
+  track(finding: Finding, cycleNumber: number, timestamp?: number): boolean {
+    const ts = timestamp ?? Date.now();
     const signature = this.generateSignature(finding);
-    const history = this.findingHistory.get(signature) || [];
-    
-    // Add current cycle to history
-    history.push(cycleNumber);
+    const history = this.findingHistory.get(signature) ?? [];
+
+    history.push({ cycle: cycleNumber, ts });
     this.findingHistory.set(signature, history);
 
-    // Check if should escalate
     return this.shouldEscalate(signature);
   }
 
   /**
-   * Check if a finding has occurred in 3+ consecutive audit cycles.
-   * Consecutive means the cycles form an unbroken sequence when sorted.
+   * Check if a finding has reached its escalation threshold with all
+   * consecutive occurrences within the 30-day gap window.
+   *
+   * CRITICAL findings escalate after CONSECUTIVE_THRESHOLD (3) occurrences.
+   * WARNING findings escalate after WARNING_THRESHOLD (5) occurrences.
    */
   shouldEscalate(findingId: string): boolean {
     const history = this.findingHistory.get(findingId);
-    if (!history || history.length < this.CONSECUTIVE_THRESHOLD) {
-      return false;
-    }
+    if (!history) return false;
 
-    // Check if last 3 occurrences are consecutive
-    const sorted = [...history].sort((a, b) => a - b);
-    const last3 = sorted.slice(-this.CONSECUTIVE_THRESHOLD);
-    
-    // Check if they form a consecutive sequence
-    for (let i = 1; i < last3.length; i++) {
-      // Allow for the audit interval - findings should appear every N cycles
-      // We consider them consecutive if they're reasonably close (within 2x normal interval)
-      const gap = last3[i] - last3[i - 1];
-      if (gap > 50) { // Max reasonable gap between audits (even with interval of 20-40)
-        return false;
-      }
+    const threshold = findingId.startsWith("warning:")
+      ? this.WARNING_THRESHOLD
+      : this.CONSECUTIVE_THRESHOLD;
+
+    if (history.length < threshold) return false;
+
+    // Sort by timestamp; examine the most recent `threshold` occurrences.
+    const sorted = [...history].sort((a, b) => a.ts - b.ts);
+    const lastN = sorted.slice(-threshold);
+
+    // All consecutive pairs must be within GAP_THRESHOLD_MS.
+    // ts=0 is a legacy sentinel (unknown timestamp) — treat as infinitely old.
+    for (let i = 1; i < lastN.length; i++) {
+      const prevTs = lastN[i - 1].ts;
+      const currTs = lastN[i].ts;
+      if (prevTs === 0 || currTs === 0) return false;
+      if (currTs - prevTs > this.GAP_THRESHOLD_MS) return false;
     }
 
     return true;
@@ -78,20 +115,26 @@ export class SuperegoFindingTracker {
   getEscalationInfo(finding: Finding): EscalationInfo | null {
     const signature = this.generateSignature(finding);
     const history = this.findingHistory.get(signature);
-    
-    if (!history || history.length < this.CONSECUTIVE_THRESHOLD) {
+
+    const threshold =
+      finding.severity === "warning"
+        ? this.WARNING_THRESHOLD
+        : this.CONSECUTIVE_THRESHOLD;
+
+    if (!history || history.length < threshold) {
       return null;
     }
 
-    const sorted = [...history].sort((a, b) => a - b);
-    
+    const sorted = [...history].sort((a, b) => a.ts - b.ts);
+    const cycles = sorted.map((r) => r.cycle);
+
     return {
       findingId: signature,
       severity: finding.severity,
       message: finding.message,
-      cycles: sorted,
-      firstDetectedCycle: sorted[0],
-      lastOccurrenceCycle: sorted[sorted.length - 1],
+      cycles,
+      firstDetectedCycle: cycles[0],
+      lastOccurrenceCycle: cycles[cycles.length - 1],
     };
   }
 
@@ -110,22 +153,31 @@ export class SuperegoFindingTracker {
   }
 
   /**
-   * Get history for a specific finding (for testing/debugging).
+   * Get cycle-number history for a specific finding (for testing/debugging).
+   * Returns cycle numbers in insertion order.
    */
   getFindingHistory(findingId: string): number[] | undefined {
-    return this.findingHistory.get(findingId);
+    return this.findingHistory.get(findingId)?.map((r) => r.cycle);
   }
 
   /**
    * Serialize tracker state to a JSON file for persistence across restarts.
+   * Stores full OccurrenceRecord objects (cycle + ts) so gap detection
+   * survives restart.
    */
   async save(filePath: string, fs: IFileSystem): Promise<void> {
-    const data = JSON.stringify(Object.fromEntries(this.findingHistory));
-    await fs.writeFile(filePath, data);
+    const data: Record<string, OccurrenceRecord[]> = {};
+    for (const [key, records] of this.findingHistory) {
+      data[key] = records;
+    }
+    await fs.writeFile(filePath, JSON.stringify(data));
   }
 
   /**
    * Deserialize tracker state from a JSON file.
+   * Handles two serialization formats:
+   *   - Legacy (pre-Fix-2): { key: number[] }  — cycle numbers only; ts set to 0 sentinel.
+   *   - Current (Fix-2+):   { key: OccurrenceRecord[] }  — { cycle, ts } objects.
    * Returns a fresh tracker if the file does not exist or is corrupted.
    */
   static async load(filePath: string, fs: IFileSystem, logger?: ILogger): Promise<SuperegoFindingTracker> {
@@ -135,8 +187,29 @@ export class SuperegoFindingTracker {
       const parsed: unknown = JSON.parse(content);
       if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)) {
         for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
-          if (Array.isArray(value) && value.every((v) => typeof v === "number")) {
-            tracker.findingHistory.set(key, value as number[]);
+          if (!Array.isArray(value)) continue;
+
+          if (value.every((v) => typeof v === "number")) {
+            // Legacy format: plain cycle-number array — convert with ts=0 sentinel.
+            // ts=0 prevents false escalation on stale entries (gap check returns false
+            // whenever a sentinel is encountered).
+            tracker.findingHistory.set(
+              key,
+              (value as number[]).map((cycle) => ({ cycle, ts: 0 }))
+            );
+          } else if (
+            value.every(
+              (v) =>
+                v !== null &&
+                typeof v === "object" &&
+                "cycle" in v &&
+                "ts" in v &&
+                typeof (v as Record<string, unknown>).cycle === "number" &&
+                typeof (v as Record<string, unknown>).ts === "number"
+            )
+          ) {
+            // Current format: OccurrenceRecord array.
+            tracker.findingHistory.set(key, value as OccurrenceRecord[]);
           }
         }
       }

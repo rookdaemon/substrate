@@ -88,14 +88,15 @@ describe("ROLE_PERMISSIONS", () => {
     ]);
   });
 
-  it("gives Superego write access only to HABITS and SECURITY", () => {
+  it("gives Superego write access to HABITS, SECURITY, and PLAN", () => {
     const perms = ROLE_PERMISSIONS[AgentRole.SUPEREGO];
     const writeFiles = perms
       .filter((p) => p.accessLevel === FileAccessLevel.WRITE)
       .map((p) => p.fileType);
     expect(writeFiles).toContain(SubstrateFileType.HABITS);
     expect(writeFiles).toContain(SubstrateFileType.SECURITY);
-    expect(writeFiles).toHaveLength(2);
+    expect(writeFiles).toContain(SubstrateFileType.PLAN);
+    expect(writeFiles).toHaveLength(3);
   });
 
   it("gives Id read access to ID, VALUES, PLAN, PROGRESS, SKILLS, MEMORY", () => {
@@ -152,7 +153,7 @@ describe("PermissionChecker", () => {
     });
 
     it("returns false when role lacks WRITE permission", () => {
-      expect(checker.canWrite(AgentRole.SUPEREGO, SubstrateFileType.PLAN)).toBe(false);
+      expect(checker.canWrite(AgentRole.SUPEREGO, SubstrateFileType.CONVERSATION)).toBe(false);
     });
 
     it("Subconscious can write PLAN and SKILLS", () => {
@@ -203,8 +204,8 @@ describe("PermissionChecker", () => {
     });
 
     it("throws when not permitted", () => {
-      expect(() => checker.assertCanWrite(AgentRole.SUPEREGO, SubstrateFileType.PLAN)).toThrow(
-        "SUPEREGO does not have WRITE access to PLAN"
+      expect(() => checker.assertCanWrite(AgentRole.SUPEREGO, SubstrateFileType.CONVERSATION)).toThrow(
+        "SUPEREGO does not have WRITE access to CONVERSATION"
       );
     });
   });

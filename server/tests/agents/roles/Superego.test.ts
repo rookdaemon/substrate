@@ -53,8 +53,8 @@ describe("Superego agent", () => {
     it("sends all substrate context to Claude and parses GovernanceReport", async () => {
       const claudeResponse = JSON.stringify({
         findings: [
-          { severity: "info", message: "System looks healthy" },
-          { severity: "warning", message: "Plan could be more specific" },
+          { severity: "info", category: "AUDIT_FAILURE", message: "System looks healthy" },
+          { severity: "warning", category: "UNKNOWN_FINDING", message: "Plan could be more specific" },
         ],
         proposalEvaluations: [],
         summary: "Overall good shape",
@@ -219,8 +219,8 @@ describe("Superego agent", () => {
       const tracker = new SuperegoFindingTracker();
       const claudeResponse = JSON.stringify({
         findings: [
-          { severity: "warning", message: "Minor issue" },
-          { severity: "info", message: "FYI message" },
+          { severity: "warning", category: "UNKNOWN_FINDING", message: "Minor issue" },
+          { severity: "info", category: "UNKNOWN_FINDING", message: "FYI message" },
         ],
         proposalEvaluations: [],
         summary: "OK",
@@ -238,7 +238,7 @@ describe("Superego agent", () => {
       const tracker = new SuperegoFindingTracker();
       const claudeResponse = JSON.stringify({
         findings: [
-          { severity: "critical", message: "Security vulnerability detected" },
+          { severity: "critical", category: "CLAUDE_BOUNDARIES_CONFLICT", message: "Security vulnerability detected" },
         ],
         proposalEvaluations: [],
         summary: "Critical issue",
@@ -257,7 +257,7 @@ describe("Superego agent", () => {
       const tracker = new SuperegoFindingTracker();
       const claudeResponse = JSON.stringify({
         findings: [
-          { severity: "critical", message: "Security vulnerability detected" },
+          { severity: "critical", category: "CLAUDE_BOUNDARIES_CONFLICT", message: "Security vulnerability detected" },
         ],
         proposalEvaluations: [],
         summary: "Critical issue",
@@ -278,7 +278,7 @@ describe("Superego agent", () => {
       const tracker = new SuperegoFindingTracker();
       const claudeResponse = JSON.stringify({
         findings: [
-          { severity: "critical", message: "Security vulnerability detected" },
+          { severity: "critical", category: "CLAUDE_BOUNDARIES_CONFLICT", message: "Security vulnerability detected" },
         ],
         proposalEvaluations: [],
         summary: "Critical issue",
@@ -317,7 +317,7 @@ describe("Superego agent", () => {
       for (let i = 0; i < 3; i++) {
         launcher.enqueueSuccess(JSON.stringify({
           findings: [
-            { severity: "critical", message: "First critical issue" },
+            { severity: "critical", category: "ESCALATE_FILE_EMPTY", message: "First critical issue" },
           ],
           proposalEvaluations: [],
           summary: "Issue 1",
@@ -329,7 +329,7 @@ describe("Superego agent", () => {
       for (let i = 0; i < 3; i++) {
         launcher.enqueueSuccess(JSON.stringify({
           findings: [
-            { severity: "critical", message: "Second critical issue" },
+            { severity: "critical", category: "AUDIT_FAILURE", message: "Second critical issue" },
           ],
           proposalEvaluations: [],
           summary: "Issue 2",
@@ -348,7 +348,7 @@ describe("Superego agent", () => {
       const tracker = new SuperegoFindingTracker();
       const claudeResponse = JSON.stringify({
         findings: [
-          { severity: "critical", message: "Security vulnerability detected" },
+          { severity: "critical", category: "CLAUDE_BOUNDARIES_CONFLICT", message: "Security vulnerability detected" },
         ],
         proposalEvaluations: [],
         summary: "Critical issue",
@@ -379,7 +379,7 @@ describe("Superego agent", () => {
       for (let i = 0; i < 2; i++) {
         launcher.enqueueSuccess(JSON.stringify({
           findings: [
-            { severity: "critical", message: "Recurring issue" },
+            { severity: "critical", category: "SOURCE_CODE_BYPASS", message: "Recurring issue" },
           ],
           proposalEvaluations: [],
           summary: "Issues",
@@ -390,9 +390,9 @@ describe("Superego agent", () => {
       // Third occurrence with multiple findings
       launcher.enqueueSuccess(JSON.stringify({
         findings: [
-          { severity: "critical", message: "Recurring issue" },
-          { severity: "critical", message: "New critical issue" },
-          { severity: "warning", message: "A warning" },
+          { severity: "critical", category: "SOURCE_CODE_BYPASS", message: "Recurring issue" },
+          { severity: "critical", category: "SGAB_RECLASSIFICATION", message: "New critical issue" },
+          { severity: "warning", category: "UNKNOWN_FINDING", message: "A warning" },
         ],
         proposalEvaluations: [],
         summary: "Multiple issues",
@@ -410,7 +410,7 @@ describe("Superego agent", () => {
     it("works without tracker and cycleNumber (backward compatibility)", async () => {
       const claudeResponse = JSON.stringify({
         findings: [
-          { severity: "critical", message: "Some issue" },
+          { severity: "critical", category: "UNKNOWN_FINDING", message: "Some issue" },
         ],
         proposalEvaluations: [],
         summary: "Issues",
@@ -422,10 +422,69 @@ describe("Superego agent", () => {
 
       expect(report.findings).toHaveLength(1);
       expect(report.findings[0].severity).toBe("critical");
-      
+
       // No escalation should occur
       const escalateContent = await fs.readFile("/substrate/ESCALATE_TO_STEFAN.md");
       expect(escalateContent).not.toContain("Auto-Escalated");
+    });
+
+    // Fix 4: end-to-end write path integration test
+    it("ESCALATE_TO_STEFAN.md grows in size after triggered escalation (Fix 4 acceptance criterion)", async () => {
+      const tracker = new SuperegoFindingTracker();
+      const criticalResponse = JSON.stringify({
+        findings: [
+          { severity: "critical", category: "ESCALATE_FILE_EMPTY", message: "Escalate file is empty" },
+        ],
+        proposalEvaluations: [],
+        summary: "Critical",
+      });
+
+      const initialContent = await fs.readFile("/substrate/ESCALATE_TO_STEFAN.md");
+      const initialSize = initialContent.length;
+
+      // Three consecutive audit cycles — triggers escalation on third
+      for (let cycle = 1; cycle <= 3; cycle++) {
+        launcher.enqueueSuccess(criticalResponse);
+        await superego.audit(undefined, cycle * 10, tracker);
+      }
+
+      const finalContent = await fs.readFile("/substrate/ESCALATE_TO_STEFAN.md");
+      expect(finalContent.length).toBeGreaterThan(initialSize);
+      expect(finalContent).toContain("SUPEREGO Recurring Finding (Auto-Escalated)");
+      expect(finalContent).toContain("Escalate file is empty");
+    });
+
+    it("escalates WARNING finding after 5 consecutive occurrences (Fix 3 integration)", async () => {
+      const tracker = new SuperegoFindingTracker();
+      const warningResponse = JSON.stringify({
+        findings: [
+          { severity: "warning", category: "VALUES_RECRUITMENT", message: "Possible values drift" },
+        ],
+        proposalEvaluations: [],
+        summary: "Warning",
+      });
+
+      // 4 occurrences — should NOT escalate
+      for (let cycle = 1; cycle <= 4; cycle++) {
+        launcher.enqueueSuccess(warningResponse);
+        const report = await superego.audit(undefined, cycle * 10, tracker);
+        expect(report.findings).toHaveLength(1);
+      }
+
+      let escalateContent = await fs.readFile("/substrate/ESCALATE_TO_STEFAN.md");
+      expect(escalateContent).not.toContain("Auto-Escalated");
+
+      // 5th occurrence — should escalate
+      launcher.enqueueSuccess(warningResponse);
+      const report = await superego.audit(undefined, 50, tracker);
+
+      // Finding removed from report after escalation
+      expect(report.findings).toHaveLength(0);
+
+      escalateContent = await fs.readFile("/substrate/ESCALATE_TO_STEFAN.md");
+      expect(escalateContent).toContain("SUPEREGO Recurring Finding (Auto-Escalated)");
+      expect(escalateContent).toContain("[warning] Possible values drift");
+      expect(escalateContent).toContain("Audit cycles [10, 20, 30, 40, 50]");
     });
   });
 
@@ -543,12 +602,83 @@ describe("Superego agent", () => {
       expect(progress).toContain("[SUPEREGO] Proposal for HABITS has no evaluation — skipped");
     });
 
-    it("ignores proposals for unknown targets", async () => {
+    it("logs approved proposals for unknown targets instead of silently dropping (Fix 5 audit closure)", async () => {
       const proposals = [{ target: "UNKNOWN_FILE", content: "some content" }];
       const evaluations = [{ approved: true, reason: "Approved" }];
 
-      // Should not throw
       await superego.applyProposals(proposals, evaluations);
+
+      const progress = await fs.readFile("/substrate/PROGRESS.md");
+      expect(progress).toContain("[SUPEREGO] Proposal for UNKNOWN_FILE approved but no target handler — dropped");
+    });
+
+    // task-83: PLAN silent drop fix
+    it("approved PLAN proposal is injected into ## Tasks section via PlanParser (not raw-appended)", async () => {
+      await fs.writeFile("/substrate/PLAN.md", "# Plan\n\n## Current Goal\nBuild it\n\n## Tasks\n- [ ] Existing task\n");
+      const proposals = [{ target: "PLAN", content: "- [ ] New task from Superego" }];
+      const evaluations = [{ approved: true, reason: "Good task" }];
+
+      await superego.applyProposals(proposals, evaluations);
+
+      const plan = await fs.readFile("/substrate/PLAN.md");
+      // PlanParser appends into ## Tasks section — NOT raw separator append
+      expect(plan).toContain("- [ ] Existing task");
+      expect(plan).toContain("- [ ] New task from Superego");
+      // Should NOT use the raw trimEnd+separator pattern
+      expect(plan).not.toContain("---\n\n- [ ] New task from Superego");
+      // ## Current Goal section should be preserved
+      expect(plan).toContain("## Current Goal");
+    });
+
+    it("approved PLAN proposal with no existing PLAN.md creates valid plan structure", async () => {
+      // Remove the PLAN.md set up by beforeEach
+      await fs.writeFile("/substrate/PLAN.md", "");
+      const proposals = [{ target: "PLAN", content: "- [ ] Bootstrap task" }];
+      const evaluations = [{ approved: true, reason: "Valid" }];
+
+      await superego.applyProposals(proposals, evaluations);
+
+      const plan = await fs.readFile("/substrate/PLAN.md");
+      expect(plan).toContain("## Tasks");
+      expect(plan).toContain("- [ ] Bootstrap task");
+    });
+
+    it("HABITS and SECURITY still use trimEnd+separator merge (regression guard)", async () => {
+      const proposals = [
+        { target: "HABITS", content: "New habit line" },
+        { target: "SECURITY", content: "New security policy" },
+      ];
+      const evaluations = [
+        { approved: true, reason: "Good" },
+        { approved: true, reason: "Good" },
+      ];
+
+      await superego.applyProposals(proposals, evaluations);
+
+      const habits = await fs.readFile("/substrate/HABITS.md");
+      expect(habits).toContain("Some habits\n\n---\n\nNew habit line");
+
+      const security = await fs.readFile("/substrate/SECURITY.md");
+      expect(security).toContain("Stay safe\n\n---\n\nNew security policy");
+    });
+
+    it("two approved PLAN proposals in same cycle both appear in ## Tasks section", async () => {
+      await fs.writeFile("/substrate/PLAN.md", "# Plan\n\n## Tasks\n- [ ] Original task\n");
+      const proposals = [
+        { target: "PLAN", content: "- [ ] First Superego task" },
+        { target: "PLAN", content: "- [ ] Second Superego task" },
+      ];
+      const evaluations = [
+        { approved: true, reason: "Good" },
+        { approved: true, reason: "Good" },
+      ];
+
+      await superego.applyProposals(proposals, evaluations);
+
+      const plan = await fs.readFile("/substrate/PLAN.md");
+      expect(plan).toContain("- [ ] Original task");
+      expect(plan).toContain("- [ ] First Superego task");
+      expect(plan).toContain("- [ ] Second Superego task");
     });
   });
 });

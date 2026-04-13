@@ -336,9 +336,9 @@ export async function resolveConfig(
         ? path.posix.join(path.posix.dirname(appPaths.data), "substrate-backups")
         : path.join(path.dirname(appPaths.data), "substrate-backups"),
     port: 3000,
-    model: "sonnet",
-    strategicModel: "opus",
-    tacticalModel: "sonnet",
+    model: "claude-sonnet-4-6",
+    strategicModel: "claude-opus-4-6",
+    tacticalModel: "claude-sonnet-4-6",
     mode: "cycle",
     autoStartOnFirstRun: true,
     autoStartAfterRestart: true,
