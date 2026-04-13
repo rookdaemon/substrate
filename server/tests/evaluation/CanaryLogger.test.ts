@@ -140,6 +140,49 @@ describe("CanaryLogger", () => {
     });
   });
 
+  describe("nextApiCycle", () => {
+    const counterPath = "/substrate/canary_api_cycle.json";
+
+    it("returns 0 on the first call when counter file does not exist", async () => {
+      const loggerWithCounter = new CanaryLogger(fs, filePath, undefined, counterPath);
+      const cycle = await loggerWithCounter.nextApiCycle();
+      expect(cycle).toBe(0);
+    });
+
+    it("increments the counter on successive calls", async () => {
+      const loggerWithCounter = new CanaryLogger(fs, filePath, undefined, counterPath);
+      expect(await loggerWithCounter.nextApiCycle()).toBe(0);
+      expect(await loggerWithCounter.nextApiCycle()).toBe(1);
+      expect(await loggerWithCounter.nextApiCycle()).toBe(2);
+    });
+
+    it("persists the counter across logger instances (simulates restart)", async () => {
+      const logger1 = new CanaryLogger(fs, filePath, undefined, counterPath);
+      await logger1.nextApiCycle(); // 0
+      await logger1.nextApiCycle(); // 1
+
+      // Simulate restart: new CanaryLogger instance, same counter file
+      const logger2 = new CanaryLogger(fs, filePath, undefined, counterPath);
+      expect(await logger2.nextApiCycle()).toBe(2);
+      expect(await logger2.nextApiCycle()).toBe(3);
+    });
+
+    it("creates the counter directory if it does not exist", async () => {
+      const deepCounterPath = "/new/deep/dir/canary_api_cycle.json";
+      const loggerWithCounter = new CanaryLogger(fs, filePath, undefined, deepCounterPath);
+      const cycle = await loggerWithCounter.nextApiCycle();
+      expect(cycle).toBe(0);
+      const stored = await fs.readFile(deepCounterPath);
+      expect(stored).toBe("0");
+    });
+
+    it("returns 0 on every call when counterPath is not configured", async () => {
+      const loggerWithoutCounter = new CanaryLogger(fs, filePath);
+      expect(await loggerWithoutCounter.nextApiCycle()).toBe(0);
+      expect(await loggerWithoutCounter.nextApiCycle()).toBe(0);
+    });
+  });
+
   describe("readConvMdStats", () => {
     const convMdPath = "/substrate/CONVERSATION.md";
 
