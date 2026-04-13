@@ -402,3 +402,107 @@ describe("INSHook Phase 3 — compliance pattern detection", () => {
     expect(state.patterns).toHaveLength(0);
   });
 });
+
+// --- Gap 1: Compliance routing (requiresStefanReview) ---
+
+describe("INSHook — compliance routing (Gap 1)", () => {
+  let fs: InMemoryFileSystem;
+  let clock: FixedClock;
+  let logger: InMemoryLogger;
+  let reader: SubstrateFileReader;
+  let config: INSConfig;
+
+  const substratePath = "/substrate";
+  const now = new Date("2026-03-01T12:00:00.000Z");
+
+  async function createHook(configOverrides?: Partial<INSConfig>): Promise<INSHook> {
+    const finalConfig = { ...config, ...configOverrides };
+    const complianceState = await ComplianceStateManager.load(finalConfig.statePath, fs, logger);
+    return new INSHook(reader, fs, clock, logger, finalConfig, complianceState);
+  }
+
+  beforeEach(async () => {
+    fs = new InMemoryFileSystem();
+    clock = new FixedClock(now);
+    logger = new InMemoryLogger();
+    const substrateConfig = new SubstrateConfig(substratePath);
+    reader = new SubstrateFileReader(fs, substrateConfig, false);
+    config = defaultINSConfig(substratePath);
+
+    await fs.mkdir(substratePath, { recursive: true });
+    await fs.writeFile(`${substratePath}/CONVERSATION.md`, "# Conversation\n\n");
+    await fs.writeFile(`${substratePath}/PROGRESS.md`, "# Progress\n\n");
+    await fs.writeFile(`${substratePath}/MEMORY.md`, "# Memory\n\n");
+    await fs.writeFile(`${substratePath}/PLAN.md`, "# Plan\n\n- [ ] Task A\n");
+    await fs.writeFile(`${substratePath}/HABITS.md`, "# Habits\n\n");
+    await fs.writeFile(`${substratePath}/SKILLS.md`, "# Skills\n\n");
+    await fs.writeFile(`${substratePath}/VALUES.md`, "# Values\n\n");
+    await fs.writeFile(`${substratePath}/ID.md`, "# Id\n\n");
+    await fs.writeFile(`${substratePath}/SECURITY.md`, "# Security\n\n");
+    await fs.writeFile(`${substratePath}/CHARTER.md`, "# Charter\n\n");
+    await fs.writeFile(`${substratePath}/SUPEREGO.md`, "# Superego\n\n");
+    await fs.writeFile(`${substratePath}/CLAUDE.md`, "# Claude\n\n");
+    await fs.writeFile(`${substratePath}/PEERS.md`, "# Peers\n\n");
+  });
+
+  it("compliance_flag actions have requiresStefanReview=true", async () => {
+    const hook = await createHook({ consecutivePartialThreshold: 3 });
+
+    await hook.evaluate(1, { result: "partial", role: "Subconscious", taskId: "task-1", blockedReason: "Blocked by external dependency" });
+    await hook.evaluate(2, { result: "partial", role: "Subconscious", taskId: "task-1", blockedReason: "Blocked by external dependency" });
+    const result = await hook.evaluate(3, { result: "partial", role: "Subconscious", taskId: "task-1", blockedReason: "Blocked by external dependency" });
+
+    const flagAction = result.actions.find(a => a.type === "compliance_flag");
+    expect(flagAction).toBeDefined();
+    expect(flagAction!.requiresStefanReview).toBe(true);
+  });
+
+  it("compliance_flag always has requiresStefanReview=true for Superego patterns too", async () => {
+    const hook = await createHook({ consecutivePartialThreshold: 3 });
+
+    await hook.evaluate(1, { result: "partial", role: "Superego", taskId: "task-sup-1", blockedReason: "BLOCK: scope limit exceeded" });
+    await hook.evaluate(2, { result: "partial", role: "Superego", taskId: "task-sup-1", blockedReason: "BLOCK: scope limit exceeded" });
+    const result = await hook.evaluate(3, { result: "partial", role: "Superego", taskId: "task-sup-1", blockedReason: "BLOCK: scope limit exceeded" });
+
+    const flagAction = result.actions.find(a => a.type === "compliance_flag");
+    expect(flagAction).toBeDefined();
+    expect(flagAction!.requiresStefanReview).toBe(true);
+  });
+});
+
+// --- Gap 3: Threshold governance ---
+
+import { INS_THRESHOLD_GOVERNANCE, assertINSThresholdsAreStefanGated } from "../../../src/loop/ins/types";
+
+describe("INS threshold governance (Gap 3)", () => {
+  it("INS_THRESHOLD_GOVERNANCE contains all Stefan-gated threshold defaults", () => {
+    expect(INS_THRESHOLD_GOVERNANCE.conversationLineThreshold).toBe(80);
+    expect(INS_THRESHOLD_GOVERNANCE.progressLineThreshold).toBe(200);
+    expect(INS_THRESHOLD_GOVERNANCE.planLineThreshold).toBe(150);
+    expect(INS_THRESHOLD_GOVERNANCE.memoryCharThreshold).toBe(120_000);
+    expect(INS_THRESHOLD_GOVERNANCE.memorySubdirectoryLineThreshold).toBe(500);
+    expect(INS_THRESHOLD_GOVERNANCE.consecutivePartialThreshold).toBe(3);
+    expect(INS_THRESHOLD_GOVERNANCE.archiveAgeDays).toBe(30);
+  });
+
+  it("assertINSThresholdsAreStefanGated passes for default config", () => {
+    const config = defaultINSConfig("/substrate");
+    expect(() => assertINSThresholdsAreStefanGated(config)).not.toThrow();
+  });
+
+  it("assertINSThresholdsAreStefanGated throws if consecutivePartialThreshold is modified", () => {
+    const config = { ...defaultINSConfig("/substrate"), consecutivePartialThreshold: 1 };
+    expect(() => assertINSThresholdsAreStefanGated(config)).toThrow(/Stefan-gated/);
+    expect(() => assertINSThresholdsAreStefanGated(config)).toThrow(/consecutivePartialThreshold/);
+  });
+
+  it("assertINSThresholdsAreStefanGated throws if conversationLineThreshold is modified", () => {
+    const config = { ...defaultINSConfig("/substrate"), conversationLineThreshold: 9999 };
+    expect(() => assertINSThresholdsAreStefanGated(config)).toThrow(/Stefan-gated/);
+  });
+
+  it("assertINSThresholdsAreStefanGated throws if archiveAgeDays is modified", () => {
+    const config = { ...defaultINSConfig("/substrate"), archiveAgeDays: 1 };
+    expect(() => assertINSThresholdsAreStefanGated(config)).toThrow(/Stefan-gated/);
+  });
+});

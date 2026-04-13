@@ -3,7 +3,7 @@ import { SubstrateFileType } from "../../substrate/types";
 import { IFileSystem } from "../../substrate/abstractions/IFileSystem";
 import { IClock } from "../../substrate/abstractions/IClock";
 import { ILogger } from "../../logging";
-import { INSResult, INSAction, INSConfig, InsAcknowledgment } from "./types";
+import { INSResult, INSAction, INSConfig, InsAcknowledgment, CompactionRiskTier } from "./types";
 import { ComplianceStateManager } from "./ComplianceStateManager";
 
 /** Precondition extraction patterns — matches common blocking language in task summaries */
@@ -67,23 +67,34 @@ export class INSHook {
     const actions: INSAction[] = [];
 
     try {
-      // Rule 1: CONVERSATION.md compaction
+      // Rule 1: CONVERSATION.md compaction (risk tier: low — mostly recoverable)
       const convAction = await this.checkFileLineCount(
         SubstrateFileType.CONVERSATION,
         "CONVERSATION.md",
         this.config.conversationLineThreshold,
+        'low',
       );
       if (convAction) actions.push(convAction);
 
-      // Rule 2: PROGRESS.md compaction
+      // Rule 2: PROGRESS.md compaction (risk tier: low — mostly recoverable)
       const progAction = await this.checkFileLineCount(
         SubstrateFileType.PROGRESS,
         "PROGRESS.md",
         this.config.progressLineThreshold,
+        'low',
       );
       if (progAction) actions.push(progAction);
 
-      // Rule 3: MEMORY.md size
+      // Rule 2b: PLAN.md compaction (risk tier: high — overwrite incidents tracked separately; Stefan authorization required)
+      const planAction = await this.checkFileLineCount(
+        SubstrateFileType.PLAN,
+        "PLAN.md",
+        this.config.planLineThreshold,
+        'high',
+      );
+      if (planAction) actions.push(planAction);
+
+      // Rule 3: MEMORY.md size (risk tier: medium — selective loss hard to detect)
       const memAction = await this.checkMemorySize();
       if (memAction) actions.push(memAction);
 
@@ -121,6 +132,7 @@ export class INSHook {
     fileType: SubstrateFileType,
     fileName: string,
     threshold: number,
+    riskTier: CompactionRiskTier,
   ): Promise<INSAction | null> {
     try {
       const content = await this.reader.read(fileType);
@@ -130,6 +142,7 @@ export class INSHook {
           type: "compaction",
           target: fileName,
           detail: `Line count ${lineCount} exceeds threshold ${threshold} — compaction recommended`,
+          riskTier,
         };
       }
     } catch {
@@ -148,6 +161,7 @@ export class INSHook {
           type: "compaction",
           target: "MEMORY.md",
           detail: `Character count ${charCount} (~${estimatedTokens} tokens) exceeds threshold — summary recommended`,
+          riskTier: 'medium',
         };
       }
     } catch {
@@ -292,6 +306,7 @@ export class INSHook {
         patternId: pattern.patternId,
         cyclesCount: pattern.cyclesCount,
         firstSeenCycle: pattern.firstSeenCycle,
+        requiresStefanReview: true,
       });
     }
 
@@ -403,6 +418,7 @@ export class INSHook {
           type: "compaction",
           target: "memory/",
           detail: `memory/ subdirectory total line count ${totalLines} exceeds threshold ${this.config.memorySubdirectoryLineThreshold} — compaction recommended`,
+          riskTier: 'medium',
         };
       }
     } catch {

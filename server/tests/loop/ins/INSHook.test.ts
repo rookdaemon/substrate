@@ -408,4 +408,77 @@ describe("INSHook", () => {
     const insLog = debugLogs.find(l => l.includes("ins: cycle"));
     expect(insLog).toBeUndefined();
   });
+
+  // --- Gap 2: File-type risk tiers ---
+
+  it("CONVERSATION.md compaction action has riskTier low", async () => {
+    const lines = Array.from({ length: 90 }, (_, i) => `Line ${i + 1}`);
+    await fs.writeFile(`${substratePath}/CONVERSATION.md`, lines.join("\n"));
+
+    const hook = await createHook({ conversationLineThreshold: 80 });
+    const result = await hook.evaluate(1);
+
+    const action = result.actions.find(a => a.target === "CONVERSATION.md");
+    expect(action).toBeDefined();
+    expect(action!.riskTier).toBe("low");
+  });
+
+  it("PROGRESS.md compaction action has riskTier low", async () => {
+    const lines = Array.from({ length: 210 }, (_, i) => `Entry ${i + 1}`);
+    await fs.writeFile(`${substratePath}/PROGRESS.md`, lines.join("\n"));
+
+    const hook = await createHook({ progressLineThreshold: 200 });
+    const result = await hook.evaluate(1);
+
+    const action = result.actions.find(a => a.target === "PROGRESS.md");
+    expect(action).toBeDefined();
+    expect(action!.riskTier).toBe("low");
+  });
+
+  it("MEMORY.md compaction action has riskTier medium", async () => {
+    await fs.writeFile(`${substratePath}/MEMORY.md`, "x".repeat(1500));
+
+    const hook = await createHook({ memoryCharThreshold: 1000 });
+    const result = await hook.evaluate(1);
+
+    const action = result.actions.find(a => a.target === "MEMORY.md");
+    expect(action).toBeDefined();
+    expect(action!.riskTier).toBe("medium");
+  });
+
+  it("memory/ subdirectory compaction action has riskTier medium", async () => {
+    const memoryPath = `${substratePath}/memory`;
+    await fs.mkdir(memoryPath, { recursive: true });
+    const lines350 = Array.from({ length: 350 }, (_, i) => `Entry ${i + 1}`).join("\n");
+    await fs.writeFile(`${memoryPath}/file-a.md`, lines350);
+
+    const hook = await createHook({ memorySubdirectoryLineThreshold: 100, memoryPath });
+    const result = await hook.evaluate(1);
+
+    const action = result.actions.find(a => a.target === "memory/");
+    expect(action).toBeDefined();
+    expect(action!.riskTier).toBe("medium");
+  });
+
+  it("PLAN.md compaction action has riskTier high", async () => {
+    const lines = Array.from({ length: 160 }, (_, i) => `- [ ] Task ${i + 1}`);
+    await fs.writeFile(`${substratePath}/PLAN.md`, lines.join("\n"));
+
+    const hook = await createHook({ planLineThreshold: 150 });
+    const result = await hook.evaluate(1);
+
+    const action = result.actions.find(a => a.target === "PLAN.md");
+    expect(action).toBeDefined();
+    expect(action!.type).toBe("compaction");
+    expect(action!.riskTier).toBe("high");
+  });
+
+  it("does not flag PLAN.md when within threshold", async () => {
+    // Default content is short — should not trigger
+    const hook = await createHook({ planLineThreshold: 150 });
+    const result = await hook.evaluate(1);
+
+    const action = result.actions.find(a => a.target === "PLAN.md");
+    expect(action).toBeUndefined();
+  });
 });

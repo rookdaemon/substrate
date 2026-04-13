@@ -1306,7 +1306,21 @@ export class LoopOrchestrator implements IMessageInjector {
   private formatINSMessage(result: INSResult): string {
     const lines = [`[INS] Pre-cycle check flagged ${result.actions.length} issue(s):`];
     for (const action of result.actions) {
-      lines.push(`- ${action.type}: ${action.target} — ${action.detail}`);
+      if (action.type === "compaction" && action.riskTier) {
+        const authNote =
+          action.riskTier === 'high'
+            ? " [RISK: HIGH — Stefan authorization required before compacting]"
+            : action.riskTier === 'medium'
+              ? " [RISK: MEDIUM — peer review required before compacting]"
+              : " [RISK: LOW — Ego self-authorized]";
+        lines.push(`- ${action.type}: ${action.target} — ${action.detail}${authNote}`);
+      } else if (action.type === "compliance_flag" && action.requiresStefanReview) {
+        lines.push(
+          `- ${action.type}: ${action.target} — ${action.detail} [ROUTING: Stefan (required) + peer agents — not resolvable by Ego alone]`,
+        );
+      } else {
+        lines.push(`- ${action.type}: ${action.target} — ${action.detail}`);
+      }
     }
     return lines.join("\n");
   }
