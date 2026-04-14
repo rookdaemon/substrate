@@ -17,6 +17,7 @@ export interface PlanTask {
   trigger?: string;
   correlationId?: string;
   blockedUntil?: Date;
+  confidence?: number;
 }
 
 interface RawTaskLine {
@@ -26,6 +27,7 @@ interface RawTaskLine {
   title: string;
   correlationId?: string;
   blockedUntil?: Date;
+  confidence?: number;
 }
 
 export class PlanParser {
@@ -42,6 +44,19 @@ export class PlanParser {
   }
 
   static async findNextActionable(tasks: PlanTask[], evaluator?: TriggerEvaluator, now?: Date): Promise<PlanTask | null> {
+    const candidates: PlanTask[] = [];
+    await this.collectActionable(tasks, evaluator, now, candidates);
+    if (candidates.length === 0) return null;
+    candidates.sort((a, b) => (b.confidence ?? 0.5) - (a.confidence ?? 0.5));
+    return candidates[0];
+  }
+
+  private static async collectActionable(
+    tasks: PlanTask[],
+    evaluator: TriggerEvaluator | undefined,
+    now: Date | undefined,
+    result: PlanTask[],
+  ): Promise<void> {
     for (const task of tasks) {
       if (task.status === TaskStatus.COMPLETE) continue;
       if (task.status === TaskStatus.BLOCKED) continue;
@@ -52,13 +67,11 @@ export class PlanParser {
         if (!triggered) continue;
       }
       if (task.children.length > 0) {
-        const child = await this.findNextActionable(task.children, evaluator, now);
-        if (child) return child;
+        await this.collectActionable(task.children, evaluator, now, result);
       } else {
-        return task;
+        result.push(task);
       }
     }
-    return null;
   }
 
   static markComplete(markdown: string, taskId: string): string {
@@ -137,9 +150,17 @@ export class PlanParser {
       if (line.startsWith("#")) break;
       const match = line.match(/^(\s*)- \[([ x~])\] (.+)$/);
       if (match) {
-        // Check next line for embedded correlation ID comment
-        const nextLine = lines[i + 1] ?? "";
-        const correlationMatch = nextLine.match(/<!--\s*correlationId:\s*(\S+)\s*-->/);
+        // Scan ahead through comment lines for embedded metadata
+        let correlationId: string | undefined;
+        let confidence: number | undefined;
+        let commentIdx = i + 1;
+        while (commentIdx < lines.length && /^\s*<!--.*?-->\s*$/.test(lines[commentIdx])) {
+          const corrMatch = lines[commentIdx].match(/<!--\s*correlationId:\s*(\S+)\s*-->/);
+          if (corrMatch) correlationId = corrMatch[1];
+          const confMatch = lines[commentIdx].match(/<!--\s*confidence:\s*(\d*\.?\d+)/);
+          if (confMatch) confidence = parseFloat(confMatch[1]);
+          commentIdx++;
+        }
         // Parse inline blockedUntil annotation from the task line itself
         const blockedUntilMatch = match[3].match(/<!--\s*blockedUntil:\s*(\S+)\s*-->/);
         let blockedUntil: Date | undefined;
@@ -152,8 +173,9 @@ export class PlanParser {
           checked: match[2] === "x",
           deferred: match[2] === "~",
           title: match[3],
-          ...(correlationMatch ? { correlationId: correlationMatch[1] } : {}),
+          ...(correlationId !== undefined ? { correlationId } : {}),
           ...(blockedUntil !== undefined ? { blockedUntil } : {}),
+          ...(confidence !== undefined ? { confidence } : {}),
         });
       }
     }
@@ -228,6 +250,7 @@ export class PlanParser {
         ...(trigger !== undefined ? { trigger } : {}),
         ...(line.correlationId !== undefined ? { correlationId: line.correlationId } : {}),
         ...(line.blockedUntil !== undefined ? { blockedUntil: line.blockedUntil } : {}),
+        ...(line.confidence !== undefined ? { confidence: line.confidence } : {}),
       });
 
       counter++;
