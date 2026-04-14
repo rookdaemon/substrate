@@ -157,7 +157,7 @@ export class PlanParser {
         while (commentIdx < lines.length && /^\s*<!--.*?-->\s*$/.test(lines[commentIdx])) {
           const corrMatch = lines[commentIdx].match(/<!--\s*correlationId:\s*(\S+)\s*-->/);
           if (corrMatch) correlationId = corrMatch[1];
-          const confMatch = lines[commentIdx].match(/<!--\s*confidence:\s*(\d+(?:\.\d+)?)/);
+          const confMatch = lines[commentIdx].match(/<!--\s*confidence:\s*(\d*\.?\d+)/);
           if (confMatch) confidence = parseFloat(confMatch[1]);
           commentIdx++;
         }
