@@ -92,9 +92,10 @@ export class IdleHandler {
     const dateTag = `[ID-generated ${this.clock.now().toISOString().split("T")[0]}]`;
     const newTaskLines = approved.flatMap((g) => {
       const line = `- [ ] ${g.title}: ${g.description} ${dateTag}`;
+      const metaComment = `<!-- confidence: ${g.confidence} priority: ${g.priority} -->`;
       return g.correlationId
-        ? [line, `  <!-- correlationId: ${g.correlationId} -->`]
-        : [line];
+        ? [line, metaComment, `  <!-- correlationId: ${g.correlationId} -->`]
+        : [line, metaComment];
     });
 
     const existingPlan = await this.ego.readPlan();

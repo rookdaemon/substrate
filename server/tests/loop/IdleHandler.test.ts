@@ -109,6 +109,25 @@ describe("IdleHandler", () => {
     expect(plan).not.toContain("Write docs");
   });
 
+  it("writes confidence and priority metadata comment for approved goals", async () => {
+    deps.launcher.enqueueSuccess(JSON.stringify({
+      goalCandidates: [
+        { title: "High priority goal", description: "Something important", priority: "high", confidence: 85 },
+      ],
+    }));
+
+    deps.launcher.enqueueSuccess(JSON.stringify({
+      proposalEvaluations: [
+        { approved: true, reason: "Aligned" },
+      ],
+    }));
+
+    await handler.handleIdle();
+
+    const plan = await deps.fs.readFile("/substrate/PLAN.md");
+    expect(plan).toContain("<!-- confidence: 85 priority: high -->");
+  });
+
   it("returns all_rejected when superego rejects all goals", async () => {
     deps.launcher.enqueueSuccess(JSON.stringify({
       goalCandidates: [

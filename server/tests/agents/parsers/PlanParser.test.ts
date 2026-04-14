@@ -640,4 +640,68 @@ describe("PlanParser", () => {
       });
     });
   });
+
+  describe("confidence metadata", () => {
+    const CONFIDENCE_PLAN = `# Plan
+
+## Tasks
+- [ ] Low confidence task
+<!-- confidence: 0.3 priority: low -->
+- [ ] High confidence task
+<!-- confidence: 0.9 priority: high -->
+- [ ] Medium confidence task
+<!-- confidence: 0.6 priority: medium -->
+`;
+
+    const NO_CONFIDENCE_PLAN = `# Plan
+
+## Tasks
+- [ ] Task without metadata
+- [ ] Another task without metadata
+`;
+
+    const MIXED_CONFIDENCE_PLAN = `# Plan
+
+## Tasks
+- [ ] Task with metadata
+<!-- confidence: 0.8 priority: high -->
+- [ ] Task without metadata
+`;
+
+    it("parses confidence from metadata comment", () => {
+      const tasks = PlanParser.parseTasks(CONFIDENCE_PLAN);
+      expect(tasks[0].confidence).toBeCloseTo(0.3);
+      expect(tasks[1].confidence).toBeCloseTo(0.9);
+      expect(tasks[2].confidence).toBeCloseTo(0.6);
+    });
+
+    it("returns highest-confidence task first from findNextActionable", async () => {
+      const tasks = PlanParser.parseTasks(CONFIDENCE_PLAN);
+      const next = await PlanParser.findNextActionable(tasks);
+      expect(next).not.toBeNull();
+      expect(next!.title).toBe("High confidence task");
+    });
+
+    it("defaults to confidence 0.5 when no metadata comment present", async () => {
+      const tasks = PlanParser.parseTasks(NO_CONFIDENCE_PLAN);
+      expect(tasks[0].confidence).toBeUndefined();
+      // Both have no confidence — first in document order wins (both default to 0.5)
+      const next = await PlanParser.findNextActionable(tasks);
+      expect(next).not.toBeNull();
+      expect(next!.title).toBe("Task without metadata");
+    });
+
+    it("prefers task with explicit confidence over task without metadata (which defaults to 0.5)", async () => {
+      const tasks = PlanParser.parseTasks(MIXED_CONFIDENCE_PLAN);
+      const next = await PlanParser.findNextActionable(tasks);
+      expect(next).not.toBeNull();
+      expect(next!.title).toBe("Task with metadata");
+    });
+
+    it("does not set confidence on task when no metadata comment present", () => {
+      const tasks = PlanParser.parseTasks(NO_CONFIDENCE_PLAN);
+      expect(tasks[0].confidence).toBeUndefined();
+      expect(tasks[1].confidence).toBeUndefined();
+    });
+  });
 });
