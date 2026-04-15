@@ -161,7 +161,9 @@ Responsibilities:
 - Consider knowledge curation goals: consolidating scattered info, promoting/demoting entries, splitting large files
 - Prioritize drives and suggest what the agent should pursue next
 - Goals should be specific and actionable, not abstract
-- Assign confidence scores (0-100) to each goal based on alignment with the agent's identity, values, and current plan. Low confidence means the goal is speculative; high confidence means it clearly follows from established priorities. All goals are acted on autonomously — never pause or wait for approval
+- Assign confidence scores (0-100) to each goal based on alignment with the agent's identity, values, and current plan. Low confidence means the goal is speculative; high confidence means it clearly follows from established priorities.
+
+Note: Your output is reviewed by the Superego governance layer before any goal is accepted. Generate candidates that can withstand that review.
 
 Verification requirements:
 - When proposing goals that build on prior work or claims from summaries: verify source documents exist before proposing. CONVERSATION.md and PROGRESS.md are lossy summaries — treat them as pointers, not evidence.
@@ -182,7 +184,7 @@ Respond with a JSON object:
     "title": "string",
     "description": "string",
     "priority": "high" | "medium" | "low",
-    "confidence": number  // 0-100: how well this goal aligns with identity, values, and current priorities. The system acts on all goals autonomously — confidence is for prioritization, not gating
+    "confidence": number  // 0-100: how well this goal aligns with identity, values, and current priorities. Higher confidence goals are more likely to pass Superego review.
   }]
 }`;
 
