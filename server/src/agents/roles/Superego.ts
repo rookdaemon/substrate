@@ -35,7 +35,7 @@ export interface Proposal {
 }
 
 /** Governed domains whose proposals require Superego approval. */
-const GOVERNED_DOMAINS = new Set(["HABITS", "SECURITY", "PLAN"]);
+const GOVERNED_DOMAINS = new Set(["HABITS", "SECURITY", "PLAN", "SKILLS", "MEMORY"]);
 
 /**
  * Patterns that indicate an INVISIBLE-OUTPUT BYPASS attempt:

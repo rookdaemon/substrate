@@ -86,7 +86,7 @@ Respond with a JSON object:
   "progressEntry": "Detailed log entry: what was done, what was learned, what's next",
   "skillUpdates": "Full new content for SKILLS.md, or null if no changes",
   "memoryUpdates": "Full new content for MEMORY.md, or null if no changes",
-  "proposals": [{ "target": "HABITS" | "SECURITY", "content": "string" }]
+  "proposals": [{ "target": "HABITS" | "SECURITY" | "SKILLS" | "MEMORY", "content": "string" }]
 }`;
 
 const SUPEREGO_PROMPT = `You are the Superego — the auditor and governance layer of a self-improving AI agent system.

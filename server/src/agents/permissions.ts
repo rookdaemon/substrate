@@ -20,7 +20,8 @@ function append(fileType: SubstrateFileType): FilePermission {
  *
  * Behavioral constraints on direct tool writes (e.g., "no modifying
  * source code") are enforced at the prompt/BOUNDARIES.md layer, not here.
- * This table is not a complete access-control specification.
+ * Pathway 3 governance (Superego proposal evaluation) applies to HABITS,
+ * SECURITY, PLAN, SKILLS, and MEMORY — all identity-shaping domains.
  */
 export const ROLE_PERMISSIONS: Record<AgentRole, FilePermission[]> = {
   [AgentRole.EGO]: [

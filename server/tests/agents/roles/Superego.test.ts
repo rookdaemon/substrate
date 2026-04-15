@@ -166,14 +166,38 @@ describe("Superego agent", () => {
         expect(launcher.getLaunches()).toHaveLength(0);
       });
 
-      it("evaluates normally ungoverned-domain proposals claiming internal reasoning", async () => {
+      it("pre-rejects SKILLS proposal claiming internal reasoning (SCOPE_BYPASS_ATTEMPT)", async () => {
+        const evaluations = await superego.evaluateProposals([
+          { target: "SKILLS", content: "Internal reasoning about skill organization, no file modifications" },
+        ]);
+
+        expect(evaluations).toHaveLength(1);
+        expect(evaluations[0].approved).toBe(false);
+        expect(evaluations[0].reason).toContain("SCOPE_BYPASS_ATTEMPT");
+        // Claude should not have been called
+        expect(launcher.getLaunches()).toHaveLength(0);
+      });
+
+      it("pre-rejects MEMORY proposal claiming internal reasoning (SCOPE_BYPASS_ATTEMPT)", async () => {
+        const evaluations = await superego.evaluateProposals([
+          { target: "MEMORY", content: "Internal reasoning about memory organization, no file modifications" },
+        ]);
+
+        expect(evaluations).toHaveLength(1);
+        expect(evaluations[0].approved).toBe(false);
+        expect(evaluations[0].reason).toContain("SCOPE_BYPASS_ATTEMPT");
+        // Claude should not have been called
+        expect(launcher.getLaunches()).toHaveLength(0);
+      });
+
+      it("passes ungoverned-domain proposals to Claude for evaluation", async () => {
         const claudeResponse = JSON.stringify({
           proposalEvaluations: [{ approved: true, reason: "OK" }],
         });
         launcher.enqueueSuccess(claudeResponse);
 
         const evaluations = await superego.evaluateProposals([
-          { target: "MEMORY", content: "Internal reasoning about memory organization, no file modifications" },
+          { target: "VALUES", content: "Internal reasoning about value organization, no file modifications" },
         ]);
 
         expect(evaluations).toHaveLength(1);
