@@ -20,10 +20,10 @@ describe("SuperegoFindingTracker", () => {
       const sig2 = tracker.generateSignature(finding);
 
       expect(sig1).toBe(sig2);
-      expect(sig1).toBe("critical:TEST_FINDING"); // Stable human-readable key
+      expect(sig1).toBe("TEST_FINDING"); // category-only key
     });
 
-    it("generates different signatures for different severities", () => {
+    it("generates same signature for same category regardless of severity", () => {
       const tracker = new SuperegoFindingTracker();
       const finding1: Finding = {
         severity: "critical",
@@ -39,7 +39,9 @@ describe("SuperegoFindingTracker", () => {
       const sig1 = tracker.generateSignature(finding1);
       const sig2 = tracker.generateSignature(finding2);
 
-      expect(sig1).not.toBe(sig2);
+      // Different severities must NOT fragment the escalation chain
+      expect(sig1).toBe(sig2);
+      expect(sig1).toBe("TEST_FINDING");
     });
 
     it("generates different signatures for different categories", () => {
@@ -63,9 +65,9 @@ describe("SuperegoFindingTracker", () => {
 
     it("generates same signature regardless of message content (uses category not message)", () => {
       const tracker = new SuperegoFindingTracker();
-      // Same severity+category with completely different message text — signature must be identical
-      // This is the key property: dynamic message content (cycle numbers, GC-NNN, etc.) must NOT
-      // affect the signature so findings accumulate across cycles.
+      // Same category with completely different message text — signature must be identical.
+      // Dynamic message content (cycle numbers, GC-NNN, etc.) must NOT affect the signature
+      // so findings accumulate across cycles.
       const finding1: Finding = { severity: "critical", category: "AUDIT_FAILURE", message: "Cycle GC-100: something went wrong" };
       const finding2: Finding = { severity: "critical", category: "AUDIT_FAILURE", message: "Cycle GC-200: something went wrong with different text" };
 
@@ -73,7 +75,7 @@ describe("SuperegoFindingTracker", () => {
       const sig2 = tracker.generateSignature(finding2);
 
       expect(sig1).toBe(sig2);
-      expect(sig1).toBe("critical:AUDIT_FAILURE");
+      expect(sig1).toBe("AUDIT_FAILURE");
     });
   });
 
@@ -286,20 +288,16 @@ describe("SuperegoFindingTracker", () => {
     it("does not escalate warning finding after only 3 occurrences (different threshold from critical)", () => {
       const tracker = new SuperegoFindingTracker();
       const warningFinding: Finding = { severity: "warning", category: "AUDIT_FAILURE", message: "Warning" };
-      const criticalFinding: Finding = { severity: "critical", category: "AUDIT_FAILURE", message: "Critical" };
 
-      // 3 occurrences
+      // 3 warning occurrences — warning threshold is 5, so should not escalate
       for (let i = 0; i < 3; i++) {
         tracker.track(warningFinding, i * 10, BASE_TS + DAYS_MS(i * 5));
       }
 
-      const warnSig = tracker.generateSignature(warningFinding);
-      const critSig = tracker.generateSignature(criticalFinding);
+      const sig = tracker.generateSignature(warningFinding);
 
-      // Warning needs 5, not 3
-      expect(tracker.shouldEscalate(warnSig)).toBe(false);
-      // Critical key has no history
-      expect(tracker.shouldEscalate(critSig)).toBe(false);
+      // Warning needs 5, not 3 — must not escalate
+      expect(tracker.shouldEscalate(sig)).toBe(false);
     });
 
     it("returns false for warning finding when gap exceeds 30 days", () => {
@@ -551,11 +549,12 @@ describe("SuperegoFindingTracker", () => {
     it("loads legacy format (number[] cycle arrays) with ts=0 sentinel", async () => {
       const fs = new InMemoryFileSystem();
       await fs.mkdir("/state", { recursive: true });
-      // Legacy pre-Fix-2 format: plain cycle-number arrays
+      // Legacy pre-Fix-2 format: plain cycle-number arrays with old "severity:CATEGORY" key
       await fs.writeFile(TRACKER_PATH, JSON.stringify({ "critical:AUDIT_FAILURE": [10, 30, 50] }));
 
       const tracker = await SuperegoFindingTracker.load(TRACKER_PATH, fs);
-      expect(tracker.getFindingHistory("critical:AUDIT_FAILURE")).toEqual([10, 30, 50]);
+      // Key is migrated to category-only form during load
+      expect(tracker.getFindingHistory("AUDIT_FAILURE")).toEqual([10, 30, 50]);
     });
 
     it("does not escalate legacy entries (ts=0 sentinel prevents false positives)", async () => {
@@ -566,7 +565,98 @@ describe("SuperegoFindingTracker", () => {
       await fs.writeFile(TRACKER_PATH, JSON.stringify({ "critical:AUDIT_FAILURE": [10, 30, 50] }));
 
       const tracker = await SuperegoFindingTracker.load(TRACKER_PATH, fs);
-      expect(tracker.shouldEscalate("critical:AUDIT_FAILURE")).toBe(false);
+      // Key is migrated to category-only form; escalation must still be blocked by ts=0 sentinel
+      expect(tracker.shouldEscalate("AUDIT_FAILURE")).toBe(false);
+    });
+
+    it("migrates old Fix-2 OccurrenceRecord format (severity:CATEGORY keys) to category-only on load", async () => {
+      const fs = new InMemoryFileSystem();
+      await fs.mkdir("/state", { recursive: true });
+      // Fix-2 format: OccurrenceRecord[] with old "severity:CATEGORY" key
+      const oldData = {
+        "warning:VALUES_RECRUITMENT": [
+          { cycle: 10, ts: BASE_TS },
+          { cycle: 20, ts: BASE_TS + DAYS_MS(7) },
+          { cycle: 30, ts: BASE_TS + DAYS_MS(14) },
+          { cycle: 40, ts: BASE_TS + DAYS_MS(21) },
+        ],
+      };
+      await fs.writeFile(TRACKER_PATH, JSON.stringify(oldData));
+
+      const tracker = await SuperegoFindingTracker.load(TRACKER_PATH, fs);
+      // Key is migrated to category-only form
+      expect(tracker.getFindingHistory("VALUES_RECRUITMENT")).toEqual([10, 20, 30, 40]);
+      expect(tracker.getFindingHistory("warning:VALUES_RECRUITMENT")).toBeUndefined();
+      // Severity metadata is back-filled from the old key prefix:
+      // 4 warning occurrences must not yet escalate (threshold=5), proving severity was preserved
+      expect(tracker.shouldEscalate("VALUES_RECRUITMENT")).toBe(false);
+      // Adding a 5th warning occurrence completes the chain — confirming warning threshold is applied
+      const finding: Finding = { severity: "warning", category: "VALUES_RECRUITMENT", message: "w5" };
+      const escalated = tracker.track(finding, 50, BASE_TS + DAYS_MS(28));
+      expect(escalated).toBe(true);
+    });
+  });
+
+  describe("cross-severity escalation (acceptance criteria)", () => {
+    it("same category reported as different severities across 3 cycles reaches CONSECUTIVE_THRESHOLD and escalates", () => {
+      const tracker = new SuperegoFindingTracker();
+      // Cycle 1: critical
+      const finding1: Finding = { severity: "critical", category: "SGAB_RECLASSIFICATION", message: "Detected in cycle 1" };
+      // Cycle 2: warning (LLM nondeterminism)
+      const finding2: Finding = { severity: "warning", category: "SGAB_RECLASSIFICATION", message: "Detected in cycle 2" };
+      // Cycle 3: critical again
+      const finding3: Finding = { severity: "critical", category: "SGAB_RECLASSIFICATION", message: "Detected in cycle 3" };
+
+      tracker.track(finding1, 100, BASE_TS);
+      tracker.track(finding2, 101, BASE_TS + DAYS_MS(7));
+      const escalated = tracker.track(finding3, 102, BASE_TS + DAYS_MS(14));
+
+      // All three must be in the same chain and reach CONSECUTIVE_THRESHOLD
+      expect(escalated).toBe(true);
+    });
+
+    it("severity is preserved as metadata on each occurrence", () => {
+      const tracker = new SuperegoFindingTracker();
+      const sig = "SGAB_RECLASSIFICATION";
+
+      tracker.track({ severity: "warning", category: sig, message: "m1" }, 10, BASE_TS);
+      tracker.track({ severity: "critical", category: sig, message: "m2" }, 20, BASE_TS + DAYS_MS(7));
+      tracker.track({ severity: "critical", category: sig, message: "m3" }, 30, BASE_TS + DAYS_MS(14));
+
+      // History has all 3 occurrences under the single category-only key
+      expect(tracker.getFindingHistory(sig)).toEqual([10, 20, 30]);
+      // Escalation info reflects the most-recent finding's severity
+      const info = tracker.getEscalationInfo({ severity: "critical", category: sig, message: "m3" });
+      expect(info).not.toBeNull();
+      expect(info!.severity).toBe("critical");
+    });
+
+    it("different categories with same severity create separate escalation chains", () => {
+      const tracker = new SuperegoFindingTracker();
+      const findingA: Finding = { severity: "critical", category: "AUDIT_FAILURE", message: "A" };
+      const findingB: Finding = { severity: "critical", category: "SOURCE_CODE_BYPASS", message: "B" };
+
+      // Track 3 occurrences of category A — should escalate
+      tracker.track(findingA, 10, BASE_TS);
+      tracker.track(findingA, 20, BASE_TS + DAYS_MS(7));
+      tracker.track(findingA, 30, BASE_TS + DAYS_MS(14));
+
+      // Track only 1 occurrence of category B — must NOT escalate
+      tracker.track(findingB, 10, BASE_TS);
+
+      expect(tracker.shouldEscalate("AUDIT_FAILURE")).toBe(true);
+      expect(tracker.shouldEscalate("SOURCE_CODE_BYPASS")).toBe(false);
+    });
+
+    it("warning finding that transitions to critical escalates at CONSECUTIVE_THRESHOLD (3) not WARNING_THRESHOLD (5)", () => {
+      const tracker = new SuperegoFindingTracker();
+      // First two occurrences reported as warning
+      tracker.track({ severity: "warning", category: "VALUES_RECRUITMENT", message: "w1" }, 10, BASE_TS);
+      tracker.track({ severity: "warning", category: "VALUES_RECRUITMENT", message: "w2" }, 20, BASE_TS + DAYS_MS(7));
+      // Third occurrence reported as critical — threshold must now be 3
+      const escalated = tracker.track({ severity: "critical", category: "VALUES_RECRUITMENT", message: "c1" }, 30, BASE_TS + DAYS_MS(14));
+
+      expect(escalated).toBe(true);
     });
   });
 });
