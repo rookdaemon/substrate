@@ -97,6 +97,24 @@ describe("ROLE_PROMPTS", () => {
       expect(prompt).toMatch(/drive|motiv|goal|idle/i);
     });
 
+    it("includes task-mandate self-check covering mandate consistency", () => {
+      const prompt = ROLE_PROMPTS[AgentRole.ID];
+      expect(prompt).toMatch(/task.mandate self-check/i);
+      expect(prompt).toMatch(/mandate/i);
+    });
+
+    it("includes task-mandate self-check covering deduplication against in-progress goals", () => {
+      const prompt = ROLE_PROMPTS[AgentRole.ID];
+      expect(prompt).toMatch(/duplicate|duplicates/i);
+      expect(prompt).toMatch(/in.progress/i);
+    });
+
+    it("includes performed-disagreement rule for explicit dissent surfacing", () => {
+      const prompt = ROLE_PROMPTS[AgentRole.ID];
+      expect(prompt).toMatch(/performed-disagreement/i);
+      expect(prompt).toMatch(/disagreement candidate/i);
+    });
+
     it("contains same-model operating caveat", () => {
       const prompt = ROLE_PROMPTS[AgentRole.ID];
       expect(prompt).toMatch(/same base model/i);
