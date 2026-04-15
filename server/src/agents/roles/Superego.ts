@@ -256,12 +256,23 @@ export class Superego {
           let merged: string;
           if (fileType === SubstrateFileType.PLAN) {
             merged = PlanParser.appendTasksToExistingPlan(existing, [proposal.content]);
+            try {
+              await this.writer.atomicWrite(
+                fileType,
+                merged,
+                (content) => PlanParser.parseTasks(content).length > 0
+              );
+            } catch (err) {
+              const msg = err instanceof Error ? err.message : String(err);
+              await this.logAudit(`PLAN atomic write failed: ${msg}`);
+              throw err;
+            }
           } else {
             merged = existing
               ? `${existing.trimEnd()}\n\n---\n\n${proposal.content}`
               : proposal.content;
+            await this.writer.write(fileType, merged);
           }
-          await this.writer.write(fileType, merged);
         } else {
           await this.logAudit(`Proposal for ${proposal.target} approved but no target handler — dropped`);
         }

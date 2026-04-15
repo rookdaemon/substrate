@@ -11,6 +11,7 @@ import { InMemoryFileSystem } from "../../../src/substrate/abstractions/InMemory
 import { FixedClock } from "../../../src/substrate/abstractions/FixedClock";
 import { TaskClassifier } from "../../../src/agents/TaskClassifier";
 import { SuperegoFindingTracker } from "../../../src/agents/roles/SuperegoFindingTracker";
+import { PlanParser } from "../../../src/agents/parsers/PlanParser";
 
 describe("Superego agent", () => {
   let fs: InMemoryFileSystem;
@@ -772,6 +773,50 @@ describe("Superego agent", () => {
       expect(plan).toContain("- [ ] Original task");
       expect(plan).toContain("- [ ] First Superego task");
       expect(plan).toContain("- [ ] Second Superego task");
+    });
+
+    describe("atomic write for PLAN.md", () => {
+      afterEach(() => {
+        jest.restoreAllMocks();
+      });
+
+      it("preserves original PLAN.md when merged content fails PlanParser validation", async () => {
+        const originalContent = "# Plan\n\n## Tasks\n- [ ] Original task";
+        await fs.writeFile("/substrate/PLAN.md", originalContent);
+
+        // Simulate a PlanParser bug that returns no tasks for the merged content
+        jest.spyOn(PlanParser, "parseTasks").mockReturnValueOnce([]);
+
+        const proposals = [{ target: "PLAN", content: "- [ ] New task" }];
+        const evaluations = [{ approved: true, reason: "Good" }];
+
+        await expect(superego.applyProposals(proposals, evaluations)).rejects.toThrow(
+          /atomic write validation failed/i
+        );
+
+        // Original PLAN.md must be untouched
+        const plan = await fs.readFile("/substrate/PLAN.md");
+        expect(plan).toBe(originalContent);
+
+        // Temp file must have been cleaned up
+        await expect(fs.readFile("/substrate/PLAN.md.tmp")).rejects.toThrow(/ENOENT/);
+      });
+
+      it("replaces PLAN.md atomically when merged content parses correctly", async () => {
+        await fs.writeFile("/substrate/PLAN.md", "# Plan\n\n## Tasks\n- [ ] Existing task");
+
+        const proposals = [{ target: "PLAN", content: "- [ ] Atomic task" }];
+        const evaluations = [{ approved: true, reason: "Good" }];
+
+        await superego.applyProposals(proposals, evaluations);
+
+        const plan = await fs.readFile("/substrate/PLAN.md");
+        expect(plan).toContain("- [ ] Existing task");
+        expect(plan).toContain("- [ ] Atomic task");
+
+        // No temp file should remain
+        await expect(fs.readFile("/substrate/PLAN.md.tmp")).rejects.toThrow(/ENOENT/);
+      });
     });
   });
 });
