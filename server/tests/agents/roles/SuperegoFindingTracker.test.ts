@@ -252,11 +252,9 @@ describe("SuperegoFindingTracker", () => {
 
       tracker.track(finding, 10, BASE_TS);
       tracker.track(finding, 20, BASE_TS + DAYS_MS(45)); // gap = 45 days → exceeds 30d threshold
-      tracker.track(finding, 30, BASE_TS + DAYS_MS(50));
+      const result = tracker.track(finding, 30, BASE_TS + DAYS_MS(50));
 
-      const signature = tracker.generateSignature(finding);
-      tracker.shouldEscalate(signature);
-
+      expect(result).toBe(false);
       const warns = logger.getWarnEntries();
       expect(warns.length).toBeGreaterThan(0);
       expect(warns[0]).toContain("TEST_FINDING");
@@ -276,8 +274,9 @@ describe("SuperegoFindingTracker", () => {
 
       tracker.track(finding, 10, BASE_TS);
       tracker.track(finding, 20, BASE_TS + DAYS_MS(7));
-      tracker.track(finding, 30, BASE_TS + DAYS_MS(14));
+      const result = tracker.track(finding, 30, BASE_TS + DAYS_MS(14));
 
+      expect(result).toBe(true);
       expect(logger.getWarnEntries()).toHaveLength(0);
     });
 
