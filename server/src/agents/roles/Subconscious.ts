@@ -104,6 +104,38 @@ export const TASK_RESULT_SCHEMA = {
 } as const;
 
 /**
+ * Validate a parsed object against the required fields of TASK_RESULT_SCHEMA.
+ * Returns an array of human-readable error strings; empty means valid.
+ */
+export function validateTaskResult(parsed: Record<string, unknown>): string[] {
+  const errors: string[] = [];
+  const validResults = ["success", "failure", "partial", "blocked"];
+
+  if (!validResults.includes(parsed.result as string)) {
+    errors.push(`result: '${parsed.result}' is not one of ${validResults.join(", ")}`);
+  }
+  if (typeof parsed.summary !== "string") {
+    errors.push("summary: must be a string");
+  }
+  if (typeof parsed.progressEntry !== "string") {
+    errors.push("progressEntry: must be a string");
+  }
+  if (parsed.skillUpdates !== null && typeof parsed.skillUpdates !== "string") {
+    errors.push("skillUpdates: must be a string or null");
+  }
+  if (parsed.memoryUpdates !== null && typeof parsed.memoryUpdates !== "string") {
+    errors.push("memoryUpdates: must be a string or null");
+  }
+  if (!Array.isArray(parsed.proposals)) {
+    errors.push("proposals: must be an array");
+  }
+  if (!Array.isArray(parsed.agoraReplies)) {
+    errors.push("agoraReplies: must be an array");
+  }
+  return errors;
+}
+
+/**
  * JSON Schema for OutcomeEvaluation — used by OllamaSessionLauncher for
  * grammar-constrained decoding via the `format` field.
  */
@@ -191,14 +223,26 @@ export class Subconscious {
       }
 
       const parsed = extractJson(result.rawOutput);
+      const schemaErrors = validateTaskResult(parsed);
+      if (schemaErrors.length > 0) {
+        return {
+          result: "failure",
+          summary: `Task result schema validation failed: ${schemaErrors.join("; ")}`,
+          progressEntry: "",
+          skillUpdates: null,
+          memoryUpdates: null,
+          proposals: [],
+          agoraReplies: [],
+        };
+      }
       return {
-        result: (parsed.result as "success" | "failure" | "partial" | "blocked" | undefined) ?? "failure",
-        summary: (parsed.summary as string | undefined) ?? "",
-        progressEntry: (parsed.progressEntry as string | undefined) ?? "",
-        skillUpdates: (parsed.skillUpdates as string | null | undefined) ?? null,
-        memoryUpdates: (parsed.memoryUpdates as string | null | undefined) ?? null,
-        proposals: (parsed.proposals as SubconsciousProposal[] | undefined) ?? [],
-        agoraReplies: (parsed.agoraReplies as AgoraReply[] | undefined) ?? [],
+        result: parsed.result as "success" | "failure" | "partial" | "blocked",
+        summary: parsed.summary as string,
+        progressEntry: parsed.progressEntry as string,
+        skillUpdates: parsed.skillUpdates as string | null,
+        memoryUpdates: parsed.memoryUpdates as string | null,
+        proposals: parsed.proposals as SubconsciousProposal[],
+        agoraReplies: parsed.agoraReplies as AgoraReply[],
         blockedReason: (parsed.blockedReason as string | undefined) ?? undefined,
         insAcknowledgments: (parsed.insAcknowledgments as import("../../loop/ins/types").InsAcknowledgment[] | undefined) ?? undefined,
         retryAfter: (parsed.retryAfter as string | undefined) ?? undefined,

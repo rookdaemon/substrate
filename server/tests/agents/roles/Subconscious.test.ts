@@ -1,4 +1,4 @@
-import { Subconscious } from "../../../src/agents/roles/Subconscious";
+import { Subconscious, validateTaskResult } from "../../../src/agents/roles/Subconscious";
 import { PermissionChecker } from "../../../src/agents/permissions";
 import { PromptBuilder, SubstrateSnapshot } from "../../../src/agents/prompts/PromptBuilder";
 import { InMemorySessionLauncher } from "../../../src/agents/claude/InMemorySessionLauncher";
@@ -72,7 +72,9 @@ describe("Subconscious agent", () => {
         summary: "Implemented the feature",
         progressEntry: "Completed task A implementation",
         skillUpdates: null,
+        memoryUpdates: null,
         proposals: [],
+        agoraReplies: [],
       });
       launcher.enqueueSuccess(claudeResponse);
 
@@ -87,7 +89,7 @@ describe("Subconscious agent", () => {
 
     it("passes substratePath as cwd to session launcher", async () => {
       launcher.enqueueSuccess(JSON.stringify({
-        result: "success", summary: "Done", progressEntry: "", skillUpdates: null, proposals: [],
+        result: "success", summary: "Done", progressEntry: "", skillUpdates: null, memoryUpdates: null, proposals: [], agoraReplies: [],
       }));
 
       await subconscious.execute({ taskId: "task-1", description: "Do it" });
@@ -118,6 +120,23 @@ describe("Subconscious agent", () => {
 
       expect(result.result).toBe("failure");
       expect(result.summary).toMatch(/JSON|Unexpected|parse/i);
+    });
+
+    it("returns failure result when task result schema validation fails", async () => {
+      // Response has JSON but missing required fields and invalid enum
+      launcher.enqueueSuccess(JSON.stringify({
+        result: "unknown_status",
+        summary: 42,
+        proposals: "not-an-array",
+      }));
+
+      const result = await subconscious.execute({
+        taskId: "task-1",
+        description: "Implement task A",
+      });
+
+      expect(result.result).toBe("failure");
+      expect(result.summary).toMatch(/schema validation failed/i);
     });
 
     it("uses snapshot content for PLAN instead of re-reading from disk", async () => {
@@ -162,9 +181,11 @@ describe("Subconscious agent", () => {
         summary: "Done",
         progressEntry: "Finished",
         skillUpdates: null,
+        memoryUpdates: null,
         proposals: [
           { target: "MEMORY", content: "Learned something new" },
         ],
+        agoraReplies: [],
       });
       launcher.enqueueSuccess(claudeResponse);
 
@@ -402,6 +423,87 @@ describe("Subconscious agent", () => {
         proposals: [],
       });
       expect(minRating).toBe(3);
+    });
+  });
+
+  describe("validateTaskResult", () => {
+    it("returns no errors for a valid task result", () => {
+      const errors = validateTaskResult({
+        result: "success",
+        summary: "All done",
+        progressEntry: "Completed",
+        skillUpdates: null,
+        memoryUpdates: null,
+        proposals: [],
+        agoraReplies: [],
+      });
+      expect(errors).toHaveLength(0);
+    });
+
+    it("returns error for invalid result enum", () => {
+      const errors = validateTaskResult({
+        result: "invalid_status",
+        summary: "Done",
+        progressEntry: "",
+        skillUpdates: null,
+        memoryUpdates: null,
+        proposals: [],
+        agoraReplies: [],
+      });
+      expect(errors.some((e) => e.startsWith("result:"))).toBe(true);
+    });
+
+    it("returns error when summary is not a string", () => {
+      const errors = validateTaskResult({
+        result: "success",
+        summary: 123,
+        progressEntry: "",
+        skillUpdates: null,
+        memoryUpdates: null,
+        proposals: [],
+        agoraReplies: [],
+      });
+      expect(errors.some((e) => e.startsWith("summary:"))).toBe(true);
+    });
+
+    it("returns error when proposals is not an array", () => {
+      const errors = validateTaskResult({
+        result: "success",
+        summary: "Done",
+        progressEntry: "",
+        skillUpdates: null,
+        memoryUpdates: null,
+        proposals: "not-an-array",
+        agoraReplies: [],
+      });
+      expect(errors.some((e) => e.startsWith("proposals:"))).toBe(true);
+    });
+
+    it("returns error when agoraReplies is missing", () => {
+      const errors = validateTaskResult({
+        result: "success",
+        summary: "Done",
+        progressEntry: "",
+        skillUpdates: null,
+        memoryUpdates: null,
+        proposals: [],
+      });
+      expect(errors.some((e) => e.startsWith("agoraReplies:"))).toBe(true);
+    });
+
+    it("accepts all valid result enum values", () => {
+      for (const value of ["success", "failure", "partial", "blocked"]) {
+        const errors = validateTaskResult({
+          result: value,
+          summary: "Done",
+          progressEntry: "",
+          skillUpdates: null,
+          memoryUpdates: null,
+          proposals: [],
+          agoraReplies: [],
+        });
+        expect(errors.filter((e) => e.startsWith("result:"))).toHaveLength(0);
+      }
     });
   });
 });
