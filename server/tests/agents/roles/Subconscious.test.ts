@@ -287,7 +287,7 @@ describe("Subconscious agent", () => {
       expect(rating).toBe(5);
     });
 
-    it("adds 3 points when skill or memory updates are present", () => {
+    it("does not add points when skill or memory updates are present (interim F3 fix)", () => {
       const rating = Subconscious.computeDriveRating({
         result: "success",
         summary: "Learned something",
@@ -296,7 +296,7 @@ describe("Subconscious agent", () => {
         memoryUpdates: null,
         proposals: [],
       });
-      expect(rating).toBe(8);
+      expect(rating).toBe(5);
     });
 
     it("subtracts 2 points for failed tasks", () => {
@@ -359,7 +359,7 @@ describe("Subconscious agent", () => {
       expect(rating).toBe(9);
     });
 
-    it("Bishop adversarial session with memory updates reaches same ceiling as Rook blog session", () => {
+    it("Bishop adversarial session reaches same ceiling as Rook blog session (no skill-update bonus)", () => {
       const bishopRating = Subconscious.computeDriveRating({
         result: "success",
         summary: "VPCC certification work",
@@ -377,11 +377,11 @@ describe("Subconscious agent", () => {
         proposals: [],
       });
       expect(bishopRating).toBe(rookRating);
-      expect(bishopRating).toBe(10);
+      expect(bishopRating).toBe(9);
     });
 
     it("clamps score to the 0-10 range", () => {
-      // Max: 5 + 3 + 4 = 12 → clamped to 10
+      // Max: 5 + 4 = 9 (skill/memory bonus removed per F3 interim fix)
       const maxRating = Subconscious.computeDriveRating({
         result: "success",
         summary: "Did everything",
@@ -390,7 +390,7 @@ describe("Subconscious agent", () => {
         memoryUpdates: null,
         proposals: [],
       });
-      expect(maxRating).toBe(10);
+      expect(maxRating).toBe(9);
 
       // Min: 5 - 2 = 3, but with no bonus → 3 (already above 0)
       const minRating = Subconscious.computeDriveRating({
