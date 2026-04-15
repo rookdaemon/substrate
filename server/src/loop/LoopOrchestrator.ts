@@ -1,5 +1,6 @@
 import * as path from "path";
 import { IFileSystem } from "../substrate/abstractions/IFileSystem";
+import { SubstrateFileType } from "../substrate/types";
 import { Ego } from "../agents/roles/Ego";
 import { Subconscious, TaskResult, OutcomeEvaluation, AgoraReply } from "../agents/roles/Subconscious";
 import { Superego } from "../agents/roles/Superego";
@@ -170,7 +171,18 @@ export class LoopOrchestrator implements IMessageInjector {
     }
     this.findingTrackerSave = findingTrackerSave ?? null;
     this.deferredWork = new DeferredWorkQueue(
-      (err) => this.logger.warn(`deferred work failed: ${err.message}`)
+      async (err, label) => {
+        const workType = label ?? "unknown";
+        this.logger.warn(`deferred work failed [${workType}]: ${err.message}`);
+        try {
+          await this._appendWriter.append(
+            SubstrateFileType.PROGRESS,
+            `DEFERRED_WORK_FAILURE: type=${workType}, error=${err.message}, disposition=dropped`,
+          );
+        } catch (appendErr) {
+          this.logger.warn(`failed to write DEFERRED_WORK_FAILURE to PROGRESS.md: ${appendErr instanceof Error ? appendErr.message : String(appendErr)}`);
+        }
+      }
     );
   }
 
@@ -635,7 +647,7 @@ export class LoopOrchestrator implements IMessageInjector {
       // This moves Agora sends from LLM tool calls into the orchestrator,
       // enabling pure text-in → JSON-out execution for self-hosted models.
       if (taskResult.agoraReplies.length > 0 && this.agoraService) {
-        this.deferredWork.enqueue(this.sendAgoraReplies(taskResult.agoraReplies));
+        this.deferredWork.enqueue(this.sendAgoraReplies(taskResult.agoraReplies), "agora_replies");
       }
 
       // Drive learning: if task was Id-generated, record a quality rating for future drive improvement
@@ -648,13 +660,14 @@ export class LoopOrchestrator implements IMessageInjector {
           (async () => {
             const evaluations = await this.superego.evaluateProposals(taskResult.proposals, this.createLogCallback("SUPEREGO"));
             await this.superego.applyProposals(taskResult.proposals, evaluations);
-          })()
+          })(),
+          "proposal_evaluation"
         );
       }
 
       // Enqueue reconsideration as deferred work
       if (success || taskResult.result === "partial") {
-        this.deferredWork.enqueue(this.runReconsideration(dispatch, taskResult));
+        this.deferredWork.enqueue(this.runReconsideration(dispatch, taskResult), "reconsideration");
       }
 
       result = {
@@ -698,14 +711,14 @@ export class LoopOrchestrator implements IMessageInjector {
     // Superego audit — enqueue as deferred work (overlaps with next cycle's dispatch)
     if (this.cycleNumber % this.config.superegoAuditInterval === 0 || this.auditOnNextCycle) {
       this.auditOnNextCycle = false;
-      this.deferredWork.enqueue(this.runAudit());
+      this.deferredWork.enqueue(this.runAudit(), "audit");
     }
 
 
 
     // Enqueue schedulers as deferred work (overlaps with next cycle's dispatch)
     if (this.schedulerCoordinator) {
-      this.deferredWork.enqueue(this.schedulerCoordinator.runDueSchedulers(this.pendingMessages.length, llmSessionInvokedThisCycle));
+      this.deferredWork.enqueue(this.schedulerCoordinator.runDueSchedulers(this.pendingMessages.length, llmSessionInvokedThisCycle), "scheduler");
     }
 
     // Drain deferred work at end-of-cycle: items enqueued during cycle N execute before cycle N ends,

@@ -60,6 +60,20 @@ describe("DeferredWorkQueue", () => {
     expect(errors[0].message).toBe("boom");
   });
 
+  it("passes label to error handler when work fails", async () => {
+    const calls: { message: string; label: string | undefined }[] = [];
+    const errorHandler = (err: Error, label?: string) => calls.push({ message: err.message, label });
+    queue = new DeferredWorkQueue(errorHandler);
+
+    queue.enqueue(Promise.reject(new Error("labeled-fail")), "proposal_evaluation");
+    queue.enqueue(Promise.reject(new Error("unlabeled-fail")));
+
+    await queue.drain();
+    expect(calls).toHaveLength(2);
+    expect(calls[0]).toEqual({ message: "labeled-fail", label: "proposal_evaluation" });
+    expect(calls[1]).toEqual({ message: "unlabeled-fail", label: undefined });
+  });
+
   it("without error handler, drain still does not reject", async () => {
     queue.enqueue(Promise.reject(new Error("ignored")));
     await queue.drain(); // should not throw

@@ -151,4 +151,22 @@ describe("DeferredWorkQueue drain at end-of-cycle", () => {
     const warnEntries = logger.getWarnEntries();
     expect(warnEntries.some(e => e.includes("drain exploded"))).toBe(true);
   });
+
+  it("failed deferred work writes a DEFERRED_WORK_FAILURE entry to PROGRESS.md", async () => {
+    const { orchestrator, deps } = createOrchestrator();
+    await setupIdleSubstrate(deps.fs);
+
+    const deferredWork = (orchestrator as unknown as { deferredWork: DeferredWorkQueue }).deferredWork;
+    deferredWork.enqueue(Promise.reject(new Error("proposal crashed")), "proposal_evaluation");
+
+    orchestrator.start();
+    await orchestrator.runOneCycle();
+
+    // drain() awaits the async onError handler, so the PROGRESS write is complete here
+    const progress = await deps.fs.readFile("/substrate/PROGRESS.md");
+    expect(progress).toContain("DEFERRED_WORK_FAILURE");
+    expect(progress).toContain("type=proposal_evaluation");
+    expect(progress).toContain("error=proposal crashed");
+    expect(progress).toContain("disposition=dropped");
+  });
 });
