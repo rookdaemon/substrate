@@ -300,7 +300,7 @@ export async function createAgentLayer(
 
   const ego = new Ego(reader, writer, conversationManager, checker, promptBuilder, gatedLauncher, clock, taskClassifier, workspaceManager.workspacePath(AgentRole.EGO), config.sourceCodePath, cycleLogWriter);
   const subconscious = new Subconscious(reader, writer, appendWriter, conversationManager, checker, promptBuilder, gatedLauncher, clock, taskClassifier, workspaceManager.workspacePath(AgentRole.SUBCONSCIOUS), cycleLogWriter);
-  const superego = new Superego(reader, appendWriter, checker, promptBuilder, gatedLauncher, clock, taskClassifier, writer, workspaceManager.workspacePath(AgentRole.SUPEREGO));
+  const superego = new Superego(reader, appendWriter, checker, promptBuilder, gatedLauncher, clock, taskClassifier, writer, workspaceManager.workspacePath(AgentRole.SUPEREGO), logger);
 
   // Id launcher — defaults to gatedLauncher; routes to VertexSessionLauncher when idLauncher === "vertex".
   // VertexSessionLauncher silently ignores continueSession/persistSession flags (reads only model and timeoutMs).
