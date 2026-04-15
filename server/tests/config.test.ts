@@ -231,13 +231,13 @@ describe("resolveConfig", () => {
     expect(config.superegoAuditInterval).toBe(30);
   });
 
-  it("defaults superegoAuditInterval to 50", async () => {
+  it("defaults superegoAuditInterval to 45", async () => {
     const config = await resolveConfig(fs, {
       appPaths: TEST_PATHS,
       env: {},
     });
 
-    expect(config.superegoAuditInterval).toBe(50);
+    expect(config.superegoAuditInterval).toBe(45);
   });
 
   it("uses cycleDelayMs from config file", async () => {

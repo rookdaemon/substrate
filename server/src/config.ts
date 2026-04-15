@@ -196,7 +196,7 @@ export interface AppConfig {
   autoStartAfterRestart: boolean;
   /** Number of backups to retain (default: 14). */
   backupRetentionCount?: number;
-  /** Number of cycles between SUPEREGO audits (default: 50). Can be overridden by SUPEREGO_AUDIT_INTERVAL env var. */
+  /** Number of cycles between SUPEREGO audits (default: 45, offset from R2 ceiling of 50). Can be overridden by SUPEREGO_AUDIT_INTERVAL env var. */
   superegoAuditInterval?: number;
   /** Configuration for post-task outcome evaluation */
   evaluateOutcome?: {
@@ -343,7 +343,7 @@ export async function resolveConfig(
     autoStartOnFirstRun: true,
     autoStartAfterRestart: true,
     backupRetentionCount: 14,
-    superegoAuditInterval: 50,
+    superegoAuditInterval: 45, // Offset from R2 ceiling (50) so audits fire mid-session, giving ~5 cycles to act on findings before sleep
     cycleDelayMs: 30000,
     evaluateOutcome: {
       enabled: false,
