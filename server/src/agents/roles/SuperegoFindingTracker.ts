@@ -34,7 +34,29 @@ interface OccurrenceRecord {
 
 export class SuperegoFindingTracker {
   private findingHistory: Map<string, OccurrenceRecord[]> = new Map();
+  /**
+   * Number of consecutive audit occurrences required before a CRITICAL finding
+   * is escalated.  Counts **audit runs**, not raw cycles.
+   *
+   * At the default superegoAuditInterval of 50 cycles:
+   *   minimum cycles to escalation = CONSECUTIVE_THRESHOLD × superegoAuditInterval
+   *                                = 3 × 50 = 150 cycles
+   *
+   * NOTE: if superegoAuditInterval is changed, the escalation timeline scales
+   * proportionally — e.g. interval=10 → escalation after only 30 cycles.
+   */
   private readonly CONSECUTIVE_THRESHOLD = 3;
+  /**
+   * Number of consecutive audit occurrences required before a WARNING finding
+   * is escalated.  Counts **audit runs**, not raw cycles.
+   *
+   * At the default superegoAuditInterval of 50 cycles:
+   *   minimum cycles to escalation = WARNING_THRESHOLD × superegoAuditInterval
+   *                                = 5 × 50 = 250 cycles
+   *
+   * NOTE: if superegoAuditInterval is changed, the escalation timeline scales
+   * proportionally — e.g. interval=10 → escalation after only 50 cycles.
+   */
   private readonly WARNING_THRESHOLD = 5;
   /**
    * Maximum time gap (ms) between any two consecutive occurrences for them to
