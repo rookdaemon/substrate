@@ -606,14 +606,6 @@ export class LoopOrchestrator implements IMessageInjector {
           await this.subconscious.logProgress(taskResult.progressEntry);
         }
 
-        if (taskResult.skillUpdates) {
-          await this.subconscious.updateSkills(taskResult.skillUpdates);
-        }
-
-        if (taskResult.memoryUpdates) {
-          await this.subconscious.updateMemory(taskResult.memoryUpdates);
-        }
-
         if (taskResult.summary) {
           await this.subconscious.logConversation(taskResult.summary);
         }
@@ -641,13 +633,21 @@ export class LoopOrchestrator implements IMessageInjector {
       // Drive learning: if task was Id-generated, record a quality rating for future drive improvement
       await this.recordDriveRatingIfApplicable(dispatch.description, taskResult);
 
-      // Enqueue proposal evaluation as deferred work (overlaps with next cycle's dispatch)
-      if (taskResult.proposals.length > 0) {
-        this.logger.debug(`cycle ${this.cycleNumber}: deferring evaluation of ${taskResult.proposals.length} proposal(s)`);
+      // Enqueue proposal evaluation as deferred work (overlaps with next cycle's dispatch).
+      // skillUpdates and memoryUpdates are converted to synthetic proposals so that
+      // Superego evaluates them before they are written — eliminating the atomicity gap
+      // where writes would occur before governance has a chance to reject them.
+      const syntheticProposals = [
+        ...(taskResult.skillUpdates ? [{ target: "SKILLS", content: taskResult.skillUpdates }] : []),
+        ...(taskResult.memoryUpdates ? [{ target: "MEMORY", content: taskResult.memoryUpdates }] : []),
+        ...taskResult.proposals,
+      ];
+      if (syntheticProposals.length > 0) {
+        this.logger.debug(`cycle ${this.cycleNumber}: deferring evaluation of ${syntheticProposals.length} proposal(s)`);
         this.deferredWork.enqueue(
           (async () => {
-            const evaluations = await this.superego.evaluateProposals(taskResult.proposals, this.createLogCallback("SUPEREGO"));
-            await this.superego.applyProposals(taskResult.proposals, evaluations);
+            const evaluations = await this.superego.evaluateProposals(syntheticProposals, this.createLogCallback("SUPEREGO"));
+            await this.superego.applyProposals(syntheticProposals, evaluations);
           })()
         );
       }

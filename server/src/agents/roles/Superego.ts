@@ -35,7 +35,7 @@ export interface Proposal {
 }
 
 /** Governed domains whose proposals require Superego approval. */
-const GOVERNED_DOMAINS = new Set(["HABITS", "SECURITY", "PLAN"]);
+const GOVERNED_DOMAINS = new Set(["HABITS", "SECURITY", "PLAN", "SKILLS", "MEMORY"]);
 
 /**
  * Patterns that indicate an INVISIBLE-OUTPUT BYPASS attempt:
@@ -231,7 +231,12 @@ export class Superego {
       HABITS: SubstrateFileType.HABITS,
       SECURITY: SubstrateFileType.SECURITY,
       PLAN: SubstrateFileType.PLAN,
+      SKILLS: SubstrateFileType.SKILLS,
+      MEMORY: SubstrateFileType.MEMORY,
     };
+
+    // These file types receive full replacement content from the LLM (not append/merge)
+    const fullReplaceTypes = new Set([SubstrateFileType.SKILLS, SubstrateFileType.MEMORY]);
 
     for (let i = 0; i < proposals.length; i++) {
       const proposal = proposals[i];
@@ -246,17 +251,27 @@ export class Superego {
         const fileType = targetMap[proposal.target.toUpperCase()];
         if (fileType) {
           this.checker.assertCanWrite(AgentRole.SUPEREGO, fileType);
-          const existing = await this.reader.read(fileType)
-            .then((r) => r.rawMarkdown)
-            .catch((err: unknown) => {
-              const msg = err instanceof Error ? err.message : String(err);
-              if (msg.includes("ENOENT")) return "";
-              throw err;
-            });
           let merged: string;
-          if (fileType === SubstrateFileType.PLAN) {
+          if (fullReplaceTypes.has(fileType)) {
+            // SKILLS and MEMORY contain full replacement content — write directly
+            merged = proposal.content;
+          } else if (fileType === SubstrateFileType.PLAN) {
+            const existing = await this.reader.read(fileType)
+              .then((r) => r.rawMarkdown)
+              .catch((err: unknown) => {
+                const msg = err instanceof Error ? err.message : String(err);
+                if (msg.includes("ENOENT")) return "";
+                throw err;
+              });
             merged = PlanParser.appendTasksToExistingPlan(existing, [proposal.content]);
           } else {
+            const existing = await this.reader.read(fileType)
+              .then((r) => r.rawMarkdown)
+              .catch((err: unknown) => {
+                const msg = err instanceof Error ? err.message : String(err);
+                if (msg.includes("ENOENT")) return "";
+                throw err;
+              });
             merged = existing
               ? `${existing.trimEnd()}\n\n---\n\n${proposal.content}`
               : proposal.content;

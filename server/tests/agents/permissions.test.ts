@@ -48,14 +48,14 @@ describe("ROLE_PERMISSIONS", () => {
     expect(appendFiles).toContain(SubstrateFileType.CONVERSATION);
   });
 
-  it("gives Subconscious write access to PLAN, SKILLS, and MEMORY", () => {
+  it("gives Subconscious write access to PLAN only (SKILLS and MEMORY now governed by Superego)", () => {
     const perms = ROLE_PERMISSIONS[AgentRole.SUBCONSCIOUS];
     const writeFiles = perms
       .filter((p) => p.accessLevel === FileAccessLevel.WRITE)
       .map((p) => p.fileType);
     expect(writeFiles).toContain(SubstrateFileType.PLAN);
-    expect(writeFiles).toContain(SubstrateFileType.SKILLS);
-    expect(writeFiles).toContain(SubstrateFileType.MEMORY);
+    expect(writeFiles).not.toContain(SubstrateFileType.SKILLS);
+    expect(writeFiles).not.toContain(SubstrateFileType.MEMORY);
   });
 
   it("gives Subconscious append access to PROGRESS and CONVERSATION", () => {
@@ -88,7 +88,7 @@ describe("ROLE_PERMISSIONS", () => {
     ]);
   });
 
-  it("gives Superego write access to HABITS, SECURITY, and PLAN", () => {
+  it("gives Superego write access to HABITS, SECURITY, PLAN, SKILLS, and MEMORY", () => {
     const perms = ROLE_PERMISSIONS[AgentRole.SUPEREGO];
     const writeFiles = perms
       .filter((p) => p.accessLevel === FileAccessLevel.WRITE)
@@ -96,7 +96,9 @@ describe("ROLE_PERMISSIONS", () => {
     expect(writeFiles).toContain(SubstrateFileType.HABITS);
     expect(writeFiles).toContain(SubstrateFileType.SECURITY);
     expect(writeFiles).toContain(SubstrateFileType.PLAN);
-    expect(writeFiles).toHaveLength(3);
+    expect(writeFiles).toContain(SubstrateFileType.SKILLS);
+    expect(writeFiles).toContain(SubstrateFileType.MEMORY);
+    expect(writeFiles).toHaveLength(5);
   });
 
   it("gives Id read access to ID, VALUES, PLAN, PROGRESS, SKILLS, MEMORY", () => {
@@ -156,9 +158,11 @@ describe("PermissionChecker", () => {
       expect(checker.canWrite(AgentRole.SUPEREGO, SubstrateFileType.CONVERSATION)).toBe(false);
     });
 
-    it("Subconscious can write PLAN and SKILLS", () => {
+    it("Subconscious can write PLAN but not SKILLS (SKILLS is now governed by Superego)", () => {
       expect(checker.canWrite(AgentRole.SUBCONSCIOUS, SubstrateFileType.PLAN)).toBe(true);
-      expect(checker.canWrite(AgentRole.SUBCONSCIOUS, SubstrateFileType.SKILLS)).toBe(true);
+      expect(checker.canWrite(AgentRole.SUBCONSCIOUS, SubstrateFileType.SKILLS)).toBe(false);
+      expect(checker.canWrite(AgentRole.SUPEREGO, SubstrateFileType.SKILLS)).toBe(true);
+      expect(checker.canWrite(AgentRole.SUPEREGO, SubstrateFileType.MEMORY)).toBe(true);
     });
 
     it("Id cannot write anything", () => {

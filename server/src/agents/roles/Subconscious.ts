@@ -237,16 +237,6 @@ export class Subconscious {
     await this.writer.write(SubstrateFileType.PLAN, updatedMarkdown);
   }
 
-  async updateSkills(content: string): Promise<void> {
-    this.checker.assertCanWrite(AgentRole.SUBCONSCIOUS, SubstrateFileType.SKILLS);
-    await this.writer.write(SubstrateFileType.SKILLS, content);
-  }
-
-  async updateMemory(content: string): Promise<void> {
-    this.checker.assertCanWrite(AgentRole.SUBCONSCIOUS, SubstrateFileType.MEMORY);
-    await this.writer.write(SubstrateFileType.MEMORY, content);
-  }
-
   /**
    * Compute a 0-10 quality rating for a completed Id-generated drive task.
    * Uses heuristics based on the task outcome without requiring an LLM call.

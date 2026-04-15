@@ -166,20 +166,27 @@ describe("Superego agent", () => {
         expect(launcher.getLaunches()).toHaveLength(0);
       });
 
-      it("evaluates normally ungoverned-domain proposals claiming internal reasoning", async () => {
-        const claudeResponse = JSON.stringify({
-          proposalEvaluations: [{ approved: true, reason: "OK" }],
-        });
-        launcher.enqueueSuccess(claudeResponse);
-
+      it("pre-rejects MEMORY proposal claiming no file modifications (SCOPE_BYPASS_ATTEMPT)", async () => {
         const evaluations = await superego.evaluateProposals([
           { target: "MEMORY", content: "Internal reasoning about memory organization, no file modifications" },
         ]);
 
         expect(evaluations).toHaveLength(1);
-        expect(evaluations[0].approved).toBe(true);
-        // Claude was called because domain is not governed
-        expect(launcher.getLaunches()).toHaveLength(1);
+        expect(evaluations[0].approved).toBe(false);
+        expect(evaluations[0].reason).toContain("SCOPE_BYPASS_ATTEMPT");
+        // Claude should not have been called
+        expect(launcher.getLaunches()).toHaveLength(0);
+      });
+
+      it("pre-rejects SKILLS proposal claiming cognitive-only scope (SCOPE_BYPASS_ATTEMPT)", async () => {
+        const evaluations = await superego.evaluateProposals([
+          { target: "SKILLS", content: "cognitive-only update to skills index, no file modifications" },
+        ]);
+
+        expect(evaluations).toHaveLength(1);
+        expect(evaluations[0].approved).toBe(false);
+        expect(evaluations[0].reason).toContain("SCOPE_BYPASS_ATTEMPT");
+        expect(launcher.getLaunches()).toHaveLength(0);
       });
 
       it("pre-rejects governed-domain bypass proposals while passing non-bypass proposals to Claude", async () => {
@@ -772,6 +779,61 @@ describe("Superego agent", () => {
       expect(plan).toContain("- [ ] Original task");
       expect(plan).toContain("- [ ] First Superego task");
       expect(plan).toContain("- [ ] Second Superego task");
+    });
+
+    // F2 atomicity fix: SKILLS and MEMORY use full-replacement semantics
+    it("approved SKILLS proposal replaces SKILLS.md content entirely", async () => {
+      const proposals = [{ target: "SKILLS", content: "# Skills\n\nNew skill: TypeScript" }];
+      const evaluations = [{ approved: true, reason: "Valid skill update" }];
+
+      await superego.applyProposals(proposals, evaluations);
+
+      const skills = await fs.readFile("/substrate/SKILLS.md");
+      expect(skills).toBe("# Skills\n\nNew skill: TypeScript");
+      // Old content should be replaced, not appended
+      expect(skills).not.toContain("Some skills");
+      expect(skills).not.toContain("---");
+    });
+
+    it("approved MEMORY proposal replaces MEMORY.md content entirely", async () => {
+      const proposals = [{ target: "MEMORY", content: "# Memory\n\nNew memory entry" }];
+      const evaluations = [{ approved: true, reason: "Valid memory update" }];
+
+      await superego.applyProposals(proposals, evaluations);
+
+      const memory = await fs.readFile("/substrate/MEMORY.md");
+      expect(memory).toBe("# Memory\n\nNew memory entry");
+      // Old content should be replaced, not appended
+      expect(memory).not.toContain("Some memories");
+      expect(memory).not.toContain("---");
+    });
+
+    it("rejected SKILLS proposal does not modify SKILLS.md", async () => {
+      const original = await fs.readFile("/substrate/SKILLS.md");
+      const proposals = [{ target: "SKILLS", content: "# Skills\n\nBad skill update" }];
+      const evaluations = [{ approved: false, reason: "Violates constraints" }];
+
+      await superego.applyProposals(proposals, evaluations);
+
+      const skills = await fs.readFile("/substrate/SKILLS.md");
+      expect(skills).toBe(original);
+
+      const progress = await fs.readFile("/substrate/PROGRESS.md");
+      expect(progress).toContain("[SUPEREGO] Proposal for SKILLS rejected: Violates constraints");
+    });
+
+    it("rejected MEMORY proposal does not modify MEMORY.md", async () => {
+      const original = await fs.readFile("/substrate/MEMORY.md");
+      const proposals = [{ target: "MEMORY", content: "# Memory\n\nBad memory" }];
+      const evaluations = [{ approved: false, reason: "Too aggressive" }];
+
+      await superego.applyProposals(proposals, evaluations);
+
+      const memory = await fs.readFile("/substrate/MEMORY.md");
+      expect(memory).toBe(original);
+
+      const progress = await fs.readFile("/substrate/PROGRESS.md");
+      expect(progress).toContain("[SUPEREGO] Proposal for MEMORY rejected: Too aggressive");
     });
   });
 });

@@ -264,16 +264,6 @@ describe("Subconscious agent", () => {
     });
   });
 
-  describe("updateSkills", () => {
-    it("overwrites SKILLS.md with new content", async () => {
-      await subconscious.updateSkills("# Skills\n\n## TypeScript\n\nProficient");
-
-      const content = await fs.readFile("/substrate/SKILLS.md");
-      expect(content).toContain("## TypeScript");
-      expect(content).toContain("Proficient");
-    });
-  });
-
   describe("computeDriveRating", () => {
     it("returns baseline 5 for a successful task with no special signals", () => {
       const rating = Subconscious.computeDriveRating({

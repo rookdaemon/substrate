@@ -49,8 +49,6 @@ export const ROLE_PERMISSIONS: Record<AgentRole, FilePermission[]> = {
     // CONVERSATION.md excluded: Subconscious does not participate in conversation cycles;
     // injecting conversation context would duplicate what Ego already processes and risk stale reads.
     write(SubstrateFileType.PLAN),
-    write(SubstrateFileType.SKILLS),
-    write(SubstrateFileType.MEMORY),
     write(SubstrateFileType.PEERS),
     append(SubstrateFileType.PROGRESS),
     append(SubstrateFileType.CONVERSATION),
@@ -62,6 +60,10 @@ export const ROLE_PERMISSIONS: Record<AgentRole, FilePermission[]> = {
     write(SubstrateFileType.HABITS),
     write(SubstrateFileType.SECURITY),
     write(SubstrateFileType.PLAN),
+    // SKILLS and MEMORY are now written by Superego after governance evaluation —
+    // Subconscious proposes updates; Superego applies them only after approval.
+    write(SubstrateFileType.SKILLS),
+    write(SubstrateFileType.MEMORY),
     append(SubstrateFileType.PROGRESS),
     append(SubstrateFileType.ESCALATE_TO_STEFAN),
   ],
