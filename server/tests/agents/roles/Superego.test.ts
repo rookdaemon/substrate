@@ -98,14 +98,13 @@ describe("Superego agent", () => {
   });
 
   describe("evaluateProposals", () => {
-    it("sends proposals to Claude and returns evaluations", async () => {
+    it("sends governed proposals to Claude and returns evaluations", async () => {
       const claudeResponse = JSON.stringify({
         findings: [],
         proposalEvaluations: [
-          { approved: true, reason: "Looks good" },
           { approved: false, reason: "Too risky" },
         ],
-        summary: "Mixed results",
+        summary: "Rejected",
       });
       launcher.enqueueSuccess(claudeResponse);
 
@@ -115,11 +114,15 @@ describe("Superego agent", () => {
       ]);
 
       expect(evaluations).toHaveLength(2);
-      expect(evaluations[0].approved).toBe(true);
+      // MEMORY is ungoverned — pre-rejected without Claude
+      expect(evaluations[0].approved).toBe(false);
+      expect(evaluations[0].reason).toContain("not in governed domains");
+      // SECURITY is governed — evaluated by Claude
       expect(evaluations[1].approved).toBe(false);
+      expect(evaluations[1].reason).toBe("Too risky");
     });
 
-    it("rejects all proposals with stderr when Claude fails", async () => {
+    it("pre-rejects ungoverned proposals without calling Claude", async () => {
       launcher.enqueueFailure("claude: timeout");
 
       const evaluations = await superego.evaluateProposals([
@@ -128,7 +131,9 @@ describe("Superego agent", () => {
 
       expect(evaluations).toHaveLength(1);
       expect(evaluations[0].approved).toBe(false);
-      expect(evaluations[0].reason).toContain("claude: timeout");
+      expect(evaluations[0].reason).toContain("not in governed domains");
+      // Claude must not have been called
+      expect(launcher.getLaunches()).toHaveLength(0);
     });
 
     describe("scope bypass pre-filter", () => {
@@ -166,20 +171,16 @@ describe("Superego agent", () => {
         expect(launcher.getLaunches()).toHaveLength(0);
       });
 
-      it("evaluates normally ungoverned-domain proposals claiming internal reasoning", async () => {
-        const claudeResponse = JSON.stringify({
-          proposalEvaluations: [{ approved: true, reason: "OK" }],
-        });
-        launcher.enqueueSuccess(claudeResponse);
-
+      it("pre-rejects ungoverned-domain proposals without invoking Claude", async () => {
         const evaluations = await superego.evaluateProposals([
           { target: "MEMORY", content: "Internal reasoning about memory organization, no file modifications" },
         ]);
 
         expect(evaluations).toHaveLength(1);
-        expect(evaluations[0].approved).toBe(true);
-        // Claude was called because domain is not governed
-        expect(launcher.getLaunches()).toHaveLength(1);
+        expect(evaluations[0].approved).toBe(false);
+        expect(evaluations[0].reason).toContain("not in governed domains");
+        // Claude must not have been called for ungoverned proposals
+        expect(launcher.getLaunches()).toHaveLength(0);
       });
 
       it("pre-rejects governed-domain bypass proposals while passing non-bypass proposals to Claude", async () => {
@@ -199,6 +200,75 @@ describe("Superego agent", () => {
         expect(evaluations[0].reason).toContain("SCOPE_BYPASS_ATTEMPT");
         // Second proposal approved by Claude
         expect(evaluations[1].approved).toBe(true);
+        expect(launcher.getLaunches()).toHaveLength(1);
+      });
+    });
+
+    describe("ungoverned domain pre-filter", () => {
+      it("pre-rejects proposal with target MEMORY before Claude call", async () => {
+        const evaluations = await superego.evaluateProposals([
+          { target: "MEMORY", content: "Store additional context about user preferences" },
+        ]);
+
+        expect(evaluations).toHaveLength(1);
+        expect(evaluations[0].approved).toBe(false);
+        expect(evaluations[0].reason).toContain("not in governed domains");
+        expect(launcher.getLaunches()).toHaveLength(0);
+      });
+
+      it("pre-rejects proposal with target VALUES before Claude call", async () => {
+        const evaluations = await superego.evaluateProposals([
+          { target: "VALUES", content: "Add honesty as a core value" },
+        ]);
+
+        expect(evaluations).toHaveLength(1);
+        expect(evaluations[0].approved).toBe(false);
+        expect(evaluations[0].reason).toContain("not in governed domains");
+        expect(launcher.getLaunches()).toHaveLength(0);
+      });
+
+      it("rejection reason names the ungoverned target domain", async () => {
+        const evaluations = await superego.evaluateProposals([
+          { target: "MEMORY", content: "some content" },
+        ]);
+
+        expect(evaluations[0].reason).toContain("MEMORY");
+      });
+
+      it("passes proposal with target HABITS (governed) through to Claude", async () => {
+        const claudeResponse = JSON.stringify({
+          proposalEvaluations: [{ approved: true, reason: "Good habit" }],
+        });
+        launcher.enqueueSuccess(claudeResponse);
+
+        const evaluations = await superego.evaluateProposals([
+          { target: "HABITS", content: "Review task completion habits daily" },
+        ]);
+
+        expect(evaluations).toHaveLength(1);
+        expect(evaluations[0].approved).toBe(true);
+        // Claude was called for the governed proposal
+        expect(launcher.getLaunches()).toHaveLength(1);
+      });
+
+      it("pre-rejects ungoverned proposals while passing governed proposals to Claude", async () => {
+        const claudeResponse = JSON.stringify({
+          proposalEvaluations: [{ approved: true, reason: "Approved" }],
+        });
+        launcher.enqueueSuccess(claudeResponse);
+
+        const evaluations = await superego.evaluateProposals([
+          { target: "MEMORY", content: "Remember more things" },
+          { target: "HABITS", content: "Check in daily" },
+        ]);
+
+        expect(evaluations).toHaveLength(2);
+        // MEMORY pre-rejected — no Claude call for it
+        expect(evaluations[0].approved).toBe(false);
+        expect(evaluations[0].reason).toContain("not in governed domains");
+        // HABITS approved by Claude
+        expect(evaluations[1].approved).toBe(true);
+        // Only one Claude launch for the governed proposal
         expect(launcher.getLaunches()).toHaveLength(1);
       });
     });

@@ -127,13 +127,28 @@ export class Superego {
   }
 
   async evaluateProposals(proposals: Proposal[], onLogEntry?: (entry: ProcessLogEntry) => void): Promise<ProposalEvaluation[]> {
-    // Pre-filter: SCOPE_BYPASS_ATTEMPT — governance scope is determined by
-    // domain/target, not by whether work produces a file modification.
+    // Pre-filter: UNGOVERNED_DOMAIN — proposals targeting domains not in GOVERNED_DOMAINS
+    // are rejected immediately without an LLM call. There is no handler for these domains,
+    // so sending them to Claude would create a false-approval-then-silent-drop pattern.
     const preRejected = new Map<number, ProposalEvaluation>();
     for (let i = 0; i < proposals.length; i++) {
       const proposal = proposals[i];
-      const isGoverned = GOVERNED_DOMAINS.has(proposal.target.toUpperCase());
-      if (isGoverned && detectsScopeBypass(proposal)) {
+      const target = proposal.target.toUpperCase();
+      if (!GOVERNED_DOMAINS.has(target)) {
+        preRejected.set(i, {
+          approved: false,
+          reason: `Target "${proposal.target}" is not in governed domains — no handler`,
+        });
+      }
+    }
+
+    // Pre-filter: SCOPE_BYPASS_ATTEMPT — governance scope is determined by
+    // domain/target, not by whether work produces a file modification.
+    // Only governed proposals reach this point (ungoverned are already pre-rejected above).
+    for (let i = 0; i < proposals.length; i++) {
+      if (preRejected.has(i)) continue;
+      const proposal = proposals[i];
+      if (detectsScopeBypass(proposal)) {
         preRejected.set(i, {
           approved: false,
           reason:
