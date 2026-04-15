@@ -96,5 +96,18 @@ describe("ROLE_PROMPTS", () => {
       const prompt = ROLE_PROMPTS[AgentRole.ID];
       expect(prompt).toMatch(/drive|motiv|goal|idle/i);
     });
+
+    it("contains same-model operating caveat", () => {
+      const prompt = ROLE_PROMPTS[AgentRole.ID];
+      expect(prompt).toMatch(/same base model/i);
+      expect(prompt).toMatch(/echo.chamber|homogeneity/i);
+    });
+
+    it("instructs Id to generate diverse candidates as countermeasure", () => {
+      const prompt = ROLE_PROMPTS[AgentRole.ID];
+      expect(prompt).toMatch(/diverse/i);
+      expect(prompt).toMatch(/breadth/i);
+      expect(prompt).toMatch(/Ego will filter/i);
+    });
   });
 });
