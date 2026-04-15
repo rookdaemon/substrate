@@ -41,8 +41,17 @@ export class SuperegoFindingTracker {
    * be considered part of the same escalation series.  30 days covers any
    * realistic audit-interval variation, including extended Stefan-offline
    * periods, while still detecting stale-then-recurred findings correctly.
+   *
+   * ACCEPTED RISK: if the system is offline for >30 days (hardware failure,
+   * extended maintenance), partially-accumulated escalation chains are
+   * invalidated on restart.  Findings that were accumulating before the outage
+   * must re-accumulate from zero.  For maintenance windows >30 days, manually
+   * review ESCALATE_TO_STEFAN.md for any findings that were approaching
+   * threshold before the outage.
    */
   private readonly GAP_THRESHOLD_MS = 30 * 24 * 60 * 60 * 1000;
+
+  constructor(private readonly logger?: ILogger) {}
 
   /**
    * Generate a stable signature for a finding based on severity and category.
@@ -103,7 +112,18 @@ export class SuperegoFindingTracker {
       const prevTs = lastN[i - 1].ts;
       const currTs = lastN[i].ts;
       if (prevTs === 0 || currTs === 0) return false;
-      if (currTs - prevTs > this.GAP_THRESHOLD_MS) return false;
+      const gapMs = currTs - prevTs;
+      if (gapMs > this.GAP_THRESHOLD_MS) {
+        const gapDays = Math.round(gapMs / 86400000);
+        const thresholdDays = this.GAP_THRESHOLD_MS / 86400000;
+        this.logger?.warn(
+          `SuperegoFindingTracker: finding "${findingId}" gap exceeded threshold ` +
+          `(${gapDays}d > ${thresholdDays}d). ` +
+          `Escalation chain reset. If this was due to an extended offline period, ` +
+          `persistent findings may not escalate correctly.`
+        );
+        return false;
+      }
     }
 
     return true;
@@ -181,7 +201,7 @@ export class SuperegoFindingTracker {
    * Returns a fresh tracker if the file does not exist or is corrupted.
    */
   static async load(filePath: string, fs: IFileSystem, logger?: ILogger): Promise<SuperegoFindingTracker> {
-    const tracker = new SuperegoFindingTracker();
+    const tracker = new SuperegoFindingTracker(logger);
     try {
       const content = await fs.readFile(filePath);
       const parsed: unknown = JSON.parse(content);

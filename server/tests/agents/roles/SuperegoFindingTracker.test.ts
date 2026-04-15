@@ -241,6 +241,46 @@ describe("SuperegoFindingTracker", () => {
       expect(tracker.shouldEscalate("unknown-id")).toBe(false);
     });
 
+    it("emits a warn-level log when gap threshold is exceeded, including gap days and reset note", () => {
+      const logger = new InMemoryLogger();
+      const tracker = new SuperegoFindingTracker(logger);
+      const finding: Finding = {
+        severity: "critical",
+        category: "TEST_FINDING",
+        message: "Test finding",
+      };
+
+      tracker.track(finding, 10, BASE_TS);
+      tracker.track(finding, 20, BASE_TS + DAYS_MS(45)); // gap = 45 days → exceeds 30d threshold
+      tracker.track(finding, 30, BASE_TS + DAYS_MS(50));
+
+      const signature = tracker.generateSignature(finding);
+      tracker.shouldEscalate(signature);
+
+      const warns = logger.getWarnEntries();
+      expect(warns.length).toBeGreaterThan(0);
+      expect(warns[0]).toContain("TEST_FINDING");
+      expect(warns[0]).toContain("45d");
+      expect(warns[0]).toContain("30d");
+      expect(warns[0]).toContain("Escalation chain reset");
+    });
+
+    it("does not emit a warn log when gap threshold is not exceeded", () => {
+      const logger = new InMemoryLogger();
+      const tracker = new SuperegoFindingTracker(logger);
+      const finding: Finding = {
+        severity: "critical",
+        category: "TEST_FINDING",
+        message: "Test finding",
+      };
+
+      tracker.track(finding, 10, BASE_TS);
+      tracker.track(finding, 20, BASE_TS + DAYS_MS(7));
+      tracker.track(finding, 30, BASE_TS + DAYS_MS(14));
+
+      expect(logger.getWarnEntries()).toHaveLength(0);
+    });
+
     it("uses only the most recent threshold occurrences for gap check", () => {
       const tracker = new SuperegoFindingTracker();
       const finding: Finding = { severity: "critical", category: "AUDIT_FAILURE", message: "msg" };
