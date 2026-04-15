@@ -14,6 +14,7 @@ import { SuperegoFindingTracker, Finding } from "./SuperegoFindingTracker";
 import { RateLimitError } from "../../loop/RateLimitError";
 import { isRateLimitText } from "../../loop/rateLimitParser";
 import { detectAuthorityInversion } from "../parsers/AuthorityInversionDetector";
+import { ILogger } from "../../logging";
 
 export type { Finding };
 
@@ -54,6 +55,13 @@ function detectsScopeBypass(proposal: Proposal): boolean {
   return SCOPE_BYPASS_PATTERNS.some((pattern) => pattern.test(text));
 }
 
+const NOOP_LOGGER: ILogger = {
+  debug: () => {},
+  warn: () => {},
+  error: () => {},
+  verbose: () => {},
+};
+
 export class Superego {
   constructor(
     private readonly reader: SubstrateFileReader,
@@ -64,7 +72,8 @@ export class Superego {
     private readonly clock: IClock,
     private readonly taskClassifier: TaskClassifier,
     private readonly writer: SubstrateFileWriter,
-    private readonly workingDirectory?: string
+    private readonly workingDirectory?: string,
+    private readonly logger: ILogger = NOOP_LOGGER
   ) {}
 
   async audit(
@@ -194,11 +203,22 @@ export class Superego {
         }));
       } else {
         const parsed = extractJson(result.rawOutput);
-        claudeEvaluations = (parsed.proposalEvaluations as ProposalEvaluation[] | undefined) ??
-          pendingProposals.map(() => ({
-            approved: false,
-            reason: "No evaluation returned",
-          }));
+        const evaluations = (parsed.proposalEvaluations as ProposalEvaluation[] | undefined) ?? [];
+
+        if (evaluations.length < pendingProposals.length) {
+          this.logger.warn(
+            `Superego response length mismatch: expected ${pendingProposals.length} evaluations, ` +
+            `received ${evaluations.length}. ` +
+            `${pendingProposals.length - evaluations.length} proposals defaulting to rejection.`
+          );
+        }
+
+        claudeEvaluations = evaluations.length > 0
+          ? evaluations
+          : pendingProposals.map(() => ({
+              approved: false,
+              reason: "No evaluation returned",
+            }));
       }
 
       return proposals.map((_, i) => {

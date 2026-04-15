@@ -11,17 +11,20 @@ import { InMemoryFileSystem } from "../../../src/substrate/abstractions/InMemory
 import { FixedClock } from "../../../src/substrate/abstractions/FixedClock";
 import { TaskClassifier } from "../../../src/agents/TaskClassifier";
 import { SuperegoFindingTracker } from "../../../src/agents/roles/SuperegoFindingTracker";
+import { InMemoryLogger } from "../../../src/logging";
 
 describe("Superego agent", () => {
   let fs: InMemoryFileSystem;
   let clock: FixedClock;
   let launcher: InMemorySessionLauncher;
   let superego: Superego;
+  let logger: InMemoryLogger;
 
   beforeEach(async () => {
     fs = new InMemoryFileSystem();
     clock = new FixedClock(new Date("2025-06-15T10:00:00.000Z"));
     launcher = new InMemorySessionLauncher();
+    logger = new InMemoryLogger();
     const config = new SubstrateConfig("/substrate");
     const reader = new SubstrateFileReader(fs, config);
     const lock = new FileLock();
@@ -31,7 +34,7 @@ describe("Superego agent", () => {
     const promptBuilder = new PromptBuilder(reader, checker);
     const taskClassifier = new TaskClassifier({ strategicModel: "opus", tacticalModel: "sonnet" });
 
-    superego = new Superego(reader, appendWriter, checker, promptBuilder, launcher, clock, taskClassifier, writer, "/workspace");
+    superego = new Superego(reader, appendWriter, checker, promptBuilder, launcher, clock, taskClassifier, writer, "/workspace", logger);
 
     await fs.mkdir("/substrate", { recursive: true });
     await fs.writeFile("/substrate/PLAN.md", "# Plan\n\n## Current Goal\nBuild it\n\n## Tasks\n- [ ] Do stuff");
@@ -129,6 +132,61 @@ describe("Superego agent", () => {
       expect(evaluations).toHaveLength(1);
       expect(evaluations[0].approved).toBe(false);
       expect(evaluations[0].reason).toContain("claude: timeout");
+    });
+
+    it("emits a warn log when Claude returns fewer evaluations than proposals (2 of 5)", async () => {
+      const claudeResponse = JSON.stringify({
+        proposalEvaluations: [
+          { approved: true, reason: "OK" },
+          { approved: false, reason: "Too risky" },
+        ],
+      });
+      launcher.enqueueSuccess(claudeResponse);
+
+      const evaluations = await superego.evaluateProposals([
+        { target: "MEMORY", content: "Proposal 1" },
+        { target: "MEMORY", content: "Proposal 2" },
+        { target: "MEMORY", content: "Proposal 3" },
+        { target: "MEMORY", content: "Proposal 4" },
+        { target: "MEMORY", content: "Proposal 5" },
+      ]);
+
+      expect(evaluations).toHaveLength(5);
+      // Proposals 3–5 default to rejection
+      expect(evaluations[2].approved).toBe(false);
+      expect(evaluations[2].reason).toBe("No evaluation returned");
+      expect(evaluations[3].approved).toBe(false);
+      expect(evaluations[4].approved).toBe(false);
+
+      const warnings = logger.getWarnEntries();
+      expect(warnings).toHaveLength(1);
+      expect(warnings[0]).toContain("expected 5 evaluations");
+      expect(warnings[0]).toContain("received 2");
+      expect(warnings[0]).toContain("3 proposals defaulting to rejection");
+    });
+
+    it("emits no warn log when Claude returns exactly as many evaluations as proposals (5 of 5)", async () => {
+      const claudeResponse = JSON.stringify({
+        proposalEvaluations: [
+          { approved: true, reason: "OK 1" },
+          { approved: true, reason: "OK 2" },
+          { approved: true, reason: "OK 3" },
+          { approved: false, reason: "Nope 4" },
+          { approved: false, reason: "Nope 5" },
+        ],
+      });
+      launcher.enqueueSuccess(claudeResponse);
+
+      const evaluations = await superego.evaluateProposals([
+        { target: "MEMORY", content: "Proposal 1" },
+        { target: "MEMORY", content: "Proposal 2" },
+        { target: "MEMORY", content: "Proposal 3" },
+        { target: "MEMORY", content: "Proposal 4" },
+        { target: "MEMORY", content: "Proposal 5" },
+      ]);
+
+      expect(evaluations).toHaveLength(5);
+      expect(logger.getWarnEntries()).toHaveLength(0);
     });
 
     describe("scope bypass pre-filter", () => {
