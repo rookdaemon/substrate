@@ -30,6 +30,10 @@ interface OccurrenceRecord {
    *  cycle numbers; these are treated as having an unknown (infinitely old)
    *  timestamp and will not contribute to gap-based escalation decisions. */
   ts: number;
+  /** Severity reported for this specific occurrence — stored as metadata for
+   *  display/reporting purposes.  Must NOT be used as a keying dimension;
+   *  the escalation chain key is category-only. */
+  severity?: string;
 }
 
 export class SuperegoFindingTracker {
@@ -45,16 +49,21 @@ export class SuperegoFindingTracker {
   private readonly GAP_THRESHOLD_MS = 30 * 24 * 60 * 60 * 1000;
 
   /**
-   * Generate a stable signature for a finding based on severity and category.
-   * Returns a human-readable key of the form "severity:CATEGORY_KEY".
+   * Generate a stable signature for a finding based on category only.
+   * Returns the category as a human-readable key, e.g. "AUDIT_FAILURE".
    *
-   * Using category (not message content) ensures the signature is stable across
-   * cycles even when the message text includes dynamic data (cycle numbers,
-   * timestamps, GC-NNN references).  A stable key is required for the
-   * CONSECUTIVE_THRESHOLD escalation gate to function correctly.
+   * Using category (not severity or message content) ensures the signature is
+   * stable across cycles even when the LLM reports the same underlying issue
+   * with a different severity level.  Severity fragmentation would prevent
+   * recurring findings from ever reaching the CONSECUTIVE_THRESHOLD escalation
+   * gate — using a category-only key ensures the full occurrence history
+   * accumulates into a single chain regardless of per-cycle severity variation.
+   *
+   * Severity is preserved as metadata on each OccurrenceRecord for display
+   * and reporting purposes.
    */
   generateSignature(finding: Finding): string {
-    return `${finding.severity}:${finding.category}`;
+    return finding.category;
   }
 
   /**
@@ -70,7 +79,7 @@ export class SuperegoFindingTracker {
     const signature = this.generateSignature(finding);
     const history = this.findingHistory.get(signature) ?? [];
 
-    history.push({ cycle: cycleNumber, ts });
+    history.push({ cycle: cycleNumber, ts, severity: finding.severity });
     this.findingHistory.set(signature, history);
 
     return this.shouldEscalate(signature);
@@ -80,21 +89,29 @@ export class SuperegoFindingTracker {
    * Check if a finding has reached its escalation threshold with all
    * consecutive occurrences within the 30-day gap window.
    *
-   * CRITICAL findings escalate after CONSECUTIVE_THRESHOLD (3) occurrences.
+   * CRITICAL/INFO findings escalate after CONSECUTIVE_THRESHOLD (3) occurrences.
    * WARNING findings escalate after WARNING_THRESHOLD (5) occurrences.
+   *
+   * The threshold is derived from the most recent occurrence's stored severity
+   * so that a chain that transitions from warning to critical applies the lower
+   * (more sensitive) critical threshold going forward.
    */
   shouldEscalate(findingId: string): boolean {
     const history = this.findingHistory.get(findingId);
-    if (!history) return false;
+    if (!history || history.length === 0) return false;
 
-    const threshold = findingId.startsWith("warning:")
+    // Sort by timestamp; examine the most recent `threshold` occurrences.
+    const sorted = [...history].sort((a, b) => a.ts - b.ts);
+
+    // Derive threshold from the most recent occurrence's severity (metadata).
+    // Falls back to CONSECUTIVE_THRESHOLD when severity is absent (legacy data).
+    const mostRecentSeverity = sorted[sorted.length - 1]?.severity;
+    const threshold = mostRecentSeverity === "warning"
       ? this.WARNING_THRESHOLD
       : this.CONSECUTIVE_THRESHOLD;
 
     if (history.length < threshold) return false;
 
-    // Sort by timestamp; examine the most recent `threshold` occurrences.
-    const sorted = [...history].sort((a, b) => a.ts - b.ts);
     const lastN = sorted.slice(-threshold);
 
     // All consecutive pairs must be within GAP_THRESHOLD_MS.
@@ -175,9 +192,13 @@ export class SuperegoFindingTracker {
 
   /**
    * Deserialize tracker state from a JSON file.
-   * Handles two serialization formats:
-   *   - Legacy (pre-Fix-2): { key: number[] }  — cycle numbers only; ts set to 0 sentinel.
-   *   - Current (Fix-2+):   { key: OccurrenceRecord[] }  — { cycle, ts } objects.
+   * Handles three serialization formats:
+   *   - Legacy (pre-Fix-2): { "severity:CATEGORY": number[] }  — cycle numbers only; ts set to 0 sentinel.
+   *   - Fix-2:              { "severity:CATEGORY": OccurrenceRecord[] }  — { cycle, ts } objects.
+   *   - Current (Fix-10+):  { "CATEGORY": OccurrenceRecord[] }  — category-only key with severity metadata.
+   *
+   * Keys of the old "severity:CATEGORY" form are automatically migrated to the
+   * category-only form so persisted state survives the upgrade without data loss.
    * Returns a fresh tracker if the file does not exist or is corrupted.
    */
   static async load(filePath: string, fs: IFileSystem, logger?: ILogger): Promise<SuperegoFindingTracker> {
@@ -186,17 +207,25 @@ export class SuperegoFindingTracker {
       const content = await fs.readFile(filePath);
       const parsed: unknown = JSON.parse(content);
       if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)) {
-        for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
+        for (const [rawKey, value] of Object.entries(parsed as Record<string, unknown>)) {
           if (!Array.isArray(value)) continue;
+
+          // Migrate old "severity:CATEGORY" keys to category-only form.
+          const severityPrefixMatch = /^(info|warning|critical):(.+)$/.exec(rawKey);
+          const migratedSeverity = severityPrefixMatch ? severityPrefixMatch[1] : undefined;
+          const key = severityPrefixMatch ? severityPrefixMatch[2] : rawKey;
 
           if (value.every((v) => typeof v === "number")) {
             // Legacy format: plain cycle-number array — convert with ts=0 sentinel.
             // ts=0 prevents false escalation on stale entries (gap check returns false
             // whenever a sentinel is encountered).
-            tracker.findingHistory.set(
-              key,
-              (value as number[]).map((cycle) => ({ cycle, ts: 0 }))
-            );
+            const existing = tracker.findingHistory.get(key) ?? [];
+            const records = (value as number[]).map((cycle) => ({
+              cycle,
+              ts: 0,
+              ...(migratedSeverity ? { severity: migratedSeverity } : {}),
+            }));
+            tracker.findingHistory.set(key, [...existing, ...records]);
           } else if (
             value.every(
               (v) =>
@@ -209,7 +238,13 @@ export class SuperegoFindingTracker {
             )
           ) {
             // Current format: OccurrenceRecord array.
-            tracker.findingHistory.set(key, value as OccurrenceRecord[]);
+            // Back-fill severity from the migrated key prefix when records lack it.
+            const existing = tracker.findingHistory.get(key) ?? [];
+            const records = (value as OccurrenceRecord[]).map((r) => ({
+              ...r,
+              severity: r.severity ?? migratedSeverity,
+            }));
+            tracker.findingHistory.set(key, [...existing, ...records]);
           }
         }
       }
