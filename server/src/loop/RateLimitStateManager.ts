@@ -109,6 +109,7 @@ export class RateLimitStateManager {
         return true;
       }
     }
+    // If the task is not present in PLAN.md, treat it as interrupted to preserve prior behavior.
     return false;
   }
 }

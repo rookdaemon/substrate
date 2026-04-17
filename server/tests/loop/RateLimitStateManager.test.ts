@@ -95,6 +95,17 @@ Bootstrap the agent system
     });
 
     it("includes interrupted annotation when current task is still pending", async () => {
+      await fs.writeFile("/test/substrate/PLAN.md", `# Plan
+
+## Current Goal
+
+Bootstrap the agent system
+
+## Tasks
+
+- [ ] Define core values
+- [ ] Write initial identity
+`);
       const resetTime = new Date("2026-02-15T12:00:00Z");
 
       await manager.saveStateBeforeSleep(resetTime, "task-1");
