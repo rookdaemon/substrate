@@ -71,6 +71,51 @@ Bootstrap the agent system
       expect(content).toContain('Task "task-123" was interrupted.');
     });
 
+    it("does not include interrupted annotation when current task is already complete", async () => {
+      await fs.writeFile("/test/substrate/PLAN.md", `# Plan
+
+## Current Goal
+
+Bootstrap the agent system
+
+## Tasks
+
+- [x] Define core values
+- [ ] Write initial identity
+`);
+      const resetTime = new Date("2026-02-15T12:00:00Z");
+
+      await manager.saveStateBeforeSleep(resetTime, "task-1");
+
+      const planPath = config.getFilePath(SubstrateFileType.PLAN);
+      const content = await fs.readFile(planPath);
+
+      expect(content).toContain("- [ ] [restart] Resume from rate-limit hibernation");
+      expect(content).not.toContain('Task "task-1" was interrupted.');
+    });
+
+    it("includes interrupted annotation when current task is still pending", async () => {
+      await fs.writeFile("/test/substrate/PLAN.md", `# Plan
+
+## Current Goal
+
+Bootstrap the agent system
+
+## Tasks
+
+- [ ] Define core values
+- [ ] Write initial identity
+`);
+      const resetTime = new Date("2026-02-15T12:00:00Z");
+
+      await manager.saveStateBeforeSleep(resetTime, "task-1");
+
+      const planPath = config.getFilePath(SubstrateFileType.PLAN);
+      const content = await fs.readFile(planPath);
+
+      expect(content).toContain('Task "task-1" was interrupted.');
+    });
+
     it("updates PLAN.md with hibernation context in Current Goal", async () => {
       const resetTime = new Date("2026-02-15T12:00:00Z");
 
@@ -152,4 +197,3 @@ Bootstrap the agent system
     });
   });
 });
-

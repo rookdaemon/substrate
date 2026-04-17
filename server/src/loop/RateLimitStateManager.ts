@@ -6,7 +6,7 @@ import { FileLock } from "../substrate/io/FileLock";
 import { AppendOnlyWriter } from "../substrate/io/AppendOnlyWriter";
 import { SubstrateFileWriter } from "../substrate/io/FileWriter";
 import { SubstrateFileReader } from "../substrate/io/FileReader";
-import { PlanParser } from "../agents/parsers/PlanParser";
+import { PlanParser, TaskStatus } from "../agents/parsers/PlanParser";
 
 /**
  * Manages state preservation when entering rate-limited hibernation.
@@ -60,7 +60,7 @@ export class RateLimitStateManager {
     currentTaskId: string | undefined,
     resetTimestamp: string
   ): string {
-    const taskContext = currentTaskId ? ` Task "${currentTaskId}" was interrupted.` : '';
+    const taskContext = this.getInterruptionTaskContext(planContent, currentTaskId);
     const restartTask = `- [ ] [restart] Resume from rate-limit hibernation (resuming at ${resetTimestamp})${taskContext}`;
 
     // Find the "## Current Goal" section and add hibernation context
@@ -87,5 +87,29 @@ export class RateLimitStateManager {
 
     // Use PlanParser for consistent task injection into the ## Tasks section
     return PlanParser.appendTasksToExistingPlan(planBase, [restartTask]);
+  }
+
+  private getInterruptionTaskContext(planContent: string, currentTaskId: string | undefined): string {
+    if (!currentTaskId) return "";
+
+    const tasks = PlanParser.parseTasks(planContent);
+    if (this.isTaskComplete(tasks, currentTaskId)) {
+      return "";
+    }
+
+    return ` Task "${currentTaskId}" was interrupted.`;
+  }
+
+  private isTaskComplete(tasks: ReturnType<typeof PlanParser.parseTasks>, taskId: string): boolean {
+    for (const task of tasks) {
+      if (task.id === taskId) {
+        return task.status === TaskStatus.COMPLETE;
+      }
+      if (task.children.length > 0 && this.isTaskComplete(task.children, taskId)) {
+        return true;
+      }
+    }
+    // If the task is not present in PLAN.md, treat it as interrupted to preserve prior behavior.
+    return false;
   }
 }
