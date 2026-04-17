@@ -46,6 +46,7 @@ import type { ISleepWakeTimer } from "./SleepWakeTimer";
 export const MAX_RATE_LIMIT_BACKOFF_MS = 2 * 60 * 60 * 1000;
 
 class EndorsementExternalActionBlockedError extends Error {}
+type EndorsementInterceptEvaluation = Awaited<ReturnType<EndorsementInterceptor["evaluateOutput"]>>;
 
 export class LoopOrchestrator implements IMessageInjector {
   private state: LoopState = LoopState.STOPPED;
@@ -1227,7 +1228,7 @@ export class LoopOrchestrator implements IMessageInjector {
 
   private async checkEndorsement(rawOutput: string): Promise<void> {
     if (!this.endorsementInterceptor) return;
-    let result: Awaited<ReturnType<EndorsementInterceptor["evaluateOutput"]>>;
+    let result: EndorsementInterceptEvaluation | null = null;
     try {
       result = await this.endorsementInterceptor.evaluateOutput(rawOutput);
       if (result.triggered && result.layer === 3) {
@@ -1239,11 +1240,11 @@ export class LoopOrchestrator implements IMessageInjector {
       if (err instanceof EndorsementExternalActionBlockedError) {
         throw err;
       }
-      this.logger.debug(`endorsement: check failed — ${err instanceof Error ? err.message : String(err)}`);
-      return;
+      this.logger.debug(`endorsement: check failed (fail-open) — ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       this.endorsementInterceptor.reset();
     }
+    if (!result) return;
     if (result.triggered && result.injectionMessage) {
       this.logger.debug(`endorsement: Layer ${result.layer} triggered — ${result.verdict} (action: "${result.action}")`);
       this.injectMessage(result.injectionMessage);

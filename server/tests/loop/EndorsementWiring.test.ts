@@ -201,8 +201,11 @@ describe("EndorsementInterceptor wiring in LoopOrchestrator", () => {
 
   it("blocks Layer 3 external actions instead of logging only", async () => {
     spyInterceptor.onLogEntry(toolEntry("mcp__tinybus__send_message"));
+    const orchestratorWithCheck = orchestrator as unknown as {
+      checkEndorsement(rawOutput: string): Promise<void>;
+    };
 
-    await expect((orchestrator as any).checkEndorsement("Sending now")).rejects.toThrow(
+    await expect(orchestratorWithCheck.checkEndorsement("Sending now")).rejects.toThrow(
       "endorsement: Layer 3 external action blocked"
     );
     expect(spyInterceptor.resetCount).toBe(1);
