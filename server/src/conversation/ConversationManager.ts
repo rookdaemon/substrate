@@ -156,10 +156,8 @@ export class ConversationManager implements IConversationManager {
     }
   }
 
-  private async performCompaction(_role: AgentRole): Promise<void> {
-    // NOTE: Compaction is a privileged operation that directly overwrites the file
-    // without going through permission checks or SubstrateFileWriter.
-    // This is intentional since compaction is a maintenance operation.
+  private async performCompaction(role: AgentRole): Promise<void> {
+    this.checker.assertCanWrite(role, SubstrateFileType.CONVERSATION);
 
     // Read current conversation
     const content = await this.reader.read(SubstrateFileType.CONVERSATION);

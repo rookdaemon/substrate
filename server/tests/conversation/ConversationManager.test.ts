@@ -186,6 +186,13 @@ describe("ConversationManager", () => {
     expect(content).toContain("Force compacted");
   });
 
+  it("should enforce write permissions when force compacting", async () => {
+    await manager.append(AgentRole.EGO, "Message");
+
+    await expect(manager.forceCompaction(AgentRole.ID))
+      .rejects.toThrow("ID does not have WRITE access to CONVERSATION");
+  });
+
   it("should allow reset of compaction timer", async () => {
     await manager.append(AgentRole.EGO, "Message");
 
