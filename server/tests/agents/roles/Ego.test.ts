@@ -327,6 +327,20 @@ describe("Ego agent", () => {
       const launches = launcher.getLaunches();
       expect(launches[0].options?.cwd).toBe("/workspace");
     });
+
+    it("builds respondToMessage system prompt from PromptBuilder plus message-mode instructions", async () => {
+      launcher.enqueueSuccess("Hi!");
+
+      await ego.respondToMessage("Hello");
+
+      const launches = launcher.getLaunches();
+      const systemPrompt = launches[0].request.systemPrompt;
+      expect(systemPrompt).toContain("Your role is to plan, decide, and dispatch.");
+      expect(systemPrompt).toContain("=== AUTONOMY REMINDER ===");
+      expect(systemPrompt).toContain("=== ENDORSEMENT CHECK ===");
+      expect(systemPrompt).toContain("=== MESSAGE MODE ===");
+      expect(systemPrompt).toContain("A user or peer has sent you a message.");
+    });
   });
 
   describe("dispatchNext", () => {

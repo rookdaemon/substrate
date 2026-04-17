@@ -163,17 +163,17 @@ export class Ego {
       contextSection += `[FILES — read on demand]\n${lazyRefs}\n\n`;
     }
 
-    const systemPrompt =
-      `You are the Ego — the executive decision-maker of a self-improving AI agent system.\n` +
-      `A user has sent you a message. Read CONVERSATION.md for context and respond naturally.\n` +
-      `Respond with ONLY your plain text reply — no JSON, no markdown code blocks, no wrapper.\n` +
-      `Keep responses concise and conversational.\n\n` +
+    const baseSystemPrompt = this.promptBuilder.buildSystemPrompt(AgentRole.EGO);
+    const systemPrompt = baseSystemPrompt + "\n\n=== MESSAGE MODE ===\n" +
+      "A user or peer has sent you a message. Read CONVERSATION.md for context and respond naturally.\n" +
+      "Respond with ONLY your plain text reply — no JSON, no markdown code blocks, no wrapper.\n" +
+      "Keep responses concise and conversational.\n\n" +
       `If the message is an Agora message, use the dedicated Agora MCP tool (${"`"}mcp__tinybus__send_agora_message${"`"} in Claude Code, or ${"`"}send_agora_message${"`"} in Gemini CLI).\n` +
-      `Read the FROM/TO metadata in CONVERSATION.md. The TO list is compacted from full IDs and indicates recipients of the original message.\n` +
-      `Reply to known peers with: to: "<peer-ref>", text: "your response", inReplyTo: "envelope-id".\n` +
-      `peer-ref can be a configured peer name, full public key, or compact short form.\n` +
-      `For unknown senders, use targetPubkey with the full key provided in the injected Agora instruction block.\n` +
-      `Always include inReplyTo when replying. It is considered good form to reply to the sender and all recipients of a message, to keep everyone in the loop - unless you have a reason not to.`;
+      "Read the FROM/TO metadata in CONVERSATION.md. The TO list is compacted from full IDs and indicates recipients of the original message.\n" +
+      "Reply to known peers with: to: \"<peer-ref>\", text: \"your response\", inReplyTo: \"envelope-id\".\n" +
+      "peer-ref can be a configured peer name, full public key, or compact short form.\n" +
+      "For unknown senders, use targetPubkey with the full key provided in the injected Agora instruction block.\n" +
+      "Always include inReplyTo when replying. It is considered good form to reply to the sender and all recipients of a message, to keep everyone in the loop - unless you have a reason not to.";
 
     const model = this.taskClassifier.getModel({ role: AgentRole.EGO, operation: "respondToMessage" });
     const launchOptions: LaunchOptions = {
