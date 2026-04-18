@@ -44,7 +44,7 @@ export class ConversationManager implements IConversationManager {
 
     // Check if we need to archive before appending (if archiving enabled)
     if (this.archiver && this.archiveConfig?.enabled) {
-      await this.checkAndArchiveIfNeeded();
+      await this.checkAndArchiveIfNeeded(role);
     }
 
     // Check if we need to compact before appending (legacy summarization)
@@ -75,7 +75,7 @@ export class ConversationManager implements IConversationManager {
     }
   }
 
-  private async checkAndArchiveIfNeeded(): Promise<void> {
+  private async checkAndArchiveIfNeeded(role: AgentRole): Promise<void> {
     if (!this.archiver || !this.archiveConfig?.enabled) {
       return;
     }
@@ -106,12 +106,14 @@ export class ConversationManager implements IConversationManager {
 
     // Trigger archive if either threshold is exceeded
     if (exceedsSizeThreshold || exceedsTimeThreshold) {
-      await this.performArchive();
+      await this.performArchive(role);
       this.lastArchiveTime = now;
     }
   }
 
-  private async performArchive(): Promise<void> {
+  private async performArchive(role: AgentRole): Promise<void> {
+    this.checker.assertCanWrite(role, SubstrateFileType.CONVERSATION);
+
     if (!this.archiver || !this.archiveConfig) {
       return;
     }
@@ -156,10 +158,8 @@ export class ConversationManager implements IConversationManager {
     }
   }
 
-  private async performCompaction(_role: AgentRole): Promise<void> {
-    // NOTE: Compaction is a privileged operation that directly overwrites the file
-    // without going through permission checks or SubstrateFileWriter.
-    // This is intentional since compaction is a maintenance operation.
+  private async performCompaction(role: AgentRole): Promise<void> {
+    this.checker.assertCanWrite(role, SubstrateFileType.CONVERSATION);
 
     // Read current conversation
     const content = await this.reader.read(SubstrateFileType.CONVERSATION);

@@ -35,6 +35,7 @@ export const ROLE_PERMISSIONS: Record<AgentRole, FilePermission[]> = {
     read(SubstrateFileType.CONVERSATION, SubstrateFileLoadStrategy.EAGER),
     read(SubstrateFileType.PEERS, SubstrateFileLoadStrategy.LAZY),
     write(SubstrateFileType.PLAN),
+    write(SubstrateFileType.CONVERSATION),
     append(SubstrateFileType.CONVERSATION),
   ],
 
@@ -52,6 +53,7 @@ export const ROLE_PERMISSIONS: Record<AgentRole, FilePermission[]> = {
     write(SubstrateFileType.SKILLS),
     write(SubstrateFileType.MEMORY),
     write(SubstrateFileType.PEERS),
+    write(SubstrateFileType.CONVERSATION),
     append(SubstrateFileType.PROGRESS),
     append(SubstrateFileType.CONVERSATION),
   ],

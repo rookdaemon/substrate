@@ -186,6 +186,13 @@ describe("ConversationManager", () => {
     expect(content).toContain("Force compacted");
   });
 
+  it("should enforce write permissions when force compacting", async () => {
+    await manager.append(AgentRole.EGO, "Message");
+
+    await expect(manager.forceCompaction(AgentRole.ID))
+      .rejects.toThrow("ID does not have WRITE access to CONVERSATION");
+  });
+
   it("should allow reset of compaction timer", async () => {
     await manager.append(AgentRole.EGO, "Message");
 
@@ -492,6 +499,29 @@ describe("ConversationManager with archiving", () => {
     expect(result.success).toBe(true);
     expect(result.linesArchived).toBe(1);
     expect(result.archivedPath).toBe("/test/substrate/archive/conversation/forced.md");
+  });
+
+  it("should enforce write permissions when archiving", async () => {
+    const archiveConfig: ConversationArchiveConfig = {
+      enabled: true,
+      linesToKeep: 5,
+      sizeThreshold: 1,
+    };
+
+    manager = new ConversationManager(
+      reader, fs, config, lock, appendWriter, checker, compactor, clock,
+      archiver, archiveConfig
+    );
+
+    const canWriteSpy = jest.spyOn(checker, "canWrite").mockReturnValue(false);
+
+    await manager.append(AgentRole.EGO, "Message 1");
+    const contentAfterFirstAppend = await fs.readFile("/test/substrate/CONVERSATION.md");
+    expect(contentAfterFirstAppend).toContain("[EGO] Message 1");
+    await expect(manager.append(AgentRole.EGO, "Message 2"))
+      .rejects.toThrow("EGO does not have WRITE access to CONVERSATION");
+
+    canWriteSpy.mockRestore();
   });
 
   it("should not call archiver if archiving not configured", async () => {
