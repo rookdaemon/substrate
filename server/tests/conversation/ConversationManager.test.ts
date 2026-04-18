@@ -501,6 +501,22 @@ describe("ConversationManager with archiving", () => {
     expect(result.archivedPath).toBe("/test/substrate/archive/conversation/forced.md");
   });
 
+  it("should enforce write permissions when archiving", async () => {
+    const archiveConfig: ConversationArchiveConfig = {
+      enabled: true,
+      linesToKeep: 5,
+      sizeThreshold: 100,
+    };
+
+    manager = new ConversationManager(
+      reader, fs, config, lock, appendWriter, checker, compactor, clock,
+      archiver, archiveConfig
+    );
+
+    await expect((manager as unknown as { performArchive: (role: AgentRole) => Promise<void> }).performArchive(AgentRole.ID))
+      .rejects.toThrow("ID does not have WRITE access to CONVERSATION");
+  });
+
   it("should not call archiver if archiving not configured", async () => {
     manager = new ConversationManager(
       reader, fs, config, lock, appendWriter, checker, compactor, clock
