@@ -505,7 +505,7 @@ describe("ConversationManager with archiving", () => {
     const archiveConfig: ConversationArchiveConfig = {
       enabled: true,
       linesToKeep: 5,
-      sizeThreshold: 100,
+      sizeThreshold: 1,
     };
 
     manager = new ConversationManager(
@@ -513,8 +513,13 @@ describe("ConversationManager with archiving", () => {
       archiver, archiveConfig
     );
 
-    await expect((manager as unknown as { performArchive: (role: AgentRole) => Promise<void> }).performArchive(AgentRole.ID))
-      .rejects.toThrow("ID does not have WRITE access to CONVERSATION");
+    const canWriteSpy = jest.spyOn(checker, "canWrite").mockReturnValue(false);
+
+    await manager.append(AgentRole.EGO, "Message 1");
+    await expect(manager.append(AgentRole.EGO, "Message 2"))
+      .rejects.toThrow("EGO does not have WRITE access to CONVERSATION");
+
+    canWriteSpy.mockRestore();
   });
 
   it("should not call archiver if archiving not configured", async () => {
