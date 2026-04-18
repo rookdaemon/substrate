@@ -516,6 +516,8 @@ describe("ConversationManager with archiving", () => {
     const canWriteSpy = jest.spyOn(checker, "canWrite").mockReturnValue(false);
 
     await manager.append(AgentRole.EGO, "Message 1");
+    const contentAfterFirstAppend = await fs.readFile("/test/substrate/CONVERSATION.md");
+    expect(contentAfterFirstAppend).toContain("[EGO] Message 1");
     await expect(manager.append(AgentRole.EGO, "Message 2"))
       .rejects.toThrow("EGO does not have WRITE access to CONVERSATION");
 
