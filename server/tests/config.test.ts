@@ -461,6 +461,18 @@ describe("resolveConfig", () => {
       const config = await resolveConfig(fs, opts);
       expect(config.idLauncher).toBe("ollama");
     });
+
+    it("accepts sessionLauncher: 'codex'", async () => {
+      await writeConfig({ sessionLauncher: "codex" });
+      const config = await resolveConfig(fs, opts);
+      expect(config.sessionLauncher).toBe("codex");
+    });
+
+    it("accepts defaultCodeBackend: 'codex'", async () => {
+      await writeConfig({ defaultCodeBackend: "codex" });
+      const config = await resolveConfig(fs, opts);
+      expect(config.defaultCodeBackend).toBe("codex");
+    });
   });
 
   describe("vertex config", () => {
@@ -572,17 +584,15 @@ describe("resolveConfig", () => {
     });
   });
 
-  describe("per-provider models config", () => {
-    it("resolves model from models[sessionLauncher] when present", async () => {
+  describe("provider config blocks", () => {
+    it("resolves model from the active provider block", async () => {
       await fs.mkdir("/project", { recursive: true });
       await fs.writeFile("/project/config.json", JSON.stringify({
         sessionLauncher: "claude",
-        models: {
-          claude: {
-            model: "claude-sonnet-4-5",
-            strategicModel: "claude-opus-4-5",
-            tacticalModel: "claude-haiku-4-5",
-          },
+        claude: {
+          model: "claude-sonnet-4-5",
+          strategicModel: "claude-opus-4-5",
+          tacticalModel: "claude-haiku-4-5",
         },
       }));
 
@@ -601,17 +611,15 @@ describe("resolveConfig", () => {
       await fs.mkdir("/project", { recursive: true });
       await fs.writeFile("/project/config.json", JSON.stringify({
         sessionLauncher: "gemini",
-        models: {
-          claude: {
-            model: "claude-sonnet-4-5",
-            strategicModel: "claude-opus-4-5",
-            tacticalModel: "claude-haiku-4-5",
-          },
-          gemini: {
-            model: "gemini-2.5-pro",
-            strategicModel: "gemini-2.5-pro",
-            tacticalModel: "gemini-2.5-flash",
-          },
+        claude: {
+          model: "claude-sonnet-4-5",
+          strategicModel: "claude-opus-4-5",
+          tacticalModel: "claude-haiku-4-5",
+        },
+        gemini: {
+          model: "gemini-2.5-pro",
+          strategicModel: "gemini-2.5-pro",
+          tacticalModel: "gemini-2.5-flash",
         },
       }));
 
@@ -645,18 +653,23 @@ describe("resolveConfig", () => {
       expect(config.tacticalModel).toBe("claude-haiku-4-5");
     });
 
-    it("models block takes priority over legacy flat fields for the active launcher", async () => {
+    it("provider block takes priority over deprecated models map and legacy flat fields", async () => {
       await fs.mkdir("/project", { recursive: true });
       await fs.writeFile("/project/config.json", JSON.stringify({
         sessionLauncher: "claude",
         model: "legacy-model",
         strategicModel: "legacy-strategic",
         tacticalModel: "legacy-tactical",
+        claude: {
+          model: "claude-sonnet-4-5",
+          strategicModel: "claude-opus-4-5",
+          tacticalModel: "claude-haiku-4-5",
+        },
         models: {
           claude: {
-            model: "claude-sonnet-4-5",
-            strategicModel: "claude-opus-4-5",
-            tacticalModel: "claude-haiku-4-5",
+            model: "deprecated-model",
+            strategicModel: "deprecated-strategic",
+            tacticalModel: "deprecated-tactical",
           },
         },
       }));
@@ -672,14 +685,12 @@ describe("resolveConfig", () => {
       expect(config.tacticalModel).toBe("claude-haiku-4-5");
     });
 
-    it("uses defaults when models block has no entry for the active launcher", async () => {
+    it("uses defaults when provider config has no entry for the active launcher", async () => {
       await fs.mkdir("/project", { recursive: true });
       await fs.writeFile("/project/config.json", JSON.stringify({
         sessionLauncher: "claude",
-        models: {
-          gemini: {
-            model: "gemini-2.5-pro",
-          },
+        gemini: {
+          model: "gemini-2.5-pro",
         },
       }));
 
@@ -690,18 +701,16 @@ describe("resolveConfig", () => {
       });
 
       expect(config.model).toBe("claude-sonnet-4-6");
-      expect(config.models).toEqual({ gemini: { model: "gemini-2.5-pro" } });
+      expect(config.gemini).toEqual({ model: "gemini-2.5-pro" });
     });
 
-    it("partial models entry falls back to legacy flat fields then defaults", async () => {
+    it("partial provider block falls back to legacy flat fields then defaults", async () => {
       await fs.mkdir("/project", { recursive: true });
       await fs.writeFile("/project/config.json", JSON.stringify({
         sessionLauncher: "claude",
         model: "legacy-model",
-        models: {
-          claude: {
-            strategicModel: "claude-opus-4-5",
-          },
+        claude: {
+          strategicModel: "claude-opus-4-5",
         },
       }));
 
@@ -716,7 +725,72 @@ describe("resolveConfig", () => {
       expect(config.tacticalModel).toBe("claude-sonnet-4-6");
     });
 
-    it("preserves models map in resolved config", async () => {
+    it("resolves provider endpoint fields from nested provider blocks", async () => {
+      await fs.mkdir("/project", { recursive: true });
+      await fs.writeFile("/project/config.json", JSON.stringify({
+        ollama: {
+          baseUrl: "http://localhost:11434",
+          keyPath: "/secrets/ollama.key",
+          model: "qwen3:14b",
+          idModel: "qwen3:8b",
+        },
+        groq: {
+          keyPath: "/secrets/groq.key",
+          model: "llama3-70b-8192",
+          idModel: "llama3-8b-8192",
+        },
+        vertex: {
+          keyPath: "/secrets/google.key",
+          model: "gemini-2.5-flash",
+        },
+        anthropic: {
+          keyPath: "/secrets/anthropic.json",
+          model: "claude-sonnet-4",
+          idModel: "claude-haiku-4",
+        },
+      }));
+
+      const config = await resolveConfig(fs, {
+        appPaths: TEST_PATHS,
+        cwd: "/project",
+        env: {},
+      });
+
+      expect(config.ollamaBaseUrl).toBe("http://localhost:11434");
+      expect(config.ollamaKeyPath).toBe("/secrets/ollama.key");
+      expect(config.ollamaModel).toBe("qwen3:14b");
+      expect(config.idOllamaModel).toBe("qwen3:8b");
+      expect(config.groqKeyPath).toBe("/secrets/groq.key");
+      expect(config.groqModel).toBe("llama3-70b-8192");
+      expect(config.idGroqModel).toBe("llama3-8b-8192");
+      expect(config.vertexKeyPath).toBe("/secrets/google.key");
+      expect(config.vertexModel).toBe("gemini-2.5-flash");
+      expect(config.claudeOAuthKeyPath).toBe("/secrets/anthropic.json");
+      expect(config.anthropicModel).toBe("claude-sonnet-4");
+      expect(config.idAnthropicModel).toBe("claude-haiku-4");
+    });
+
+    it("preserves provider blocks in resolved config", async () => {
+      await fs.mkdir("/project", { recursive: true });
+      const claude = { model: "claude-sonnet-4-5", strategicModel: "claude-opus-4-5", tacticalModel: "claude-haiku-4-5" };
+      const gemini = { model: "gemini-2.5-pro" };
+      await fs.writeFile("/project/config.json", JSON.stringify({
+        sessionLauncher: "claude",
+        claude,
+        gemini,
+      }));
+
+      const config = await resolveConfig(fs, {
+        appPaths: TEST_PATHS,
+        cwd: "/project",
+        env: {},
+      });
+
+      expect(config.claude).toEqual(claude);
+      expect(config.gemini).toEqual(gemini);
+    });
+
+    it("supports deprecated models map as fallback", async () => {
       await fs.mkdir("/project", { recursive: true });
       const modelsMap = {
         claude: { model: "claude-sonnet-4-5", strategicModel: "claude-opus-4-5", tacticalModel: "claude-haiku-4-5" },
@@ -734,6 +808,7 @@ describe("resolveConfig", () => {
       });
 
       expect(config.models).toEqual(modelsMap);
+      expect(config.model).toBe("claude-sonnet-4-5");
     });
 
     it("defaults models to undefined when not in config file", async () => {

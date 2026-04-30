@@ -138,6 +138,18 @@ describe("PromptBuilder", () => {
       expect(prompt).not.toContain("`read_file`");
     });
 
+    it("uses Claude tool names for codex launcher", () => {
+      const codexBuilder = new PromptBuilder(reader, checker, {
+        substratePath: "/substrate",
+        sourceCodePath: "/home/user/substrate",
+        launcherType: "codex",
+      });
+      const prompt = codexBuilder.buildSystemPrompt(AgentRole.SUBCONSCIOUS);
+      expect(prompt).toContain("`Read`");
+      expect(prompt).toContain("`mcp__tinybus__send_agora_message`");
+      expect(prompt).not.toContain("`read_file`");
+    });
+
     it("uses Claude tool names for ollama launcher", () => {
       const ollamaBuilder = new PromptBuilder(reader, checker, {
         substratePath: "/substrate",

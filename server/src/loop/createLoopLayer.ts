@@ -52,6 +52,7 @@ import { PeerAvailabilityMonitor } from "./PeerAvailabilityMonitor";
 import { CodeDispatcher } from "../code-dispatch/CodeDispatcher";
 import { ClaudeCliBackend } from "../code-dispatch/ClaudeCliBackend";
 import { CopilotBackend } from "../code-dispatch/CopilotBackend";
+import { CodexCliBackend } from "../code-dispatch/CodexCliBackend";
 import { GeminiCliBackend } from "../code-dispatch/GeminiCliBackend";
 import type { BackendType } from "../code-dispatch/types";
 import type { ICodeBackend } from "../code-dispatch/ICodeBackend";
@@ -67,6 +68,13 @@ export interface LoopLayerResult {
   fileWatcher: FileWatcher;
   tinyBus: TinyBus;
   mode: "cycle" | "tick";
+}
+
+type ProviderName = "claude" | "gemini" | "copilot" | "codex";
+
+function backendModel(config: ApplicationConfig, provider: ProviderName): string | undefined {
+  const providerConfig = config[provider] ?? config.models?.[provider];
+  return providerConfig?.tacticalModel ?? providerConfig?.model ?? config.tacticalModel;
 }
 
 /**
@@ -408,9 +416,10 @@ export async function createLoopLayer(
   // Set up Code Dispatch layer
   const codeDispatchRunner = new NodeProcessRunner();
   const codeBackends = new Map<BackendType, ICodeBackend>([
-    ["claude", new ClaudeCliBackend(codeDispatchRunner, clock, config.tacticalModel)],
-    ["copilot", new CopilotBackend(codeDispatchRunner, clock)],
-    ["gemini", new GeminiCliBackend(codeDispatchRunner, clock, config.tacticalModel)],
+    ["claude", new ClaudeCliBackend(codeDispatchRunner, clock, backendModel(config, "claude"))],
+    ["copilot", new CopilotBackend(codeDispatchRunner, clock, backendModel(config, "copilot"))],
+    ["codex", new CodexCliBackend(codeDispatchRunner, clock, backendModel(config, "codex"))],
+    ["gemini", new GeminiCliBackend(codeDispatchRunner, clock, backendModel(config, "gemini"))],
   ]);
   const defaultBackend = (config.defaultCodeBackend ?? "auto") as BackendType;
   const codeDispatcher = new CodeDispatcher(fs, codeDispatchRunner, config.substratePath, codeBackends, clock, defaultBackend);

@@ -42,8 +42,9 @@ const GEMINI_TOOL_NAMES: ToolNames = {
 export const TOOL_NAMES_BY_LAUNCHER: Record<string, ToolNames> = {
   claude: CLAUDE_TOOL_NAMES,
   gemini: GEMINI_TOOL_NAMES,
-  // copilot and ollama use Claude Code API compatibility — fall back to Claude names
+  // copilot, codex, and ollama use Claude Code API compatibility — fall back to Claude names
   copilot: CLAUDE_TOOL_NAMES,
+  codex: CLAUDE_TOOL_NAMES,
   ollama: CLAUDE_TOOL_NAMES,
 };
 
@@ -100,7 +101,7 @@ export interface PromptBuilderPaths {
   substratePath: string;
   sourceCodePath?: string;
   /** Session launcher type — determines built-in tool names in the TOOL REFERENCE section.
-   *  Defaults to "claude". Valid values: "claude" | "gemini" | "copilot" | "ollama" | "groq". */
+   *  Defaults to "claude". Valid values: "claude" | "gemini" | "copilot" | "codex" | "ollama" | "groq". */
   launcherType?: string;
   /** Override the default context budget (total inlined lines) for eager file references.
    *  When unset, the per-launcher default from CONTEXT_BUDGET_LINES_BY_LAUNCHER is used.

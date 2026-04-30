@@ -13,16 +13,22 @@ export class ConfigValidationError extends Error {
 
 const DEFAULT_SESSION_LAUNCHER = "claude" as const;
 
-export interface ProviderModelsConfig {
+export interface ProviderConfig {
+  keyPath?: string;
+  baseUrl?: string;
   model?: string;
   strategicModel?: string;
   tacticalModel?: string;
+  idModel?: string;
 }
 
-const ProviderModelsSchema = z.object({
+const ProviderConfigSchema = z.object({
+  keyPath: z.string().optional(),
+  baseUrl: z.string().url().optional(),
   model: z.string().optional(),
   strategicModel: z.string().optional(),
   tacticalModel: z.string().optional(),
+  idModel: z.string().optional(),
 });
 
 const AppConfigSchema = z
@@ -35,7 +41,15 @@ const AppConfigSchema = z
     model: z.string(),
     strategicModel: z.string().optional(),
     tacticalModel: z.string().optional(),
-    models: z.record(z.string(), ProviderModelsSchema).optional(),
+    models: z.record(z.string(), ProviderConfigSchema).optional(),
+    claude: ProviderConfigSchema.optional(),
+    gemini: ProviderConfigSchema.optional(),
+    copilot: ProviderConfigSchema.optional(),
+    codex: ProviderConfigSchema.optional(),
+    ollama: ProviderConfigSchema.optional(),
+    vertex: ProviderConfigSchema.optional(),
+    groq: ProviderConfigSchema.optional(),
+    anthropic: ProviderConfigSchema.optional(),
     mode: z.enum(["cycle", "tick"]),
     autoStartOnFirstRun: z.boolean(),
     autoStartAfterRestart: z.boolean(),
@@ -92,11 +106,11 @@ const AppConfigSchema = z
     enableFileReadCache: z.boolean().optional(),
     progressMaxBytes: z.number().int().min(1).optional(),
     conversationPromptWindowLines: z.number().int().min(1).optional(),
-    sessionLauncher: z.enum(["claude", "gemini", "copilot", "ollama", "vertex", "groq", "anthropic"]).optional(),
+    sessionLauncher: z.enum(["claude", "gemini", "copilot", "codex", "ollama", "vertex", "groq", "anthropic"]).optional(),
     ollamaBaseUrl: z.string().url().optional(),
     ollamaModel: z.string().optional(),
     ollamaKeyPath: z.string().optional(),
-    defaultCodeBackend: z.enum(["claude", "copilot", "gemini", "auto"]).optional(),
+    defaultCodeBackend: z.enum(["claude", "copilot", "codex", "gemini", "auto"]).optional(),
     ollamaOffload: z
       .object({
         enabled: z.boolean(),
@@ -156,25 +170,36 @@ function pathJoin(base: string, ...segments: string[]): string {
   return path.join(base, ...segments);
 }
 
+type ProviderName = "claude" | "gemini" | "copilot" | "codex" | "ollama" | "vertex" | "groq" | "anthropic";
+
+function providerConfig(config: Partial<AppConfig>, provider: ProviderName): ProviderConfig | undefined {
+  return config[provider];
+}
+
+function providerFallback(config: Partial<AppConfig>, provider: ProviderName): ProviderConfig | undefined {
+  return providerConfig(config, provider) ?? config.models?.[provider];
+}
+
 /**
  * Resolves the effective model, strategicModel, and tacticalModel from file config.
  *
  * Resolution order (highest priority first):
- *   1. models[sessionLauncher] — per-provider model config block
- *   2. Legacy flat model/strategicModel/tacticalModel fields
- *   3. Defaults
+ *   1. <provider>.* — provider-specific config block
+ *   2. models[sessionLauncher] — deprecated per-provider model map
+ *   3. Legacy flat model/strategicModel/tacticalModel fields
+ *   4. Defaults
  */
 function resolveModelFields(
   fileConfig: Partial<AppConfig>,
   defaults: AppConfig
 ): { model: string; strategicModel?: string; tacticalModel?: string } {
-  const launcher = fileConfig.sessionLauncher ?? defaults.sessionLauncher ?? DEFAULT_SESSION_LAUNCHER;
-  const providerModels = fileConfig.models?.[launcher];
+  const launcher = (fileConfig.sessionLauncher ?? defaults.sessionLauncher ?? DEFAULT_SESSION_LAUNCHER) as ProviderName;
+  const provider = providerFallback(fileConfig, launcher);
 
   return {
-    model: providerModels?.model ?? fileConfig.model ?? defaults.model,
-    strategicModel: providerModels?.strategicModel ?? fileConfig.strategicModel ?? defaults.strategicModel,
-    tacticalModel: providerModels?.tacticalModel ?? fileConfig.tacticalModel ?? defaults.tacticalModel,
+    model: provider?.model ?? fileConfig.model ?? defaults.model,
+    strategicModel: provider?.strategicModel ?? fileConfig.strategicModel ?? defaults.strategicModel,
+    tacticalModel: provider?.tacticalModel ?? fileConfig.tacticalModel ?? defaults.tacticalModel,
   };
 }
 
@@ -187,8 +212,16 @@ export interface AppConfig {
   model: string;
   strategicModel?: string;
   tacticalModel?: string;
-  /** Per-provider model configuration. Keys match sessionLauncher/defaultCodeBackend values (e.g. "claude", "gemini", "copilot"). */
-  models?: Record<string, ProviderModelsConfig>;
+  /** Deprecated per-provider model map. Prefer provider blocks like `groq.model` and `codex.model`. */
+  models?: Record<string, ProviderConfig>;
+  claude?: ProviderConfig;
+  gemini?: ProviderConfig;
+  copilot?: ProviderConfig;
+  codex?: ProviderConfig;
+  ollama?: ProviderConfig;
+  vertex?: ProviderConfig;
+  groq?: ProviderConfig;
+  anthropic?: ProviderConfig;
   mode: "cycle" | "tick";
   /** If true, the agent loop auto-starts on first/cold start (default: false — you often want to be there). */
   autoStartOnFirstRun: boolean;
@@ -259,13 +292,13 @@ export interface AppConfig {
   conversationPromptWindowLines?: number;
   /** Which session launcher to use for agent reasoning sessions (default: "claude").
    *  "vertex" is NOT allowed here — Vertex is for subprocess tasks only. Use vertexKeyPath instead. */
-  sessionLauncher?: "claude" | "gemini" | "copilot" | "ollama";
+  sessionLauncher?: "claude" | "gemini" | "copilot" | "codex" | "ollama" | "groq" | "anthropic";
   /** Base URL for the Ollama server when sessionLauncher is "ollama" (default: "http://localhost:11434"). */
   ollamaBaseUrl?: string;
   /** Model name for Ollama when sessionLauncher is "ollama" (default: "qwen3:14b"). Separate from `model` which is the Claude/Gemini model name. */
   ollamaModel?: string;
   /** Default code backend to use for code dispatch tasks (default: "claude"). */
-  defaultCodeBackend?: "claude" | "copilot" | "gemini" | "auto";
+  defaultCodeBackend?: "claude" | "copilot" | "codex" | "gemini" | "auto";
   /** Configuration for Ollama offload — offloads maintenance tasks (compaction) to local Ollama.
    *  Uses ollamaBaseUrl/ollamaModel for endpoint config. Works regardless of sessionLauncher setting. */
   ollamaOffload?: {
@@ -287,6 +320,16 @@ export interface AppConfig {
   idOllamaModel?: string;
   /** Model name for Groq when idLauncher is "groq". Falls back to groqModel, then GroqSessionLauncher default. */
   idGroqModel?: string;
+  /** Path to Groq API key file. Required when sessionLauncher or idLauncher is "groq". */
+  groqKeyPath?: string;
+  /** Model name for Groq when sessionLauncher is "groq". */
+  groqModel?: string;
+  /** Path to Anthropic subscription credentials JSON file (from `claude setup-token`). */
+  claudeOAuthKeyPath?: string;
+  /** Model for AnthropicSessionLauncher. */
+  anthropicModel?: string;
+  /** Model for AnthropicSessionLauncher when idLauncher is "anthropic". */
+  idAnthropicModel?: string;
   /** Configuration for the loop watchdog that detects stalls and injects reminders */
   watchdog?: {
     /** Disable the watchdog entirely (default: false) */
@@ -412,6 +455,14 @@ export async function resolveConfig(
     port: fileConfig.port ?? defaults.port,
     ...resolveModelFields(fileConfig, defaults),
     models: fileConfig.models,
+    claude: fileConfig.claude,
+    gemini: fileConfig.gemini,
+    copilot: fileConfig.copilot,
+    codex: fileConfig.codex,
+    ollama: fileConfig.ollama,
+    vertex: fileConfig.vertex,
+    groq: fileConfig.groq,
+    anthropic: fileConfig.anthropic,
     mode: (fileConfig as Partial<AppConfig>).mode ?? defaults.mode,
     autoStartOnFirstRun: fileConfig.autoStartOnFirstRun ?? defaults.autoStartOnFirstRun,
     autoStartAfterRestart: fileConfig.autoStartAfterRestart ?? defaults.autoStartAfterRestart,
@@ -471,18 +522,25 @@ export async function resolveConfig(
     progressMaxBytes: fileConfig.progressMaxBytes ?? defaults.progressMaxBytes,
     conversationPromptWindowLines: fileConfig.conversationPromptWindowLines ?? defaults.conversationPromptWindowLines,
     sessionLauncher: fileConfig.sessionLauncher ?? defaults.sessionLauncher,
-    ollamaBaseUrl: fileConfig.ollamaBaseUrl,
-    ollamaModel: fileConfig.ollamaModel,
+    ollamaBaseUrl: providerFallback(fileConfig, "ollama")?.baseUrl ?? fileConfig.ollamaBaseUrl,
+    ollamaModel: providerFallback(fileConfig, "ollama")?.model ?? fileConfig.ollamaModel,
+    ollamaKeyPath: providerFallback(fileConfig, "ollama")?.keyPath ?? fileConfig.ollamaKeyPath,
     defaultCodeBackend: fileConfig.defaultCodeBackend ?? defaults.defaultCodeBackend,
     ollamaOffload: fileConfig.ollamaOffload
       ? {
         enabled: fileConfig.ollamaOffload.enabled ?? false,
       }
       : undefined,
-    vertexKeyPath: fileConfig.vertexKeyPath,
-    vertexModel: fileConfig.vertexModel,
+    vertexKeyPath: providerFallback(fileConfig, "vertex")?.keyPath ?? fileConfig.vertexKeyPath,
+    vertexModel: providerFallback(fileConfig, "vertex")?.model ?? fileConfig.vertexModel,
+    groqKeyPath: providerFallback(fileConfig, "groq")?.keyPath ?? fileConfig.groqKeyPath,
+    groqModel: providerFallback(fileConfig, "groq")?.model ?? fileConfig.groqModel,
     idLauncher: fileConfig.idLauncher,
-    idOllamaModel: fileConfig.idOllamaModel,
+    idOllamaModel: providerFallback(fileConfig, "ollama")?.idModel ?? fileConfig.idOllamaModel,
+    idGroqModel: providerFallback(fileConfig, "groq")?.idModel ?? fileConfig.idGroqModel,
+    claudeOAuthKeyPath: providerFallback(fileConfig, "anthropic")?.keyPath ?? fileConfig.claudeOAuthKeyPath,
+    anthropicModel: providerFallback(fileConfig, "anthropic")?.model ?? fileConfig.anthropicModel,
+    idAnthropicModel: providerFallback(fileConfig, "anthropic")?.idModel ?? fileConfig.idAnthropicModel,
     watchdog: fileConfig.watchdog
       ? {
         disabled: fileConfig.watchdog.disabled ?? false,

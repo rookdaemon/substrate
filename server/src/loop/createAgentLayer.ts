@@ -5,6 +5,8 @@ import { AgentSdkLauncher, SdkQueryFn } from "../agents/claude/AgentSdkLauncher"
 import { GeminiSessionLauncher } from "../agents/gemini/GeminiSessionLauncher";
 import { GeminiMcpSetup } from "../agents/gemini/GeminiMcpSetup";
 import { CopilotSessionLauncher } from "../agents/copilot/CopilotSessionLauncher";
+import { CodexSessionLauncher } from "../agents/codex/CodexSessionLauncher";
+import { CodexMcpSetup } from "../agents/codex/CodexMcpSetup";
 import { OllamaSessionLauncher } from "../agents/ollama/OllamaSessionLauncher";
 import { OllamaInferenceClient } from "../agents/ollama/OllamaInferenceClient";
 import { OllamaOffloadService } from "../agents/ollama/OllamaOffloadService";
@@ -60,6 +62,12 @@ export interface AgentLayerResult {
   vertexSubprocessLauncher: VertexSessionLauncher | undefined;
 }
 
+type ProviderName = "claude" | "gemini" | "copilot" | "codex" | "ollama" | "vertex" | "groq" | "anthropic";
+
+function providerConfig(config: ApplicationConfig, provider: ProviderName) {
+  return config[provider] ?? config.models?.[provider];
+}
+
 /**
  * Creates all agent-layer objects: permission checker, prompt builder,
  * process tracker, SDK launcher, task classifier, conversation manager,
@@ -71,6 +79,15 @@ export async function createAgentLayer(
   substrate: SubstrateLayerResult,
 ): Promise<AgentLayerResult> {
   const { reader, writer, appendWriter, lock, clock, fs, substrateConfig, logger } = substrate;
+  const sessionProvider = (config.sessionLauncher ?? "claude") as ProviderName;
+  const activeProviderConfig = providerConfig(config, sessionProvider);
+  const activeModel = activeProviderConfig?.model ?? config.model;
+  const activeStrategicModel = activeProviderConfig?.strategicModel ?? config.strategicModel;
+  const activeTacticalModel = activeProviderConfig?.tacticalModel ?? config.tacticalModel;
+  const ollamaConfig = providerConfig(config, "ollama");
+  const vertexConfig = providerConfig(config, "vertex");
+  const groqConfig = providerConfig(config, "groq");
+  const anthropicConfig = providerConfig(config, "anthropic");
 
   const checker = new PermissionChecker();
   const promptBuilder = new PromptBuilder(reader, checker, {
@@ -94,7 +111,7 @@ export async function createAgentLayer(
     code_dispatch: { type: "http" as const, url: mcpUrl },
   };
   logger.debug(`agent-layer: MCP servers configured: tinybus → ${mcpUrl}, code_dispatch → ${mcpUrl}`);
-  const launcher = new AgentSdkLauncher(sdkQuery, clock, config.model, logger, processTracker, mcpServers);
+  const launcher = new AgentSdkLauncher(sdkQuery, clock, activeModel, logger, processTracker, mcpServers);
 
   // API semaphore — caps concurrent Claude sessions for rate-limit safety
   const apiSemaphore = new ApiSemaphore(config.maxConcurrentSessions ?? 2);
@@ -102,9 +119,10 @@ export async function createAgentLayer(
   // Ollama API key — read from key file if configured (never from env vars)
   // Required for authenticated remote Ollama endpoints (e.g. ollama.lbsa71.net).
   let ollamaApiKey: string | undefined;
-  if (config.ollamaKeyPath) {
+  const ollamaKeyPath = ollamaConfig?.keyPath ?? config.ollamaKeyPath;
+  if (ollamaKeyPath) {
     try {
-      const key = (await fs.readFile(config.ollamaKeyPath)).trim();
+      const key = (await fs.readFile(ollamaKeyPath)).trim();
       if (key) {
         ollamaApiKey = key;
       } else {
@@ -112,16 +130,19 @@ export async function createAgentLayer(
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      const redacted = msg.replaceAll(config.ollamaKeyPath, "[REDACTED]");
+      const redacted = msg.replaceAll(ollamaKeyPath, "[REDACTED]");
       logger.debug(`agent-layer: Cannot read Ollama key file — unauthenticated requests will be used (${redacted})`);
     }
   }
 
   // Groq API key — read from key file if configured (never from env vars)
   let groqApiKey: string | undefined;
-  if (config.groqKeyPath) {
+  const groqKeyPath = groqConfig?.keyPath ?? config.groqKeyPath;
+  const groqModel = groqConfig?.model ?? config.groqModel;
+  const idGroqModel = groqConfig?.idModel ?? config.idGroqModel;
+  if (groqKeyPath) {
     try {
-      const key = (await fs.readFile(config.groqKeyPath)).trim();
+      const key = (await fs.readFile(groqKeyPath)).trim();
       if (key) {
         groqApiKey = key;
       } else {
@@ -129,16 +150,19 @@ export async function createAgentLayer(
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      const redacted = msg.replaceAll(config.groqKeyPath, "[REDACTED]");
+      const redacted = msg.replaceAll(groqKeyPath, "[REDACTED]");
       logger.debug(`agent-layer: Cannot read Groq key file — Groq launcher disabled (${redacted})`);
     }
   }
 
   // Anthropic subscription token — read from credentials file if configured (never from env vars)
   let anthropicAccessToken: string | undefined;
-  if (config.claudeOAuthKeyPath) {
+  const anthropicKeyPath = anthropicConfig?.keyPath ?? config.claudeOAuthKeyPath;
+  const anthropicModel = anthropicConfig?.model ?? config.anthropicModel;
+  const idAnthropicModel = anthropicConfig?.idModel ?? config.idAnthropicModel;
+  if (anthropicKeyPath) {
     try {
-      const raw = await fs.readFile(config.claudeOAuthKeyPath);
+      const raw = await fs.readFile(anthropicKeyPath);
       const json = JSON.parse(raw);
       const token = json?.anthropic?.setupToken as string | undefined;
       if (token?.startsWith("sk-ant-")) {
@@ -148,7 +172,7 @@ export async function createAgentLayer(
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      const redacted = msg.replaceAll(config.claudeOAuthKeyPath, "[REDACTED]");
+      const redacted = msg.replaceAll(anthropicKeyPath, "[REDACTED]");
       logger.debug(`agent-layer: Cannot read Anthropic token file — Anthropic launcher disabled (${redacted})`);
     }
   }
@@ -157,24 +181,32 @@ export async function createAgentLayer(
   let gatedLauncher: ISessionLauncher;
   if (config.sessionLauncher === "gemini") {
     logger.debug("agent-layer: using GeminiSessionLauncher for cognitive roles");
-    const geminiLauncher = new GeminiSessionLauncher(new NodeProcessRunner(), clock, config.model);
+    const geminiLauncher = new GeminiSessionLauncher(new NodeProcessRunner(), clock, activeModel);
     // Register TinyBus in Gemini CLI's MCP config so mcp__tinybus__* tools are available
     const geminiMcpSetup = new GeminiMcpSetup(new NodeProcessRunner(), logger);
     await geminiMcpSetup.register("tinybus", mcpUrl);
     gatedLauncher = new SemaphoreSessionLauncher(geminiLauncher, apiSemaphore);
   } else if (config.sessionLauncher === "copilot") {
     logger.debug("agent-layer: using CopilotSessionLauncher for cognitive roles");
-    const copilotLauncher = new CopilotSessionLauncher(new NodeProcessRunner(), clock, config.model);
+    const copilotLauncher = new CopilotSessionLauncher(new NodeProcessRunner(), clock, activeModel);
     gatedLauncher = new SemaphoreSessionLauncher(copilotLauncher, apiSemaphore);
+  } else if (config.sessionLauncher === "codex") {
+    logger.debug("agent-layer: using CodexSessionLauncher for cognitive roles");
+    const codexLauncher = new CodexSessionLauncher(new NodeProcessRunner(), clock, activeModel);
+    const codexMcpSetup = new CodexMcpSetup(new NodeProcessRunner(), logger);
+    await codexMcpSetup.register("tinybus", mcpUrl);
+    await codexMcpSetup.register("code_dispatch", mcpUrl);
+    gatedLauncher = new SemaphoreSessionLauncher(codexLauncher, apiSemaphore);
   } else if (config.sessionLauncher === "ollama") {
-    const ollamaBaseUrl = config.ollamaBaseUrl ?? "http://localhost:11434";
-    logger.debug(`agent-layer: using OllamaSessionLauncher for cognitive roles (${ollamaBaseUrl}, model: ${config.ollamaModel ?? "default"})`);
-    const ollamaLauncher = new OllamaSessionLauncher(new FetchHttpClient(), clock, config.ollamaModel, ollamaBaseUrl, ollamaApiKey);
+    const ollamaBaseUrl = ollamaConfig?.baseUrl ?? config.ollamaBaseUrl ?? "http://localhost:11434";
+    const ollamaModel = ollamaConfig?.model ?? config.ollamaModel;
+    logger.debug(`agent-layer: using OllamaSessionLauncher for cognitive roles (${ollamaBaseUrl}, model: ${ollamaModel ?? "default"})`);
+    const ollamaLauncher = new OllamaSessionLauncher(new FetchHttpClient(), clock, ollamaModel, ollamaBaseUrl, ollamaApiKey);
     gatedLauncher = new SemaphoreSessionLauncher(ollamaLauncher, apiSemaphore);
   } else if (config.sessionLauncher === "groq") {
     if (groqApiKey) {
-      logger.debug(`agent-layer: using GroqSessionLauncher for cognitive roles (model: ${config.groqModel ?? "default"})`);
-      const groqLauncher = new GroqSessionLauncher(new FetchHttpClient(), clock, groqApiKey, config.groqModel);
+      logger.debug(`agent-layer: using GroqSessionLauncher for cognitive roles (model: ${groqModel ?? "default"})`);
+      const groqLauncher = new GroqSessionLauncher(new FetchHttpClient(), clock, groqApiKey, groqModel);
       gatedLauncher = new SemaphoreSessionLauncher(groqLauncher, apiSemaphore);
     } else {
       logger.debug("agent-layer: sessionLauncher is \"groq\" but groqKeyPath is not set or key file unreadable — falling back to Claude SDK launcher");
@@ -182,8 +214,8 @@ export async function createAgentLayer(
     }
   } else if (config.sessionLauncher === "anthropic") {
     if (anthropicAccessToken) {
-      logger.debug(`agent-layer: using AnthropicSessionLauncher for cognitive roles (model: ${config.anthropicModel ?? "default"})`);
-      const anthropicLauncher = new AnthropicSessionLauncher(new FetchHttpClient(), clock, anthropicAccessToken, config.anthropicModel);
+      logger.debug(`agent-layer: using AnthropicSessionLauncher for cognitive roles (model: ${anthropicModel ?? "default"})`);
+      const anthropicLauncher = new AnthropicSessionLauncher(new FetchHttpClient(), clock, anthropicAccessToken, anthropicModel);
       gatedLauncher = new SemaphoreSessionLauncher(anthropicLauncher, apiSemaphore);
     } else {
       logger.debug("agent-layer: sessionLauncher is \"anthropic\" but token unavailable — falling back to Claude SDK launcher");
@@ -200,8 +232,8 @@ export async function createAgentLayer(
 
   // Task classifier for model selection (with optional metrics collection)
   const taskClassifier = new TaskClassifier({
-    strategicModel: config.strategicModel ?? "opus",
-    tacticalModel: config.tacticalModel ?? "sonnet",
+    strategicModel: activeStrategicModel ?? "opus",
+    tacticalModel: activeTacticalModel ?? "sonnet",
     metricsCollector: config.metrics?.enabled !== false ? taskMetrics : undefined, // Default enabled
   });
 
@@ -215,8 +247,8 @@ export async function createAgentLayer(
   // Ollama offload service — offloads compaction to local Ollama when configured
   let ollamaOffloadService: OllamaOffloadService | undefined;
   if (config.ollamaOffload?.enabled) {
-    const ollamaBaseUrl = config.ollamaBaseUrl ?? "http://localhost:11434";
-    const ollamaModel = config.ollamaModel ?? "qwen3:14b";
+    const ollamaBaseUrl = ollamaConfig?.baseUrl ?? config.ollamaBaseUrl ?? "http://localhost:11434";
+    const ollamaModel = ollamaConfig?.model ?? config.ollamaModel ?? "qwen3:14b";
     logger.debug(`agent-layer: Ollama offload enabled (${ollamaBaseUrl}, model: ${ollamaModel})`);
     const inferenceClient = new OllamaInferenceClient(
       new FetchHttpClient(),
@@ -230,21 +262,23 @@ export async function createAgentLayer(
 
   // Vertex subprocess launcher — middle-tier fallback between Ollama and Claude
   let vertexSubprocessLauncher: VertexSessionLauncher | undefined;
-  if (config.vertexKeyPath) {
+  const vertexKeyPath = vertexConfig?.keyPath ?? config.vertexKeyPath;
+  const vertexModel = vertexConfig?.model ?? config.vertexModel;
+  if (vertexKeyPath) {
     try {
-      const apiKey = (await fs.readFile(config.vertexKeyPath)).trim();
+      const apiKey = (await fs.readFile(vertexKeyPath)).trim();
       if (apiKey) {
         const vertexLauncher = new VertexSessionLauncher(
           new FetchHttpClient(),
           clock,
           apiKey,
-          config.vertexModel,
+          vertexModel,
         );
         // Startup health probe — fail-fast if key is invalid (Bishop Q2)
         const isHealthy = await vertexLauncher.healthy();
         if (isHealthy) {
           vertexSubprocessLauncher = vertexLauncher;
-          logger.debug(`agent-layer: Vertex subprocess launcher enabled (model: ${config.vertexModel ?? "gemini-2.5-flash"})`);
+          logger.debug(`agent-layer: Vertex subprocess launcher enabled (model: ${vertexModel ?? "gemini-2.5-flash"})`);
         } else {
           logger.debug("agent-layer: Vertex subprocess launcher health check FAILED — key may be invalid, disabling");
         }
@@ -254,7 +288,7 @@ export async function createAgentLayer(
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       // Log path existence failure without revealing path contents (security: key path is [REDACTED])
-      logger.debug(`agent-layer: Cannot read Vertex key file — disabling subprocess launcher (${msg.replace(config.vertexKeyPath, "[REDACTED]")})`);
+      logger.debug(`agent-layer: Cannot read Vertex key file — disabling subprocess launcher (${msg.replace(vertexKeyPath, "[REDACTED]")})`);
     }
   }
 
@@ -312,14 +346,14 @@ export async function createAgentLayer(
   } else if (config.idLauncher === "vertex") {
     logger.debug("agent-layer: idLauncher is \"vertex\" but no Vertex launcher available — Id falling back to default launcher");
   } else if (config.idLauncher === "ollama") {
-    const ollamaBaseUrl = config.ollamaBaseUrl ?? "http://localhost:11434";
-    const ollamaModel = config.idOllamaModel ?? config.ollamaModel;
+    const ollamaBaseUrl = ollamaConfig?.baseUrl ?? config.ollamaBaseUrl ?? "http://localhost:11434";
+    const ollamaModel = ollamaConfig?.idModel ?? config.idOllamaModel ?? ollamaConfig?.model ?? config.ollamaModel;
     const ollamaLauncher = new OllamaSessionLauncher(new FetchHttpClient(), clock, ollamaModel, ollamaBaseUrl, ollamaApiKey);
     idGatedLauncher = new SemaphoreSessionLauncher(ollamaLauncher, apiSemaphore);
     logger.debug(`agent-layer: Id using OllamaSessionLauncher (idLauncher: ollama, model: ${ollamaModel ?? "default"})`);
   } else if (config.idLauncher === "groq") {
     if (groqApiKey) {
-      const model = config.idGroqModel ?? config.groqModel;
+      const model = idGroqModel ?? groqModel;
       const groqLauncher = new GroqSessionLauncher(new FetchHttpClient(), clock, groqApiKey, model);
       idGatedLauncher = new SemaphoreSessionLauncher(groqLauncher, apiSemaphore);
       logger.debug(`agent-layer: Id using GroqSessionLauncher (idLauncher: groq, model: ${model ?? "default"})`);
@@ -328,7 +362,7 @@ export async function createAgentLayer(
     }
   } else if (config.idLauncher === "anthropic") {
     if (anthropicAccessToken) {
-      const model = config.idAnthropicModel ?? config.anthropicModel;
+      const model = idAnthropicModel ?? anthropicModel;
       const anthropicLauncher = new AnthropicSessionLauncher(new FetchHttpClient(), clock, anthropicAccessToken, model);
       idGatedLauncher = new SemaphoreSessionLauncher(anthropicLauncher, apiSemaphore);
       logger.debug(`agent-layer: Id using AnthropicSessionLauncher (idLauncher: anthropic, model: ${model ?? "default"})`);

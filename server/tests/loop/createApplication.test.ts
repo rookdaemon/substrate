@@ -99,6 +99,16 @@ describe("createApplication", () => {
     expect(app.orchestrator.getState()).toBe(LoopState.STOPPED);
   });
 
+  it("creates application with sessionLauncher: 'codex'", async () => {
+    const app = await createApplication(baseConfig({
+      sessionLauncher: "codex",
+    }));
+    createdApps.push(app);
+
+    expect(app).toBeDefined();
+    expect(app.orchestrator.getState()).toBe(LoopState.STOPPED);
+  });
+
   describe("sleep-preservation: forceStart when sleeping", () => {
     it("forceStart=true does not wake loop when initialized in SLEEPING state", async () => {
       const app = await createApplication(baseConfig({
