@@ -316,6 +316,29 @@ describe("PlanParser", () => {
     });
   });
 
+  describe("markBlockedUntil", () => {
+    it("adds a blockedUntil annotation to a task", () => {
+      const blockedUntil = new Date("2026-05-02T05:00:00.000Z");
+      const updated = PlanParser.markBlockedUntil(SIMPLE_PLAN, "task-2", blockedUntil);
+      expect(updated).toContain(
+        "- [ ] Implement backend auth <!-- blockedUntil: 2026-05-02T05:00:00.000Z -->"
+      );
+    });
+
+    it("replaces an existing blockedUntil annotation", () => {
+      const plan = `# Plan\n\n## Tasks\n- [ ] Send report <!-- blockedUntil: 2026-05-01T05:00:00.000Z -->\n`;
+      const updated = PlanParser.markBlockedUntil(plan, "task-1", new Date("2026-05-02T05:00:00.000Z"));
+      expect(updated).toContain("<!-- blockedUntil: 2026-05-02T05:00:00.000Z -->");
+      expect(updated).not.toContain("2026-05-01T05:00:00.000Z");
+    });
+
+    it("throws for unknown task ID", () => {
+      expect(() => PlanParser.markBlockedUntil(SIMPLE_PLAN, "task-99", new Date())).toThrow(
+        "Task task-99 not found"
+      );
+    });
+  });
+
   describe("isComplete", () => {
     it("returns true when all tasks are complete", () => {
       const tasks = PlanParser.parseTasks(ALL_COMPLETE);

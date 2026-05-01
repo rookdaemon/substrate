@@ -246,6 +246,13 @@ export class Subconscious {
     await this.writer.write(SubstrateFileType.PLAN, updatedMarkdown);
   }
 
+  async markTaskBlockedUntil(taskId: string, blockedUntil: Date): Promise<void> {
+    this.checker.assertCanWrite(AgentRole.SUBCONSCIOUS, SubstrateFileType.PLAN);
+    const planContent = await this.reader.read(SubstrateFileType.PLAN);
+    const updatedMarkdown = PlanParser.markBlockedUntil(planContent.rawMarkdown, taskId, blockedUntil);
+    await this.writer.write(SubstrateFileType.PLAN, updatedMarkdown);
+  }
+
   async updateSkills(content: string): Promise<void> {
     this.checker.assertCanWrite(AgentRole.SUBCONSCIOUS, SubstrateFileType.SKILLS);
     await this.writer.write(SubstrateFileType.SKILLS, content);

@@ -101,6 +101,18 @@ function successResult() {
   });
 }
 
+function timeGatedPartialResult() {
+  return JSON.stringify({
+    result: "partial",
+    summary: "Task remains time-gated. Current UTC time is 2026-05-01T08:21:57Z, before the scheduled 2026-05-02 06:00 CET scrum window. Re-verify at the actual send window.",
+    progressEntry: "",
+    skillUpdates: null,
+    memoryUpdates: null,
+    proposals: [],
+    agoraReplies: [],
+  });
+}
+
 describe("LoopOrchestrator: HOLD_UNTIL enforcement", () => {
   it("does not dispatch when HOLD_UNTIL is in the future", async () => {
     const deps = createDeps();
@@ -213,5 +225,43 @@ describe("LoopOrchestrator: HOLD_UNTIL enforcement", () => {
     // No [HOLD_UNTIL] log emitted
     const logEntries = logger.getEntries();
     expect(logEntries.find(e => e.includes("[HOLD_UNTIL]"))).toBeUndefined();
+  });
+
+  it("converts a reported future scheduled window into a blockedUntil annotation", async () => {
+    const deps = createDeps();
+    await setupSubstrateWithTask(
+      deps.fs,
+      "Re-verify and send scheduled Stefan survival scrum at window"
+    );
+
+    const logger = new InMemoryLogger();
+    const eventSink = new InMemoryEventSink();
+    const config = defaultLoopConfig({ maxConsecutiveIdleCycles: 1, idleSleepEnabled: true });
+    const timer = new MockTimer();
+
+    const orchestrator = new LoopOrchestrator(
+      deps.ego, deps.subconscious, deps.superego, deps.id,
+      deps.appendWriter, deps.clock, timer, eventSink,
+      config, logger
+    );
+
+    deps.launcher.enqueueSuccess(timeGatedPartialResult());
+
+    orchestrator.start();
+    await orchestrator.runLoop();
+
+    const plan = await deps.fs.readFile("/substrate/PLAN.md");
+    expect(plan).toContain("<!-- blockedUntil: 2026-05-02T05:00:00.000Z -->");
+
+    const subconsciousExecuteCalls = deps.launcher.getLaunches().filter(l =>
+      l.request.message?.includes("Execute this task:") ?? false
+    );
+    expect(subconsciousExecuteCalls).toHaveLength(1);
+    expect(orchestrator.getMetrics().blockedCycles).toBe(1);
+    expect(orchestrator.getMetrics().failedCycles).toBe(0);
+
+    const logEntries = logger.getEntries();
+    expect(logEntries.some(e => e.includes("[BLOCKED]") && e.includes("2026-05-02T05:00:00.000Z"))).toBe(true);
+    expect(logEntries.some(e => e.includes("reconsideration: evaluating outcome"))).toBe(false);
   });
 });

@@ -585,7 +585,8 @@ export class LoopOrchestrator implements IMessageInjector {
       this.performanceMetrics?.recordApiCall(apiCallDurationMs, "SUBCONSCIOUS", "execute").catch(() => { });
 
       const success = taskResult.result === "success";
-      const blocked = taskResult.result === "blocked";
+      const inferredBlockedUntil = success ? null : this.inferTaskBlockedUntil(dispatch.description, taskResult.summary);
+      const blocked = taskResult.result === "blocked" || inferredBlockedUntil !== null;
 
       // Store for INS consecutive-partial detection
       this.lastTaskResult = {
@@ -598,7 +599,11 @@ export class LoopOrchestrator implements IMessageInjector {
       };
 
       if (blocked) {
-        const retryPart = taskResult.retryAfter ? ` — retry after ${taskResult.retryAfter}` : "";
+        const retryPart = taskResult.retryAfter
+          ? ` — retry after ${taskResult.retryAfter}`
+          : inferredBlockedUntil
+            ? ` — blocked until ${inferredBlockedUntil.toISOString()}`
+            : "";
         this.logger.debug(`[BLOCKED] cycle ${this.cycleNumber}: task "${dispatch.taskId}"${retryPart} — ${taskResult.summary}`);
         this.lastBlockedTaskId = dispatch.taskId;
       } else {
@@ -634,6 +639,10 @@ export class LoopOrchestrator implements IMessageInjector {
       } else if (blocked) {
         this.metrics.blockedCycles++;
 
+        if (inferredBlockedUntil) {
+          await this.subconscious.markTaskBlockedUntil(dispatch.taskId, inferredBlockedUntil);
+        }
+
         if (taskResult.summary) {
           await this.subconscious.logConversation(taskResult.summary);
         }
@@ -653,7 +662,9 @@ export class LoopOrchestrator implements IMessageInjector {
       }
 
       // Drive learning: if task was Id-generated, record a quality rating for future drive improvement
-      await this.recordDriveRatingIfApplicable(dispatch.description, taskResult);
+      if (!blocked) {
+        await this.recordDriveRatingIfApplicable(dispatch.description, taskResult);
+      }
 
       // Enqueue proposal evaluation as deferred work (overlaps with next cycle's dispatch)
       if (taskResult.proposals.length > 0) {
@@ -667,7 +678,7 @@ export class LoopOrchestrator implements IMessageInjector {
       }
 
       // Enqueue reconsideration as deferred work
-      if (success || taskResult.result === "partial") {
+      if (success || (taskResult.result === "partial" && !blocked)) {
         this.deferredWork.enqueue(this.runReconsideration(dispatch, taskResult));
       }
 
@@ -1479,6 +1490,38 @@ export class LoopOrchestrator implements IMessageInjector {
         },
       });
     }
+  }
+
+  private inferTaskBlockedUntil(description: string, summary: string): Date | null {
+    const text = `${description}\n${summary}`;
+    if (!/\b(time[- ]gated|before (?:the )?(?:scheduled )?(?:send |scrum )?window|scheduled .*window|do not send before|re-verify .*window)\b/i.test(text)) {
+      return null;
+    }
+
+    const scheduledMatch = text.match(/\b(\d{4}-\d{2}-\d{2})\s+(\d{1,2}):(\d{2})\s*(UTC|CET|CEST)\b/i);
+    if (scheduledMatch) {
+      const [, datePart, hourPart, minutePart, zonePart] = scheduledMatch;
+      const hour = Number(hourPart);
+      const minute = Number(minutePart);
+      if (!Number.isInteger(hour) || !Number.isInteger(minute) || hour > 23 || minute > 59) return null;
+
+      const zoneOffsets: Record<string, number> = { UTC: 0, CET: 1, CEST: 2 };
+      const offsetHours = zoneOffsets[zonePart.toUpperCase()];
+      if (offsetHours === undefined) return null;
+
+      const [year, month, day] = datePart.split("-").map(Number);
+      const blockedUntil = new Date(Date.UTC(year, month - 1, day, hour - offsetHours, minute, 0, 0));
+      if (isNaN(blockedUntil.getTime()) || blockedUntil <= this.clock.now()) return null;
+      return blockedUntil;
+    }
+
+    const isoMatch = text.match(/\b(?:scheduled|window|until|before)\D{0,80}(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?Z)\b/i);
+    const parsedIso = isoMatch ? new Date(isoMatch[1]) : null;
+    if (parsedIso && !isNaN(parsedIso.getTime()) && parsedIso > this.clock.now()) {
+      return parsedIso;
+    }
+
+    return null;
   }
 
   private async readEndpointState(): Promise<string> {

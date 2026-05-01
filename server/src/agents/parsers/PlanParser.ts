@@ -96,6 +96,45 @@ export class PlanParser {
     return lines.join("\n");
   }
 
+  static markBlockedUntil(markdown: string, taskId: string, blockedUntil: Date): string {
+    const tasks = this.parseTasks(markdown);
+    const task = this.findTaskById(tasks, taskId);
+    if (!task) {
+      throw new Error(`Task ${taskId} not found`);
+    }
+
+    const taskLines = this.extractTaskLines(markdown);
+    const flatTasks = this.flattenTasks(tasks);
+    const taskIndex = flatTasks.findIndex((t) => t.id === taskId);
+    if (taskIndex < 0 || taskIndex >= taskLines.length) {
+      throw new Error(`Task ${taskId} not found`);
+    }
+
+    const lines = markdown.split("\n");
+    const tasksSection = this.findTasksSectionStart(markdown);
+    if (tasksSection < 0) {
+      throw new Error(`Task ${taskId} not found`);
+    }
+
+    const annotation = `<!-- blockedUntil: ${blockedUntil.toISOString()} -->`;
+    let taskLineCount = 0;
+    for (let i = tasksSection; i < lines.length; i++) {
+      if (/^\s*- \[[ x~]\] /.test(lines[i])) {
+        if (taskLineCount === taskIndex) {
+          if (/<!--\s*blockedUntil:\s*\S+\s*-->/.test(lines[i])) {
+            lines[i] = lines[i].replace(/<!--\s*blockedUntil:\s*\S+\s*-->/, annotation);
+          } else {
+            lines[i] = `${lines[i]} ${annotation}`;
+          }
+          break;
+        }
+        taskLineCount++;
+      }
+    }
+
+    return lines.join("\n");
+  }
+
   static isComplete(tasks: PlanTask[]): boolean {
     return tasks.every(
       (t) =>
