@@ -20,6 +20,7 @@ import { PromptBuilder } from "../../src/agents/prompts/PromptBuilder";
 import { TaskClassifier } from "../../src/agents/TaskClassifier";
 import { ConversationManager } from "../../src/conversation/ConversationManager";
 import { IConversationCompactor } from "../../src/conversation/IConversationCompactor";
+import type { LoopConfig } from "../../src/loop/types";
 
 class MockCompactor implements IConversationCompactor {
   async compact(_currentContent: string, _oneHourAgo: string): Promise<string> {
@@ -57,6 +58,52 @@ function createOrchestrator() {
   );
 
   return { orchestrator, eventSink, launcher };
+}
+
+async function createAuditOrchestrator(config: LoopConfig, clock = new FixedClock(new Date("2025-06-15T10:00:00.000Z"))) {
+  const fs = new InMemoryFileSystem();
+  await fs.mkdir("/substrate", { recursive: true });
+  await fs.writeFile("/substrate/PLAN.md", "# Plan\n\n## Current Goal\nDone\n\n## Tasks\n- [x] Done");
+  await fs.writeFile("/substrate/MEMORY.md", "# Memory\n\n");
+  await fs.writeFile("/substrate/HABITS.md", "# Habits\n\n");
+  await fs.writeFile("/substrate/SKILLS.md", "# Skills\n\n");
+  await fs.writeFile("/substrate/VALUES.md", "# Values\n\n");
+  await fs.writeFile("/substrate/ID.md", "# Id\n\n");
+  await fs.writeFile("/substrate/SECURITY.md", "# Security\n\n");
+  await fs.writeFile("/substrate/CHARTER.md", "# Charter\n\n");
+  await fs.writeFile("/substrate/SUPEREGO.md", "# Superego\n\n");
+  await fs.writeFile("/substrate/CLAUDE.md", "# Claude\n\n");
+  await fs.writeFile("/substrate/PROGRESS.md", "# Progress\n\n");
+  await fs.writeFile("/substrate/CONVERSATION.md", "# Conversation\n\n");
+
+  const launcher = new InMemorySessionLauncher();
+  const substrateConfig = new SubstrateConfig("/substrate");
+  const reader = new SubstrateFileReader(fs, substrateConfig);
+  const lock = new FileLock();
+  const writer = new SubstrateFileWriter(fs, substrateConfig, lock);
+  const appendWriter = new AppendOnlyWriter(fs, substrateConfig, lock, clock);
+  const checker = new PermissionChecker();
+  const promptBuilder = new PromptBuilder(reader, checker);
+  const taskClassifier = new TaskClassifier({ strategicModel: "opus", tacticalModel: "sonnet" });
+  const compactor = new MockCompactor();
+  const conversationManager = new ConversationManager(
+    reader, fs, substrateConfig, lock, appendWriter, checker, compactor, clock
+  );
+
+  const ego = new Ego(reader, writer, conversationManager, checker, promptBuilder, launcher, clock, taskClassifier);
+  const subconscious = new Subconscious(reader, writer, appendWriter, conversationManager, checker, promptBuilder, launcher, clock, taskClassifier);
+  const superego = new Superego(reader, appendWriter, checker, promptBuilder, launcher, clock, taskClassifier, writer);
+  const id = new Id(reader, checker, promptBuilder, launcher, clock, taskClassifier);
+
+  const eventSink = new InMemoryEventSink();
+  const logger = new InMemoryLogger();
+  const orchestrator = new LoopOrchestrator(
+    ego, subconscious, superego, id,
+    appendWriter, clock, new ImmediateTimer(), eventSink,
+    config, logger
+  );
+
+  return { orchestrator, launcher, logger, clock };
 }
 
 describe("CL-11: Observability & async audit", () => {
@@ -139,6 +186,51 @@ describe("CL-11: Observability & async audit", () => {
 
       // Audit was fired — the metric is incremented synchronously at start of runAudit()
       expect(orc.getMetrics().superegoAudits).toBeGreaterThanOrEqual(1);
+    });
+
+    it("dynamic audit policy skips routine interval audits before the material interval", async () => {
+      const { orchestrator } = await createAuditOrchestrator(defaultLoopConfig({
+        superegoAuditInterval: 1,
+        maxConsecutiveIdleCycles: 100,
+        dynamicSuperegoAudit: {
+          enabled: true,
+          materialIntervalCycles: 10,
+          idleIntervalCycles: 100,
+          maxIntervalMs: 8 * 60 * 60 * 1000,
+        },
+      }));
+
+      orchestrator.start();
+      await orchestrator.runOneCycle();
+
+      expect(orchestrator.getMetrics().superegoAudits).toBe(0);
+    });
+
+    it("dynamic audit policy runs when max wall-clock interval is reached", async () => {
+      const clock = new FixedClock(new Date("2025-06-15T10:00:00.000Z"));
+      const { orchestrator, launcher, logger } = await createAuditOrchestrator(defaultLoopConfig({
+        superegoAuditInterval: 1000,
+        maxConsecutiveIdleCycles: 100,
+        dynamicSuperegoAudit: {
+          enabled: true,
+          materialIntervalCycles: 1000,
+          idleIntervalCycles: 4000,
+          maxIntervalMs: 8 * 60 * 60 * 1000,
+        },
+      }), clock);
+
+      launcher.enqueueSuccess(JSON.stringify({
+        findings: [],
+        proposalEvaluations: [],
+        summary: "All good",
+      }));
+
+      clock.advance(8 * 60 * 60 * 1000);
+      orchestrator.start();
+      await orchestrator.runOneCycle();
+
+      expect(orchestrator.getMetrics().superegoAudits).toBe(1);
+      expect(logger.getEntries().some(e => e.includes("dynamic max interval reached"))).toBe(true);
     });
   });
 

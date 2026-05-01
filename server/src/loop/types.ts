@@ -8,6 +8,12 @@ export enum LoopState {
 export interface LoopConfig {
   cycleDelayMs: number;
   superegoAuditInterval: number;
+  dynamicSuperegoAudit?: {
+    enabled: boolean;
+    materialIntervalCycles?: number;
+    idleIntervalCycles?: number;
+    maxIntervalMs?: number;
+  };
   maxConsecutiveIdleCycles: number;
   idleSleepEnabled: boolean;
   evaluateOutcomeEnabled: boolean;
@@ -18,6 +24,7 @@ export function defaultLoopConfig(overrides?: Partial<LoopConfig>): LoopConfig {
   const defaults: LoopConfig = {
     cycleDelayMs: 30000,
     superegoAuditInterval: 50,
+    dynamicSuperegoAudit: undefined,
     maxConsecutiveIdleCycles: 10,
     idleSleepEnabled: false,
     evaluateOutcomeEnabled: false,
@@ -27,6 +34,7 @@ export function defaultLoopConfig(overrides?: Partial<LoopConfig>): LoopConfig {
   return {
     cycleDelayMs: overrides.cycleDelayMs ?? defaults.cycleDelayMs,
     superegoAuditInterval: overrides.superegoAuditInterval ?? defaults.superegoAuditInterval,
+    dynamicSuperegoAudit: overrides.dynamicSuperegoAudit ?? defaults.dynamicSuperegoAudit,
     maxConsecutiveIdleCycles: overrides.maxConsecutiveIdleCycles ?? defaults.maxConsecutiveIdleCycles,
     idleSleepEnabled: overrides.idleSleepEnabled ?? defaults.idleSleepEnabled,
     evaluateOutcomeEnabled: overrides.evaluateOutcomeEnabled ?? defaults.evaluateOutcomeEnabled,
@@ -42,6 +50,8 @@ export interface CycleResult {
   summary: string;
   /** True when a dispatch was blocked without implying a whole-loop rate-limit backoff. */
   blocked?: boolean;
+  /** ISO 8601 UTC timestamp when a task-local time block lifts. Unlike retryAfter, this is not a rate-limit signal. */
+  blockedUntil?: string;
   /** ISO 8601 UTC timestamp when a blocking constraint lifts — present when task result was "blocked". */
   retryAfter?: string;
 }

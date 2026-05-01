@@ -34,6 +34,12 @@ export interface ApplicationConfig {
   httpPort?: number;
   cycleDelayMs?: number;
   superegoAuditInterval?: number;
+  dynamicSuperegoAudit?: {
+    enabled: boolean;
+    materialIntervalCycles?: number;
+    idleIntervalCycles?: number;
+    maxIntervalMs?: number;
+  };
   maxConsecutiveIdleCycles?: number;
   mode?: "cycle" | "tick";
   sdkQueryFn?: SdkQueryFn;

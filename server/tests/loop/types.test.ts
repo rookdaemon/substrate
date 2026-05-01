@@ -20,6 +20,7 @@ describe("defaultLoopConfig", () => {
 
     expect(config.cycleDelayMs).toBe(30000);
     expect(config.superegoAuditInterval).toBe(50);
+    expect(config.dynamicSuperegoAudit).toBeUndefined();
     expect(config.maxConsecutiveIdleCycles).toBe(10);
     expect(config.evaluateOutcomeEnabled).toBe(false);
     expect(config.evaluateOutcomeQualityThreshold).toBe(70);
@@ -49,11 +50,23 @@ describe("defaultLoopConfig", () => {
     const config = defaultLoopConfig({
       cycleDelayMs: 2000,
       superegoAuditInterval: 20,
+      dynamicSuperegoAudit: {
+        enabled: true,
+        materialIntervalCycles: 100,
+        idleIntervalCycles: 400,
+        maxIntervalMs: 8 * 60 * 60 * 1000,
+      },
       maxConsecutiveIdleCycles: 3,
     });
 
     expect(config.cycleDelayMs).toBe(2000);
     expect(config.superegoAuditInterval).toBe(20);
+    expect(config.dynamicSuperegoAudit).toEqual({
+      enabled: true,
+      materialIntervalCycles: 100,
+      idleIntervalCycles: 400,
+      maxIntervalMs: 8 * 60 * 60 * 1000,
+    });
     expect(config.maxConsecutiveIdleCycles).toBe(3);
   });
 
@@ -136,10 +149,12 @@ describe("CycleResult type", () => {
       taskId: "task-time-gated",
       success: false,
       blocked: true,
+      blockedUntil: "2026-03-12T10:00:00.000Z",
       summary: "Task is blocked until its scheduled window",
     };
 
     expect(result.blocked).toBe(true);
+    expect(result.blockedUntil).toBe("2026-03-12T10:00:00.000Z");
     expect(result.retryAfter).toBeUndefined();
   });
 });

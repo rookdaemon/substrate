@@ -285,6 +285,35 @@ describe("LoopOrchestrator: blocked task scheduling", () => {
     expect(orchestrator.getMetrics().blockedCycles).toBe(1);
   });
 
+  it("sleeps until an existing blockedUntil annotation without invoking Subconscious first", async () => {
+    const deps = createDeps();
+    const blockedUntil = "2026-03-12T08:10:00.000Z";
+    await setupActiveTaskSubstrate(deps.fs, `Scheduled task <!-- blockedUntil: ${blockedUntil} -->`);
+
+    const logger = new InMemoryLogger();
+    const eventSink = new InMemoryEventSink();
+    const timer = new ClockAdvancingTimer(deps.clock);
+    const config = defaultLoopConfig({ maxConsecutiveIdleCycles: 1, idleSleepEnabled: true });
+
+    const orchestrator = new LoopOrchestrator(
+      deps.ego, deps.subconscious, deps.superego, deps.id,
+      deps.appendWriter, deps.clock, timer, eventSink,
+      config, logger
+    );
+
+    deps.launcher.enqueueSuccess(successResult());
+
+    orchestrator.start();
+    await orchestrator.runLoop();
+
+    const subconscious = deps.launcher.getLaunches().filter(l =>
+      l.request.message?.includes("Execute this task:") ?? false
+    );
+    expect(subconscious).toHaveLength(1);
+    expect(deps.clock.now().getTime()).toBeGreaterThanOrEqual(new Date(blockedUntil).getTime());
+    expect(logger.getEntries().some(e => e.includes("task-local time block"))).toBe(true);
+  });
+
   it("partial task is dispatched every cycle without backoff (no regression)", async () => {
     const deps = createDeps();
     await setupActiveTaskSubstrate(deps.fs);

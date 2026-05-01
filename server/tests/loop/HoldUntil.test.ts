@@ -131,13 +131,14 @@ describe("LoopOrchestrator: HOLD_UNTIL enforcement", () => {
 
     // No launcher responses queued — the LLM must not be called
     orchestrator.start();
-    await orchestrator.runLoop();
+    const result = await orchestrator.runOneCycle();
 
     const launches = deps.launcher.getLaunches();
     const subconsciousExecuteCalls = launches.filter(l =>
       l.request.message?.includes("Execute this task:") ?? false
     );
     expect(subconsciousExecuteCalls).toHaveLength(0);
+    expect(result.blockedUntil).toBe(new Date(FUTURE_HOLD).toISOString());
   });
 
   it("emits [HOLD_UNTIL] debug log with task ID and timestamp when task is held", async () => {
@@ -156,7 +157,7 @@ describe("LoopOrchestrator: HOLD_UNTIL enforcement", () => {
     );
 
     orchestrator.start();
-    await orchestrator.runLoop();
+    await orchestrator.runOneCycle();
 
     const logEntries = logger.getEntries();
     const holdEntry = logEntries.find(e => e.includes("[HOLD_UNTIL]"));
@@ -248,10 +249,11 @@ describe("LoopOrchestrator: HOLD_UNTIL enforcement", () => {
     deps.launcher.enqueueSuccess(timeGatedPartialResult());
 
     orchestrator.start();
-    await orchestrator.runLoop();
+    const result = await orchestrator.runOneCycle();
 
     const plan = await deps.fs.readFile("/substrate/PLAN.md");
     expect(plan).toContain("<!-- blockedUntil: 2026-05-02T05:00:00.000Z -->");
+    expect(result.blockedUntil).toBe("2026-05-02T05:00:00.000Z");
 
     const subconsciousExecuteCalls = deps.launcher.getLaunches().filter(l =>
       l.request.message?.includes("Execute this task:") ?? false
@@ -259,7 +261,7 @@ describe("LoopOrchestrator: HOLD_UNTIL enforcement", () => {
     expect(subconsciousExecuteCalls).toHaveLength(1);
     expect(orchestrator.getMetrics().blockedCycles).toBe(1);
     expect(orchestrator.getMetrics().failedCycles).toBe(0);
-    expect(orchestrator.getLastCycleDiagnostics().lastCycleResult).toBe("idle");
+    expect(orchestrator.getLastCycleDiagnostics().lastCycleResult).toBe("blocked");
 
     const logEntries = logger.getEntries();
     expect(logEntries.some(e => e.includes("[BLOCKED]") && e.includes("2026-05-02T05:00:00.000Z"))).toBe(true);

@@ -57,6 +57,8 @@ export class LoopOrchestrator implements IMessageInjector {
   private isProcessing = false;
 
   private auditOnNextCycle = false;
+  private lastSuperegoAuditCycle = 0;
+  private lastSuperegoAuditAt: Date | null = null;
   private rateLimitUntil: string | null = null;
   private consecutiveUnknownRateLimits = 0;
 
@@ -170,6 +172,7 @@ export class LoopOrchestrator implements IMessageInjector {
     this.substratePath = substratePath ?? "";
     this.conversationIdleTimeoutMs = conversationIdleTimeoutMs ?? 20_000; // Default 20s
     this.conversationSessionMaxDurationMs = conversationSessionMaxDurationMs ?? 300_000; // Default 5 min
+    this.lastSuperegoAuditAt = this.clock.now();
     if (findingTracker) {
       this.findingTracker = findingTracker;
     }
@@ -500,6 +503,7 @@ export class LoopOrchestrator implements IMessageInjector {
     if (r2Halt) return r2Halt;
 
     const { dispatch: rawDispatch, blockedTaskIds, timeBlockedTasks, snapshot } = await this.ego.dispatchNext();
+    const nextTimeBlockedUntil = this.nextTimeBlockedUntil(timeBlockedTasks);
 
     for (const { taskId, blockedUntil } of timeBlockedTasks) {
       this.logger.debug(`[SCHEDULER] task skipped — blockedUntil: ${blockedUntil.toISOString()} (task: "${taskId}")`);
@@ -507,12 +511,14 @@ export class LoopOrchestrator implements IMessageInjector {
 
     // Enforce HOLD_UNTIL timestamp in task descriptions before dispatch
     let dispatch = rawDispatch;
+    let heldUntil: Date | null = null;
     if (dispatch) {
       const holdUntilMatch = dispatch.description?.match(/HOLD_UNTIL:\s*(\d{4}-\d{2}-\d{2}T[\d:.]+Z)/);
       if (holdUntilMatch) {
         const holdUntil = new Date(holdUntilMatch[1]);
         if (holdUntil > this.clock.now()) {
           this.logger.debug(`[HOLD_UNTIL] cycle ${this.cycleNumber}: task "${dispatch.taskId}" held until ${holdUntil.toISOString()}`);
+          heldUntil = holdUntil;
           dispatch = null;
         }
       }
@@ -522,6 +528,7 @@ export class LoopOrchestrator implements IMessageInjector {
     let llmSessionInvokedThisCycle = false;
 
     if (!dispatch) {
+      const blockedUntilForIdle = heldUntil ?? nextTimeBlockedUntil;
       this.metrics.idleCycles++;
       this.metrics.consecutiveIdleCycles++;
 
@@ -563,7 +570,10 @@ export class LoopOrchestrator implements IMessageInjector {
         cycleNumber: this.cycleNumber,
         action: "idle",
         success: true,
-        summary: "No tasks available — idle",
+        summary: blockedUntilForIdle
+          ? `No actionable tasks until ${blockedUntilForIdle.toISOString()}`
+          : "No tasks available — idle",
+        ...(blockedUntilForIdle ? { blocked: true, blockedUntil: blockedUntilForIdle.toISOString() } : {}),
       };
 
       this.eventSink.emit({
@@ -702,6 +712,7 @@ export class LoopOrchestrator implements IMessageInjector {
         success,
         summary: taskResult.summary,
         ...(blocked ? { blocked: true } : {}),
+        ...(inferredBlockedUntil ? { blockedUntil: inferredBlockedUntil.toISOString() } : {}),
         ...(taskResult.retryAfter ? { retryAfter: taskResult.retryAfter } : {}),
       };
     }
@@ -735,8 +746,7 @@ export class LoopOrchestrator implements IMessageInjector {
     }
 
     // Superego audit — enqueue as deferred work (overlaps with next cycle's dispatch)
-    if (this.cycleNumber % this.config.superegoAuditInterval === 0 || this.auditOnNextCycle) {
-      this.auditOnNextCycle = false;
+    if (this.shouldRunSuperegoAudit(result)) {
       this.deferredWork.enqueue(this.runAudit(), "audit");
     }
 
@@ -811,6 +821,18 @@ export class LoopOrchestrator implements IMessageInjector {
       }
 
       const cycleResult = await this.runOneCycle();
+
+      const taskBlockedUntil = cycleResult.blockedUntil ? new Date(cycleResult.blockedUntil) : null;
+      if (
+        cycleResult.blocked &&
+        !cycleResult.retryAfter &&
+        taskBlockedUntil &&
+        !Number.isNaN(taskBlockedUntil.getTime()) &&
+        taskBlockedUntil > this.clock.now()
+      ) {
+        await this.applyTaskBlockedSleep(taskBlockedUntil, cycleResult.taskId);
+        continue;
+      }
 
       // Check for rate limit backoff before idle threshold — rate limiting takes priority
       // so we don't misclassify a rate-limited idle cycle as genuinely idle.
@@ -1248,6 +1270,32 @@ export class LoopOrchestrator implements IMessageInjector {
     }
   }
 
+  private async applyTaskBlockedSleep(blockedUntil: Date, taskId: string | undefined): Promise<void> {
+    const waitMs = blockedUntil.getTime() - this.clock.now().getTime();
+    if (waitMs <= 0) return;
+
+    this.logger.debug(
+      `runLoop: task-local time block — sleeping ${waitMs}ms until ${blockedUntil.toISOString()}` +
+      `${taskId ? ` (task: "${taskId}")` : ""}`
+    );
+    this.watchdog?.pause();
+    this.eventSink.emit({
+      type: "idle",
+      timestamp: this.clock.now().toISOString(),
+      data: { taskBlockedUntil: blockedUntil.toISOString(), waitMs, ...(taskId ? { taskId } : {}) },
+    });
+    await this.timer.delay(waitMs);
+    this.watchdog?.resume();
+  }
+
+  private nextTimeBlockedUntil(timeBlockedTasks: Array<{ blockedUntil: Date }>): Date | null {
+    const future = timeBlockedTasks
+      .map(({ blockedUntil }) => blockedUntil)
+      .filter((blockedUntil) => blockedUntil > this.clock.now())
+      .sort((a, b) => a.getTime() - b.getTime());
+    return future[0] ?? null;
+  }
+
   private createLogCallback(role: string, source: "cycle" | "conversation" = "cycle"): (entry: ProcessLogEntry) => void {
     return (entry) => {
       this.eventSink.emit({
@@ -1305,6 +1353,8 @@ export class LoopOrchestrator implements IMessageInjector {
   private async runAudit(): Promise<void> {
     this.logger.debug(`audit: starting (cycle ${this.cycleNumber})`);
     this.metrics.superegoAudits++;
+    this.lastSuperegoAuditCycle = this.cycleNumber;
+    this.lastSuperegoAuditAt = this.clock.now();
     try {
       const report = await this.superego.audit(
         this.createLogCallback("SUPEREGO"),
@@ -1338,6 +1388,36 @@ export class LoopOrchestrator implements IMessageInjector {
       timestamp: this.clock.now().toISOString(),
       data: { cycleNumber: this.cycleNumber },
     });
+  }
+
+  private shouldRunSuperegoAudit(result: CycleResult): boolean {
+    if (this.auditOnNextCycle) {
+      this.auditOnNextCycle = false;
+      return true;
+    }
+
+    const policy = this.config.dynamicSuperegoAudit;
+    if (!policy?.enabled) {
+      return this.cycleNumber % this.config.superegoAuditInterval === 0;
+    }
+
+    const cyclesSinceAudit = this.cycleNumber - this.lastSuperegoAuditCycle;
+    const maxIntervalMs = policy.maxIntervalMs ?? this.config.superegoAuditInterval * this.config.cycleDelayMs;
+    const lastAuditAt = this.lastSuperegoAuditAt?.getTime() ?? this.clock.now().getTime();
+    const msSinceAudit = this.clock.now().getTime() - lastAuditAt;
+
+    if (msSinceAudit >= maxIntervalMs) {
+      this.logger.debug(`audit: dynamic max interval reached (${Math.round(msSinceAudit / 60000)}min)`);
+      return true;
+    }
+
+    if (result.action === "dispatch") {
+      const materialInterval = policy.materialIntervalCycles ?? this.config.superegoAuditInterval;
+      return cyclesSinceAudit >= materialInterval;
+    }
+
+    const idleInterval = policy.idleIntervalCycles ?? this.config.superegoAuditInterval * 4;
+    return cyclesSinceAudit >= idleInterval;
   }
 
   private async recordDriveRatingIfApplicable(description: string, taskResult: TaskResult): Promise<void> {

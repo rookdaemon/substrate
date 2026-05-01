@@ -98,6 +98,7 @@ export async function createLoopLayer(
   const loopConfig = defaultLoopConfig({
     cycleDelayMs: config.cycleDelayMs,
     superegoAuditInterval: config.superegoAuditInterval,
+    dynamicSuperegoAudit: config.dynamicSuperegoAudit,
     maxConsecutiveIdleCycles: config.idleSleepConfig?.enabled
       ? config.idleSleepConfig.idleCyclesBeforeSleep
       : config.maxConsecutiveIdleCycles,

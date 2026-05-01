@@ -55,6 +55,14 @@ const AppConfigSchema = z
     autoStartAfterRestart: z.boolean(),
     backupRetentionCount: z.number().int().min(1).optional(),
     superegoAuditInterval: z.number().int().min(1).optional(),
+    dynamicSuperegoAudit: z
+      .object({
+        enabled: z.boolean(),
+        materialIntervalCycles: z.number().int().min(1).optional(),
+        idleIntervalCycles: z.number().int().min(1).optional(),
+        maxIntervalMs: z.number().int().min(1).optional(),
+      })
+      .optional(),
     evaluateOutcome: z
       .object({
         enabled: z.boolean(),
@@ -231,6 +239,13 @@ export interface AppConfig {
   backupRetentionCount?: number;
   /** Number of cycles between SUPEREGO audits (default: 50). Can be overridden by SUPEREGO_AUDIT_INTERVAL env var. */
   superegoAuditInterval?: number;
+  /** Optional deterministic gate that backs routine Superego audits off during low-material-change periods. */
+  dynamicSuperegoAudit?: {
+    enabled: boolean;
+    materialIntervalCycles?: number;
+    idleIntervalCycles?: number;
+    maxIntervalMs?: number;
+  };
   /** Configuration for post-task outcome evaluation */
   evaluateOutcome?: {
     /** When false (default), use computeDriveRating() heuristic; fall back to LLM only when score < qualityThreshold */
@@ -387,6 +402,7 @@ export async function resolveConfig(
     autoStartAfterRestart: true,
     backupRetentionCount: 14,
     superegoAuditInterval: 50,
+    dynamicSuperegoAudit: undefined,
     cycleDelayMs: 30000,
     evaluateOutcome: {
       enabled: false,
@@ -468,6 +484,14 @@ export async function resolveConfig(
     autoStartAfterRestart: fileConfig.autoStartAfterRestart ?? defaults.autoStartAfterRestart,
     backupRetentionCount: fileConfig.backupRetentionCount ?? defaults.backupRetentionCount,
     superegoAuditInterval: fileConfig.superegoAuditInterval ?? defaults.superegoAuditInterval,
+    dynamicSuperegoAudit: fileConfig.dynamicSuperegoAudit
+      ? {
+        enabled: fileConfig.dynamicSuperegoAudit.enabled ?? false,
+        materialIntervalCycles: fileConfig.dynamicSuperegoAudit.materialIntervalCycles,
+        idleIntervalCycles: fileConfig.dynamicSuperegoAudit.idleIntervalCycles,
+        maxIntervalMs: fileConfig.dynamicSuperegoAudit.maxIntervalMs,
+      }
+      : defaults.dynamicSuperegoAudit,
     cycleDelayMs: fileConfig.cycleDelayMs ?? defaults.cycleDelayMs,
     evaluateOutcome: fileConfig.evaluateOutcome
       ? {
