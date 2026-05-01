@@ -8,13 +8,13 @@
 export class DeferredWorkQueue {
   private pending: Promise<void>[] = [];
 
-  constructor(private readonly onError?: (err: Error) => void) {}
+  constructor(private readonly onError?: (err: Error, label?: string) => void | Promise<void>) {}
 
-  enqueue(work: Promise<void>): void {
+  enqueue(work: Promise<void>, label?: string): void {
     this.pending.push(
       work.catch((err) => {
         if (this.onError) {
-          this.onError(err instanceof Error ? err : new Error(String(err)));
+          return this.onError(err instanceof Error ? err : new Error(String(err)), label);
         }
       })
     );

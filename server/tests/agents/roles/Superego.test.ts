@@ -12,6 +12,7 @@ import { FixedClock } from "../../../src/substrate/abstractions/FixedClock";
 import { TaskClassifier } from "../../../src/agents/TaskClassifier";
 import { SuperegoFindingTracker } from "../../../src/agents/roles/SuperegoFindingTracker";
 import { InMemoryLogger } from "../../../src/logging";
+import { PlanParser } from "../../../src/agents/parsers/PlanParser";
 
 describe("Superego agent", () => {
   let fs: InMemoryFileSystem;
@@ -830,6 +831,43 @@ describe("Superego agent", () => {
       expect(plan).toContain("- [ ] Original task");
       expect(plan).toContain("- [ ] First Superego task");
       expect(plan).toContain("- [ ] Second Superego task");
+    });
+
+    describe("atomic PLAN writes", () => {
+      afterEach(() => {
+        jest.restoreAllMocks();
+      });
+
+      it("preserves original PLAN.md when merged content fails PlanParser validation", async () => {
+        const originalContent = "# Plan\n\n## Tasks\n- [ ] Original task";
+        await fs.writeFile("/substrate/PLAN.md", originalContent);
+        jest.spyOn(PlanParser, "parseTasks").mockReturnValueOnce([]);
+
+        const proposals = [{ target: "PLAN", content: "- [ ] New task" }];
+        const evaluations = [{ approved: true, reason: "Good" }];
+
+        await expect(superego.applyProposals(proposals, evaluations)).rejects.toThrow(
+          /atomic write validation failed/i,
+        );
+
+        const plan = await fs.readFile("/substrate/PLAN.md");
+        expect(plan).toBe(originalContent);
+        await expect(fs.readFile("/substrate/PLAN.md.tmp")).rejects.toThrow(/ENOENT/);
+      });
+
+      it("renames validated temp file into PLAN.md when merged content parses", async () => {
+        await fs.writeFile("/substrate/PLAN.md", "# Plan\n\n## Tasks\n- [ ] Existing task");
+
+        const proposals = [{ target: "PLAN", content: "- [ ] Atomic task" }];
+        const evaluations = [{ approved: true, reason: "Good" }];
+
+        await superego.applyProposals(proposals, evaluations);
+
+        const plan = await fs.readFile("/substrate/PLAN.md");
+        expect(plan).toContain("- [ ] Existing task");
+        expect(plan).toContain("- [ ] Atomic task");
+        await expect(fs.readFile("/substrate/PLAN.md.tmp")).rejects.toThrow(/ENOENT/);
+      });
     });
   });
 });

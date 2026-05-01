@@ -17,6 +17,72 @@ export class SubstrateFileWriter {
     private readonly logger?: ILogger
   ) {}
 
+  async atomicWrite(
+    fileType: SubstrateFileType,
+    content: string,
+    validate: (content: string) => boolean
+  ): Promise<void> {
+    const spec = SUBSTRATE_FILE_SPECS[fileType];
+
+    if (spec.writeMode === WriteMode.APPEND) {
+      throw new Error(
+        `Cannot use FileWriter for APPEND-mode file type: ${fileType}`
+      );
+    }
+
+    const validation = validateSubstrateContent(content, fileType);
+    if (!validation.valid) {
+      throw new Error(
+        `Validation failed for ${fileType}: ${validation.errors.join(", ")}`
+      );
+    }
+
+    if (fileType === SubstrateFileType.HEARTBEAT) {
+      const hbValidation = validateHeartbeatContent(content);
+      if (!hbValidation.valid) {
+        throw new Error(hbValidation.errors.map((e) => e.message).join("\n\n"));
+      }
+    }
+
+    const contentToWrite = validation.redactedContent ?? content;
+    if (validation.warnings.length > 0) {
+      console.warn(`Substrate: redacted secrets on write to ${fileType}: ${validation.warnings.join("; ")}`);
+    }
+
+    const release = await this.lock.acquire(fileType);
+    try {
+      const filePath = this.config.getFilePath(fileType);
+      const tempPath = `${filePath}.tmp`;
+
+      await this.fs.writeFile(tempPath, contentToWrite);
+
+      if (!validate(contentToWrite)) {
+        await this.fs.unlink(tempPath).catch(() => undefined);
+        throw new Error(
+          `Atomic write validation failed for ${fileType} — merged result did not parse. Original preserved.`
+        );
+      }
+
+      await this.fs.rename(tempPath, filePath);
+      this.reader?.invalidate(filePath);
+    } finally {
+      release();
+    }
+
+    try {
+      const matches = scan(content);
+      if (matches.length > 0) {
+        const types = [...new Set(matches.map(m => m.type))].join(", ");
+        this.logger?.error(
+          `[SECURITY] Secrets detected in write to ${fileType} — pattern types: ${types}`
+        );
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger?.warn(`FileWriter: secret scan failed for ${fileType}: ${msg}`);
+    }
+  }
+
   async write(fileType: SubstrateFileType, content: string): Promise<void> {
     const spec = SUBSTRATE_FILE_SPECS[fileType];
 
