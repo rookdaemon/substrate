@@ -57,6 +57,11 @@ export class ConversationManager implements IConversationManager {
     await this.checkSizeAndCompactIfNeeded(role);
   }
 
+  async appendOperatingContext(role: AgentRole, entry: string): Promise<void> {
+    this.checker.assertCanAppend(role, SubstrateFileType.OPERATING_CONTEXT);
+    await this.appendWriter.append(SubstrateFileType.OPERATING_CONTEXT, `[${role}] ${entry}`);
+  }
+
   private async getLineCount(): Promise<number> {
     if (this.cachedLineCount === null) {
       const content = await this.reader.read(SubstrateFileType.CONVERSATION);

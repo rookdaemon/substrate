@@ -23,6 +23,18 @@ describe("ROLE_PROMPTS", () => {
       const prompt = ROLE_PROMPTS[AgentRole.EGO];
       expect(prompt).toMatch(/plan|dispatch|decide/i);
     });
+
+    it("includes an identity continuity veto", () => {
+      const prompt = ROLE_PROMPTS[AgentRole.EGO];
+      expect(prompt).toContain("Preserve identity continuity");
+      expect(prompt).toMatch(/Veto actions.*erode the agent's established personality/i);
+    });
+
+    it("treats processed conversation entries as transcript, not new work", () => {
+      const prompt = ROLE_PROMPTS[AgentRole.EGO];
+      expect(prompt).toContain("[PROCESSED");
+      expect(prompt).toMatch(/must NOT be handled again/i);
+    });
   });
 
   describe("Subconscious prompt", () => {
@@ -47,6 +59,13 @@ describe("ROLE_PROMPTS", () => {
     it("instructs to write concrete progress entries", () => {
       const prompt = ROLE_PROMPTS[AgentRole.SUBCONSCIOUS];
       expect(prompt).toMatch(/progress/i);
+    });
+
+    it("separates external IO from operating context", () => {
+      const prompt = ROLE_PROMPTS[AgentRole.SUBCONSCIOUS];
+      expect(prompt).toContain("CONVERSATION.md is for external IO");
+      expect(prompt).toContain("OPERATING_CONTEXT.md");
+      expect(prompt).toContain("PROGRESS.md is durable execution history");
     });
   });
 
@@ -80,6 +99,23 @@ describe("ROLE_PROMPTS", () => {
       expect(prompt).toMatch(/internal reasoning/i);
       expect(prompt).toMatch(/no file modifications/i);
       expect(prompt).toMatch(/cognitive.only/i);
+    });
+
+    it("prioritizes identity continuity between security and cost", () => {
+      const prompt = ROLE_PROMPTS[AgentRole.SUPEREGO];
+      expect(prompt).toContain("Security > Identity/Personality Continuity > Cost > Availability");
+      expect(prompt.indexOf("IDENTITY / PERSONALITY CONTINUITY")).toBeGreaterThan(
+        prompt.indexOf("SECURITY")
+      );
+      expect(prompt.indexOf("TOKEN & COST OPTIMIZATION")).toBeGreaterThan(
+        prompt.indexOf("IDENTITY / PERSONALITY CONTINUITY")
+      );
+    });
+
+    it("includes identity and provider-switch finding categories", () => {
+      const prompt = ROLE_PROMPTS[AgentRole.SUPEREGO];
+      expect(prompt).toContain("IDENTITY_CONTINUITY_RISK");
+      expect(prompt).toContain("PROVIDER_SWITCH_DRIFT");
     });
   });
 
@@ -126,6 +162,14 @@ describe("ROLE_PROMPTS", () => {
       expect(prompt).toMatch(/diverse/i);
       expect(prompt).toMatch(/breadth/i);
       expect(prompt).toMatch(/Ego will filter/i);
+    });
+
+    it("grounds goals in durable identity and operating context", () => {
+      const prompt = ROLE_PROMPTS[AgentRole.ID];
+      expect(prompt).toContain("Ground candidate goals in durable identity");
+      expect(prompt).toContain("ID.md");
+      expect(prompt).toContain("VALUES.md");
+      expect(prompt).toContain("OPERATING_CONTEXT.md");
     });
   });
 });

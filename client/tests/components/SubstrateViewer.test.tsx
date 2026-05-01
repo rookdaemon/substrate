@@ -14,7 +14,8 @@ describe("SubstrateViewer", () => {
     expect(select).toBeInTheDocument();
 
     const options = select.querySelectorAll("option");
-    expect(options).toHaveLength(14);
+    expect(options).toHaveLength(15);
+    expect(Array.from(options).map((option) => option.value)).toContain("OPERATING_CONTEXT");
   });
 
   it("defaults to PLAN selection", () => {

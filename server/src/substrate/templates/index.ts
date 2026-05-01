@@ -12,6 +12,7 @@ import {
   CLAUDE_TEMPLATE,
   PROGRESS_TEMPLATE,
   CONVERSATION_TEMPLATE,
+  OPERATING_CONTEXT_TEMPLATE,
   ESCALATE_TO_STEFAN_TEMPLATE,
   HEARTBEAT_TEMPLATE,
 } from "./templates";
@@ -30,6 +31,7 @@ const TEMPLATE_MAP: Record<SubstrateFileType, string> = {
   [SubstrateFileType.CLAUDE]: CLAUDE_TEMPLATE,
   [SubstrateFileType.PROGRESS]: PROGRESS_TEMPLATE,
   [SubstrateFileType.CONVERSATION]: CONVERSATION_TEMPLATE,
+  [SubstrateFileType.OPERATING_CONTEXT]: OPERATING_CONTEXT_TEMPLATE,
   [SubstrateFileType.PEERS]: "# Agora Peers\n\nRegistered agents for Agora coordination protocol.\n\n## Future Peers\n\nAgents will be added here as the network expands.\n",
   [SubstrateFileType.ESCALATE_TO_STEFAN]: ESCALATE_TO_STEFAN_TEMPLATE,
   [SubstrateFileType.HEARTBEAT]: HEARTBEAT_TEMPLATE,

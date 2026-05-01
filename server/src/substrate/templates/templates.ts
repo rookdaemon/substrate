@@ -153,6 +153,14 @@ export const PROGRESS_TEMPLATE = `# Progress
 
 export const CONVERSATION_TEMPLATE = `# Conversation
 
+External IO transcript only: inbound Agora, outbound Agora, direct user messages, and actionable **[UNPROCESSED]** markers.
+Current operating direction belongs in OPERATING_CONTEXT.md; durable execution history belongs in PROGRESS.md.
+`;
+
+export const OPERATING_CONTEXT_TEMPLATE = `# Operating Context
+
+Current direction, active constraints, survival posture, and next-cycle handoff notes.
+Keep this compact. Do not use it for external Agora/user transcript entries.
 `;
 
 export const ESCALATE_TO_STEFAN_TEMPLATE = `# Escalate to Stefan
@@ -165,9 +173,12 @@ This file contains critical issues that require human intervention. Issues are a
 export const HEARTBEAT_TEMPLATE = `# HEARTBEAT
 
 This file is read by the HeartbeatScheduler every agent cycle. When a scheduled
-entry fires, its payload is injected into CONVERSATION.md as:
+entry fires, its payload is injected into the active loop as:
 
   [HEARTBEAT <iso-timestamp>] <payload>
+
+Fired entries are persisted to OPERATING_CONTEXT.md when available, with a
+fallback to CONVERSATION.md for older runtimes.
 
 The file is optional — if absent the scheduler is a graceful no-op. One-shot
 entries (@once and ISO timestamps) are automatically removed after firing.

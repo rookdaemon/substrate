@@ -570,7 +570,7 @@ export class AgoraMessageHandler {
       } else if (this.unknownSenderPolicy === 'quarantine') {
         this.logger.debug(`[AGORA] Quarantining message from unknown sender ${shortKey(senderPublicKey)} (policy: quarantine)`);
         const formattedPayload = this.formatPayload(envelope.payload);
-        const conversationEntry = `**FROM:** ${senderIdentity} **TO:** ${toList} ${envelope.type}: **[UNPROCESSED]** ${formattedPayload}`.replace(/\n+/g, " ").trim();
+        const conversationEntry = `**FROM:** ${senderIdentity} **TO:** ${toList} ${envelope.type}: **[UNPROCESSED envelopeId=${envelope.id}]** ${formattedPayload}`.replace(/\n+/g, " ").trim();
         try {
           await this.conversationManager.append(AgentRole.SUBCONSCIOUS, conversationEntry);
           this.logger.debug(`[AGORA] Quarantined message written to CONVERSATION.md: envelopeId=${envelope.id}`);
@@ -698,8 +698,10 @@ export class AgoraMessageHandler {
     }
 
     const formattedPayload = this.formatPayload(envelope.payload);
-    const unprocessedBadge = isUnprocessed ? " **[UNPROCESSED]**" : "";
-    const conversationEntry = `**FROM:** ${senderIdentity} **TO:** ${toList} ${envelope.type}:${unprocessedBadge} ${formattedPayload}`.replace(/\n+/g, " ").trim();
+    const statusBadge = isUnprocessed
+      ? ` **[UNPROCESSED envelopeId=${envelope.id}]**`
+      : ` **[PROCESSED envelopeId=${envelope.id}]**`;
+    const conversationEntry = `**FROM:** ${senderIdentity} **TO:** ${toList} ${envelope.type}:${statusBadge} ${formattedPayload}`.replace(/\n+/g, " ").trim();
 
     // Write to CONVERSATION.md (using SUBCONSCIOUS role as it handles message processing)
     try {

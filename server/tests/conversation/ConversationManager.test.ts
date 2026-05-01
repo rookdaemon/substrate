@@ -9,6 +9,7 @@ import { FixedClock } from "../../src/substrate/abstractions/FixedClock";
 import { SubstrateConfig } from "../../src/substrate/config";
 import { FileLock } from "../../src/substrate/io/FileLock";
 import { AgentRole } from "../../src/agents/types";
+import { SubstrateFileType } from "../../src/substrate/types";
 
 // Mock compactor
 class MockCompactor implements IConversationCompactor {
@@ -88,6 +89,7 @@ describe("ConversationManager", () => {
 
     // Initialize CONVERSATION.md
     await fs.writeFile("/test/substrate/CONVERSATION.md", "# Conversation\n\n");
+    await fs.writeFile("/test/substrate/OPERATING_CONTEXT.md", "# Operating Context\n\n");
   });
 
   it("should append message without compaction on first call", async () => {
@@ -172,6 +174,21 @@ describe("ConversationManager", () => {
     // ID cannot append to CONVERSATION
     await expect(manager.append(AgentRole.ID, "Message"))
       .rejects.toThrow("ID does not have APPEND access to CONVERSATION");
+  });
+
+  it("should append operating context without touching CONVERSATION.md", async () => {
+    await manager.appendOperatingContext(AgentRole.SUBCONSCIOUS, "Current direction");
+
+    const operatingContext = await fs.readFile("/test/substrate/OPERATING_CONTEXT.md");
+    expect(operatingContext).toContain("[2025-01-01T12:00:00.000Z] [SUBCONSCIOUS] Current direction");
+
+    const conversation = await fs.readFile("/test/substrate/CONVERSATION.md");
+    expect(conversation).not.toContain("Current direction");
+  });
+
+  it("should enforce permissions when appending operating context", async () => {
+    await expect(manager.appendOperatingContext(AgentRole.ID, "No write"))
+      .rejects.toThrow(`ID does not have APPEND access to ${SubstrateFileType.OPERATING_CONTEXT}`);
   });
 
   it("should allow force compaction for testing", async () => {

@@ -49,6 +49,12 @@ describe("SubstrateFileWriter", () => {
     ).rejects.toThrow("Cannot use FileWriter for APPEND-mode");
   });
 
+  it("rejects writes to OPERATING_CONTEXT (APPEND-mode)", async () => {
+    await expect(
+      writer.write(SubstrateFileType.OPERATING_CONTEXT, "# Operating Context\n\nMsg")
+    ).rejects.toThrow("Cannot use FileWriter for APPEND-mode");
+  });
+
   it("serializes writes to the same file type via lock", async () => {
     const order: number[] = [];
 

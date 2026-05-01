@@ -30,6 +30,7 @@ describe("ROLE_PERMISSIONS", () => {
     expect(readFiles).toContain(SubstrateFileType.CHARTER);
     expect(readFiles).toContain(SubstrateFileType.PROGRESS);
     expect(readFiles).toContain(SubstrateFileType.CONVERSATION);
+    expect(readFiles).toContain(SubstrateFileType.OPERATING_CONTEXT);
   });
 
   it("gives Ego write access to PLAN", () => {
@@ -46,6 +47,7 @@ describe("ROLE_PERMISSIONS", () => {
       .filter((p) => p.accessLevel === FileAccessLevel.APPEND)
       .map((p) => p.fileType);
     expect(appendFiles).toContain(SubstrateFileType.CONVERSATION);
+    expect(appendFiles).toContain(SubstrateFileType.OPERATING_CONTEXT);
   });
 
   it("gives Subconscious write access to PLAN, SKILLS, and MEMORY", () => {
@@ -65,6 +67,7 @@ describe("ROLE_PERMISSIONS", () => {
       .map((p) => p.fileType);
     expect(appendFiles).toContain(SubstrateFileType.PROGRESS);
     expect(appendFiles).toContain(SubstrateFileType.CONVERSATION);
+    expect(appendFiles).toContain(SubstrateFileType.OPERATING_CONTEXT);
   });
 
   it("gives Superego read access to ALL files", () => {
@@ -99,7 +102,7 @@ describe("ROLE_PERMISSIONS", () => {
     expect(writeFiles).toHaveLength(3);
   });
 
-  it("gives Id read access to ID, VALUES, PLAN, PROGRESS, SKILLS, MEMORY", () => {
+  it("gives Id read access to ID, VALUES, PLAN, OPERATING_CONTEXT, PROGRESS, SKILLS, MEMORY", () => {
     const perms = ROLE_PERMISSIONS[AgentRole.ID];
     const readFiles = perms
       .filter((p) => p.accessLevel === FileAccessLevel.READ)
@@ -107,10 +110,11 @@ describe("ROLE_PERMISSIONS", () => {
     expect(readFiles).toContain(SubstrateFileType.ID);
     expect(readFiles).toContain(SubstrateFileType.VALUES);
     expect(readFiles).toContain(SubstrateFileType.PLAN);
+    expect(readFiles).toContain(SubstrateFileType.OPERATING_CONTEXT);
     expect(readFiles).toContain(SubstrateFileType.PROGRESS);
     expect(readFiles).toContain(SubstrateFileType.SKILLS);
     expect(readFiles).toContain(SubstrateFileType.MEMORY);
-    expect(readFiles).toHaveLength(6);
+    expect(readFiles).toHaveLength(7);
   });
 
   it("gives Id no write or append access", () => {
@@ -227,40 +231,43 @@ describe("PermissionChecker", () => {
   describe("getReadableFiles", () => {
     it("returns all files a role can read", () => {
       const readable = checker.getReadableFiles(AgentRole.ID);
-      expect(readable).toHaveLength(6);
+      expect(readable).toHaveLength(7);
       expect(readable).toContain(SubstrateFileType.ID);
       expect(readable).toContain(SubstrateFileType.VALUES);
       expect(readable).toContain(SubstrateFileType.PLAN);
+      expect(readable).toContain(SubstrateFileType.OPERATING_CONTEXT);
       expect(readable).toContain(SubstrateFileType.PROGRESS);
       expect(readable).toContain(SubstrateFileType.SKILLS);
       expect(readable).toContain(SubstrateFileType.MEMORY);
     });
 
-    it("returns all 16 files for Superego", () => {
+    it("returns all files for Superego", () => {
       const readable = checker.getReadableFiles(AgentRole.SUPEREGO);
-      expect(readable).toHaveLength(16);
+      expect(readable).toHaveLength(Object.values(SubstrateFileType).length);
     });
   });
 
   describe("getEagerFiles", () => {
     it("returns only eager files for Subconscious", () => {
       const eager = checker.getEagerFiles(AgentRole.SUBCONSCIOUS);
-      expect(eager).toHaveLength(2);
+      expect(eager).toHaveLength(3);
       expect(eager).toContain(SubstrateFileType.PLAN);
       expect(eager).toContain(SubstrateFileType.VALUES);
+      expect(eager).toContain(SubstrateFileType.OPERATING_CONTEXT);
     });
 
-    it("returns 3 eager files for ID", () => {
+    it("returns 4 eager files for ID", () => {
       const eager = checker.getEagerFiles(AgentRole.ID);
-      expect(eager).toHaveLength(3);
+      expect(eager).toHaveLength(4);
       expect(eager).toContain(SubstrateFileType.ID);
       expect(eager).toContain(SubstrateFileType.VALUES);
       expect(eager).toContain(SubstrateFileType.PLAN);
+      expect(eager).toContain(SubstrateFileType.OPERATING_CONTEXT);
     });
 
     it("returns all files as eager for Superego", () => {
       const eager = checker.getEagerFiles(AgentRole.SUPEREGO);
-      expect(eager).toHaveLength(16);
+      expect(eager).toHaveLength(Object.values(SubstrateFileType).length);
     });
   });
 

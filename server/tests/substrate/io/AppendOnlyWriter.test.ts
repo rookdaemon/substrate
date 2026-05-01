@@ -22,6 +22,7 @@ describe("AppendOnlyWriter", () => {
     // Pre-create the append-mode files
     await fs.writeFile("/substrate/PROGRESS.md", "# Progress\n\n");
     await fs.writeFile("/substrate/CONVERSATION.md", "# Conversation\n\n");
+    await fs.writeFile("/substrate/OPERATING_CONTEXT.md", "# Operating Context\n\n");
   });
 
   it("appends a timestamped entry to PROGRESS", async () => {
@@ -36,6 +37,13 @@ describe("AppendOnlyWriter", () => {
     const content = await fs.readFile("/substrate/CONVERSATION.md");
     expect(content).toContain("[2025-06-15T10:30:00.000Z]");
     expect(content).toContain("Hello world");
+  });
+
+  it("appends a timestamped entry to OPERATING_CONTEXT", async () => {
+    await writer.append(SubstrateFileType.OPERATING_CONTEXT, "Current direction");
+    const content = await fs.readFile("/substrate/OPERATING_CONTEXT.md");
+    expect(content).toContain("[2025-06-15T10:30:00.000Z]");
+    expect(content).toContain("Current direction");
   });
 
   it("appends multiple entries in order", async () => {

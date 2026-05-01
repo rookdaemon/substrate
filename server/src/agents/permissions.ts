@@ -33,9 +33,11 @@ export const ROLE_PERMISSIONS: Record<AgentRole, FilePermission[]> = {
     read(SubstrateFileType.CHARTER, SubstrateFileLoadStrategy.LAZY),
     read(SubstrateFileType.PROGRESS, SubstrateFileLoadStrategy.LAZY),
     read(SubstrateFileType.CONVERSATION, SubstrateFileLoadStrategy.EAGER),
+    read(SubstrateFileType.OPERATING_CONTEXT, SubstrateFileLoadStrategy.EAGER),
     read(SubstrateFileType.PEERS, SubstrateFileLoadStrategy.LAZY),
     write(SubstrateFileType.PLAN),
     append(SubstrateFileType.CONVERSATION),
+    append(SubstrateFileType.OPERATING_CONTEXT),
   ],
 
   [AgentRole.SUBCONSCIOUS]: [
@@ -44,6 +46,7 @@ export const ROLE_PERMISSIONS: Record<AgentRole, FilePermission[]> = {
     read(SubstrateFileType.HABITS, SubstrateFileLoadStrategy.LAZY),
     read(SubstrateFileType.SKILLS, SubstrateFileLoadStrategy.LAZY),
     read(SubstrateFileType.VALUES, SubstrateFileLoadStrategy.EAGER),
+    read(SubstrateFileType.OPERATING_CONTEXT, SubstrateFileLoadStrategy.EAGER),
     read(SubstrateFileType.PROGRESS, SubstrateFileLoadStrategy.LAZY),
     read(SubstrateFileType.PEERS, SubstrateFileLoadStrategy.LAZY),
     // CONVERSATION.md excluded: Subconscious does not participate in conversation cycles;
@@ -54,6 +57,7 @@ export const ROLE_PERMISSIONS: Record<AgentRole, FilePermission[]> = {
     write(SubstrateFileType.PEERS),
     append(SubstrateFileType.PROGRESS),
     append(SubstrateFileType.CONVERSATION),
+    append(SubstrateFileType.OPERATING_CONTEXT),
   ],
 
   [AgentRole.SUPEREGO]: [
@@ -70,6 +74,7 @@ export const ROLE_PERMISSIONS: Record<AgentRole, FilePermission[]> = {
     read(SubstrateFileType.ID, SubstrateFileLoadStrategy.EAGER),
     read(SubstrateFileType.VALUES, SubstrateFileLoadStrategy.EAGER),
     read(SubstrateFileType.PLAN, SubstrateFileLoadStrategy.EAGER),
+    read(SubstrateFileType.OPERATING_CONTEXT, SubstrateFileLoadStrategy.EAGER),
     read(SubstrateFileType.PROGRESS, SubstrateFileLoadStrategy.LAZY),
     read(SubstrateFileType.SKILLS, SubstrateFileLoadStrategy.LAZY),
     read(SubstrateFileType.MEMORY, SubstrateFileLoadStrategy.LAZY),

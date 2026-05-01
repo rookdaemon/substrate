@@ -16,11 +16,17 @@ import {
   type HeartbeatEntry,
 } from "./HeartbeatParser";
 
+interface OperatingContextWriter {
+  appendOperatingContext(role: AgentRole, entry: string): Promise<void>;
+}
+
 /**
  * HeartbeatScheduler — reads HEARTBEAT.md each cycle, fires due entries, and
  * removes one-shot entries (ISO timestamps, @once) after they fire.
  *
- * Injected into CONVERSATION.md as: `[HEARTBEAT <iso>] <payload>`
+ * Injected into the loop as: `[HEARTBEAT <iso>] <payload>`.
+ * Persisted to OPERATING_CONTEXT.md when that writer is available; otherwise
+ * falls back to CONVERSATION.md for older wiring/tests.
  *
  * Schedule types:
  *   @once              — fires immediately once, then removed
@@ -42,7 +48,8 @@ export class HeartbeatScheduler {
     private readonly heartbeatPath: string,
     private readonly conversationManager: IConversationManager,
     private readonly evaluators: Map<string, IConditionEvaluator> = new Map(),
-    private readonly messageInjector?: IMessageInjector
+    private readonly messageInjector?: IMessageInjector,
+    private readonly operatingContextWriter?: OperatingContextWriter
   ) {}
 
   async shouldRun(): Promise<boolean> {
@@ -182,16 +189,31 @@ export class HeartbeatScheduler {
     const text = entry.payload.replace(/\s+/g, " ").trim();
     const message = `[HEARTBEAT ${iso}] ${text}`;
     this.logger.debug(`[HEARTBEAT] Firing: ${message.slice(0, 100)}`);
+    await this.persistHeartbeat(message);
+    // Inject into pendingMessages so the cycle actually processes this message
+    if (this.messageInjector) {
+      this.messageInjector.injectMessage(message);
+    }
+  }
+
+  private async persistHeartbeat(message: string): Promise<void> {
+    if (this.operatingContextWriter) {
+      try {
+        await this.operatingContextWriter.appendOperatingContext(AgentRole.SUBCONSCIOUS, message);
+        return;
+      } catch (err) {
+        this.logger.debug(
+          `[HEARTBEAT] Failed to append to OPERATING_CONTEXT.md: ${err instanceof Error ? err.message : String(err)}`
+        );
+      }
+    }
+
     try {
       await this.conversationManager.append(AgentRole.SUBCONSCIOUS, message);
     } catch (err) {
       this.logger.debug(
         `[HEARTBEAT] Failed to append to CONVERSATION.md: ${err instanceof Error ? err.message : String(err)}`
       );
-    }
-    // Inject into pendingMessages so the cycle actually processes this message
-    if (this.messageInjector) {
-      this.messageInjector.injectMessage(message);
     }
   }
 }

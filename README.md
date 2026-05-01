@@ -261,7 +261,8 @@ The substrate is a directory of 16 markdown files that serve as the system's sha
 |------|-----------|-------------|
 | `PLAN.md` | OVERWRITE | Current task tree with `## Current Goal` and `## Tasks` sections |
 | `PROGRESS.md` | APPEND | Timestamped execution log: `[ISO-timestamp] [ROLE] message` |
-| `CONVERSATION.md` | APPEND | User/system message transcript |
+| `CONVERSATION.md` | APPEND | External IO transcript: user messages, inbound/outbound Agora, and actionable `**[UNPROCESSED]**` markers |
+| `OPERATING_CONTEXT.md` | APPEND | Compact current direction, active constraints, survival posture, and next-cycle handoff notes (optional) |
 | `MEMORY.md` | OVERWRITE | Long-term knowledge index, references `memory/*.md` |
 | `HABITS.md` | OVERWRITE | Behavioral routines index, references `habits/*.md` |
 | `SKILLS.md` | OVERWRITE | Learned capabilities index, references `skills/*.md` |
@@ -274,7 +275,7 @@ The substrate is a directory of 16 markdown files that serve as the system's sha
 | `PEERS.md` | OVERWRITE | Agora peer registry for agent-to-agent communication (optional) |
 | `ESCALATE_TO_STEFAN.md` | APPEND | Escalation log for issues requiring manual intervention (optional) |
 | `restart-context.md` | OVERWRITE | Restart handoff context and state restoration notes (optional) |
-| `HEARTBEAT.md` | OVERWRITE | Scheduled message injection into CONVERSATION.md — read every cycle, graceful no-op if absent (optional) |
+| `HEARTBEAT.md` | OVERWRITE | Scheduled message injection into the loop; persisted to OPERATING_CONTEXT.md when available — read every cycle, graceful no-op if absent (optional) |
 
 ### Two-Tier Knowledge System
 
@@ -302,14 +303,14 @@ Substrate integrates with the [Agora protocol](https://github.com/rookdaemon/ago
 1. **Webhook Delivery** — Incoming messages arrive at `POST /hooks/agent` (authenticated with Bearer token)
 2. **Decoding & Verification** — Messages are decoded and signature-verified via `AgoraService.decodeInbound()`
 3. **Persistence** — Messages are written to `CONVERSATION.md` in a user-friendly format with markdown formatting
-4. **Unprocessed Markers** — Messages received while the process is STOPPED or PAUSED are marked with `**[UNPROCESSED]**` badge
+4. **State Markers** — Messages delivered to an active session are marked `**[PROCESSED envelopeId=...]**`; messages needing restart/next-cycle handling are marked `**[UNPROCESSED envelopeId=...]**`
 5. **Injection** — Messages are injected directly into the orchestrator via `injectMessage()` for immediate processing
-6. **Auto-Inclusion** — `CONVERSATION.md` is automatically included in all session prompts, so the agent sees unprocessed messages naturally
+6. **Auto-Inclusion** — `CONVERSATION.md` is automatically included in Ego prompts, so the agent sees external transcript and unprocessed messages naturally
 7. **Marker Cleanup** — The agent removes `**[UNPROCESSED]**` markers after processing messages (via HABITS guidance)
 
 **CONVERSATION.md Format:**
 ```markdown
-[2026-02-15T12:00:00.000Z] [SUBCONSCIOUS] **FROM:** stefan...cdefabcd **TO:** rook...9ab4e012, ...9ab4e020 request: **[UNPROCESSED]** **question**: Are you there?
+[2026-02-15T12:00:00.000Z] [SUBCONSCIOUS] **FROM:** stefan...cdefabcd **TO:** rook...9ab4e012 request: **[UNPROCESSED envelopeId=env-123]** **question**: Are you there?
 ```
 
 - Inline `@` references in payload text are compacted before writing to `CONVERSATION.md` when those IDs exist in `~/.config/agora/config.json` peers.
@@ -325,7 +326,7 @@ Agora configuration lives in `~/.config/agora/config.json` with identity keys an
 
 ### HEARTBEAT Scheduler
 
-`HEARTBEAT.md` enables scheduled message injection into `CONVERSATION.md`. The HeartbeatScheduler reads the file every agent cycle; if the file is absent it is a graceful no-op.
+`HEARTBEAT.md` enables scheduled message injection into the loop. The HeartbeatScheduler reads the file every agent cycle; if the file is absent it is a graceful no-op. Fired entries are persisted to `OPERATING_CONTEXT.md` when that file/writer is available, with a fallback to `CONVERSATION.md` for older wiring.
 
 **File location:** `{substratePath}/HEARTBEAT.md`
 
@@ -409,6 +410,7 @@ Each agent role has specific file access permissions enforced by `PermissionChec
 | PLAN | ✅ | ✅ overwrite | ✅ | ✅ overwrite | ✅ | — | ✅ |
 | PROGRESS | ✅ | — | ✅ | append | ✅ | append | ✅ |
 | CONVERSATION | ✅ | append | — | append | ✅ | — | — |
+| OPERATING_CONTEXT | ✅ | append | ✅ | append | ✅ | — | ✅ |
 | MEMORY | ✅ | — | ✅ | ✅ overwrite | ✅ | — | ✅ |
 | HABITS | ✅ | — | ✅ | — | ✅ | — | — |
 | SKILLS | ✅ | — | ✅ | ✅ overwrite | ✅ | — | ✅ |
@@ -424,7 +426,7 @@ Each agent role has specific file access permissions enforced by `PermissionChec
 
 **Key constraints:**
 - **Superego** has read access to all substrate file types; it can write `HABITS` and `SECURITY`, and append to `PROGRESS` and `ESCALATE_TO_STEFAN`
-- **Id** has read-only access to 6 files (ID, VALUES, PLAN, PROGRESS, SKILLS, MEMORY) — no writes
+- **Id** has read-only access to 7 files (ID, VALUES, PLAN, OPERATING_CONTEXT, PROGRESS, SKILLS, MEMORY) — no writes
 - **Ego** can overwrite PLAN and append to CONVERSATION, read PEERS
 - **Subconscious** can overwrite PLAN, SKILLS, MEMORY, and PEERS; append to PROGRESS and CONVERSATION
 

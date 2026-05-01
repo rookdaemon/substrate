@@ -4,7 +4,7 @@ import { LoopEvent } from "../hooks/useWebSocket";
 
 const FILE_TYPES = [
   "BOUNDARIES", "CHARTER", "CLAUDE", "CONVERSATION",
-  "HABITS", "HEARTBEAT", "ID", "MEMORY", "PLAN", "PROGRESS",
+  "HABITS", "HEARTBEAT", "ID", "MEMORY", "OPERATING_CONTEXT", "PLAN", "PROGRESS",
   "SECURITY", "SKILLS", "SUPEREGO", "VALUES",
 ];
 

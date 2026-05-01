@@ -93,7 +93,8 @@ All substrate files live in `~/.local/share/substrate/` by default (the `substra
 | File | Purpose |
 |------|---------|
 | `PLAN.md` | Task queue — Ego dispatches from here |
-| `CONVERSATION.md` | Conversation log |
+| `CONVERSATION.md` | External IO transcript: user messages, inbound/outbound Agora, and actionable `**[UNPROCESSED]**` markers |
+| `OPERATING_CONTEXT.md` | Compact current direction, active constraints, survival posture, and next-cycle handoff notes |
 | `MEMORY.md` | Long-term agent memory |
 | `HABITS.md` | Behavioral triggers |
 | `SKILLS.md` | Capability index |

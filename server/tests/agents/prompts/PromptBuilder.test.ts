@@ -36,6 +36,7 @@ describe("PromptBuilder", () => {
     await fs.writeFile("/substrate/CLAUDE.md", "# Claude\n\nConfig here");
     await fs.writeFile("/substrate/PROGRESS.md", "# Progress\n\n");
     await fs.writeFile("/substrate/CONVERSATION.md", "# Conversation\n\n");
+    await fs.writeFile("/substrate/OPERATING_CONTEXT.md", "# Operating Context\n\nCurrent direction");
   });
 
   describe("gatherContext", () => {
@@ -45,10 +46,11 @@ describe("PromptBuilder", () => {
       expect(fileTypes).toContain(SubstrateFileType.ID);
       expect(fileTypes).toContain(SubstrateFileType.VALUES);
       expect(fileTypes).toContain(SubstrateFileType.PLAN);
+      expect(fileTypes).toContain(SubstrateFileType.OPERATING_CONTEXT);
       expect(fileTypes).toContain(SubstrateFileType.PROGRESS);
       expect(fileTypes).toContain(SubstrateFileType.SKILLS);
       expect(fileTypes).toContain(SubstrateFileType.MEMORY);
-      expect(fileTypes).toHaveLength(6);
+      expect(fileTypes).toHaveLength(7);
     });
 
     it("returns content for each file", async () => {
@@ -60,8 +62,8 @@ describe("PromptBuilder", () => {
 
     it("Superego gathers all required files (skips missing optional)", async () => {
       const context = await builder.gatherContext(AgentRole.SUPEREGO);
-      // 12 required files exist in test setup; PEERS is optional and missing
-      expect(context).toHaveLength(12);
+      // 12 required files plus OPERATING_CONTEXT exist in test setup; PEERS is optional and missing
+      expect(context).toHaveLength(13);
     });
   });
 
@@ -222,17 +224,19 @@ describe("PromptBuilder", () => {
       expect(refs).not.toContain("PROGRESS.md");
     });
 
-    it("ID has 3 eager files inlined", async () => {
+    it("ID has 4 eager files inlined", async () => {
       const refs = await builder.getEagerReferences(AgentRole.ID);
       // Should contain inlined content, not @ references
       expect(refs).toContain("/substrate/ID.md:");
       expect(refs).toContain("# Id");
       expect(refs).toContain("/substrate/VALUES.md:");
       expect(refs).toContain("/substrate/PLAN.md:");
+      expect(refs).toContain("/substrate/OPERATING_CONTEXT.md:");
       // No @ references when files are readable
       expect(refs).not.toContain("@/substrate/ID.md");
       expect(refs).not.toContain("@/substrate/VALUES.md");
       expect(refs).not.toContain("@/substrate/PLAN.md");
+      expect(refs).not.toContain("@/substrate/OPERATING_CONTEXT.md");
     });
 
     it("Superego eager loads all readable files inlined", async () => {
@@ -301,6 +305,7 @@ describe("PromptBuilder", () => {
       expect(refs).toContain("@/empty/ID.md");
       expect(refs).toContain("@/empty/VALUES.md");
       expect(refs).toContain("@/empty/PLAN.md");
+      expect(refs).toContain("@/empty/OPERATING_CONTEXT.md");
     });
 
     describe("context budget (provider-aware filtering)", () => {
@@ -376,7 +381,7 @@ describe("PromptBuilder", () => {
       });
 
       it("files that fit within budget are inlined fully; only overflow files get truncation note", async () => {
-        // ID role has 3 eager files: ID, VALUES, PLAN
+        // ID role has eager files: ID, VALUES, PLAN, OPERATING_CONTEXT
         // Write a large ID.md (2100 lines) — it alone exceeds 2000-line groq budget
         const bigId = Array.from({ length: 2100 }, (_, i) => `id-line-${i + 1}`).join("\n");
         await fs.writeFile("/substrate/ID.md", bigId);
@@ -393,6 +398,7 @@ describe("PromptBuilder", () => {
         // VALUES.md and PLAN.md exceed remaining budget — dropped with note
         expect(refs).toContain("[TRUNCATED: VALUES.md exceeds context budget for groq launcher]");
         expect(refs).toContain("[TRUNCATED: PLAN.md exceeds context budget for groq launcher]");
+        expect(refs).toContain("[TRUNCATED: OPERATING_CONTEXT.md exceeds context budget for groq launcher]");
       });
     });
 

@@ -216,6 +216,7 @@ describe("AgoraMessageHandler", () => {
       expect(entry.entry).not.toContain(testEnvelope.from);
       expect(entry.entry).toContain("question");
       expect(entry.entry).not.toContain("[UNPROCESSED]");
+      expect(entry.entry).toContain("**[PROCESSED envelopeId=envelope-123]**");
     });
 
     it("should add [UNPROCESSED] marker when RUNNING but no active session (between cycles)", async () => {
@@ -226,7 +227,7 @@ describe("AgoraMessageHandler", () => {
 
       expect(conversationManager.appendedEntries).toHaveLength(1);
       const entry = conversationManager.appendedEntries[0];
-      expect(entry.entry).toContain("**[UNPROCESSED]**");
+      expect(entry.entry).toContain("**[UNPROCESSED envelopeId=envelope-123]**");
     });
 
     it("should add [UNPROCESSED] marker when STOPPED", async () => {
@@ -248,7 +249,7 @@ describe("AgoraMessageHandler", () => {
 
       expect(conversationManager.appendedEntries).toHaveLength(1);
       const entry = conversationManager.appendedEntries[0];
-      expect(entry.entry).toContain("**[UNPROCESSED]**");
+      expect(entry.entry).toContain("**[UNPROCESSED envelopeId=envelope-123]**");
     });
 
     it("should add [UNPROCESSED] marker when PAUSED", async () => {
@@ -270,7 +271,7 @@ describe("AgoraMessageHandler", () => {
 
       expect(conversationManager.appendedEntries).toHaveLength(1);
       const entry = conversationManager.appendedEntries[0];
-      expect(entry.entry).toContain("**[UNPROCESSED]**");
+      expect(entry.entry).toContain("**[UNPROCESSED envelopeId=envelope-123]**");
     });
 
     it("should add [UNPROCESSED] marker when rate-limited", async () => {
@@ -293,7 +294,7 @@ describe("AgoraMessageHandler", () => {
 
       expect(conversationManager.appendedEntries).toHaveLength(1);
       const entry = conversationManager.appendedEntries[0];
-      expect(entry.entry).toContain("**[UNPROCESSED]**");
+      expect(entry.entry).toContain("**[UNPROCESSED envelopeId=envelope-123]**");
     });
 
     it("should inject message into orchestrator before writing to CONVERSATION.md", async () => {
@@ -731,7 +732,7 @@ describe("AgoraMessageHandler", () => {
 
       // Written to CONVERSATION.md with [UNPROCESSED] badge but NOT injected
       expect(conversationManager.appendedEntries).toHaveLength(1);
-      expect(conversationManager.appendedEntries[0].entry).toContain("**[UNPROCESSED]**");
+      expect(conversationManager.appendedEntries[0].entry).toContain("**[UNPROCESSED envelopeId=unknown-envelope-123]**");
       expect(conversationManager.appendedEntries[0].entry).toContain("**FROM:**");
       expect(conversationManager.appendedEntries[0].entry).toContain("**TO:**");
       expect(conversationManager.appendedEntries[0].entry).toContain("@eeeeeeee");
@@ -761,6 +762,7 @@ describe("AgoraMessageHandler", () => {
       expect(messageInjector.injectedMessages).toHaveLength(1);
       expect(conversationManager.appendedEntries).toHaveLength(1);
       expect(conversationManager.appendedEntries[0].entry).not.toContain("**[UNPROCESSED]**");
+      expect(conversationManager.appendedEntries[0].entry).toContain("**[PROCESSED envelopeId=unknown-envelope-123]**");
       const allowLog = logger.debugMessages.find(m => m.includes("Allowing") && m.includes("unknown sender"));
       expect(allowLog).toBeDefined();
     });
@@ -782,7 +784,7 @@ describe("AgoraMessageHandler", () => {
       await defaultHandler.processEnvelope(unknownEnvelope, "webhook");
 
       expect(conversationManager.appendedEntries).toHaveLength(1);
-      expect(conversationManager.appendedEntries[0].entry).toContain("**[UNPROCESSED]**");
+      expect(conversationManager.appendedEntries[0].entry).toContain("**[UNPROCESSED envelopeId=unknown-envelope-123]**");
       expect(messageInjector.injectedMessages).toHaveLength(0);
     });
 
@@ -1452,7 +1454,7 @@ describe("AgoraMessageHandler", () => {
       await retryHandler.processEnvelope(testEnvelope, "relay");
 
       expect(failingCm.appendedEntries).toHaveLength(1);
-      expect(failingCm.appendedEntries[0].entry).toContain("[UNPROCESSED]");
+      expect(failingCm.appendedEntries[0].entry).toContain("[UNPROCESSED envelopeId=envelope-123]");
     });
 
     it("isDuplicate registers the ID immediately — concurrent second delivery is blocked", async () => {

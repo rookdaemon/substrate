@@ -23,6 +23,7 @@ describe("SubstrateFileType", () => {
     expect(SubstrateFileType.CLAUDE).toBeDefined();
     expect(SubstrateFileType.PROGRESS).toBeDefined();
     expect(SubstrateFileType.CONVERSATION).toBeDefined();
+    expect(SubstrateFileType.OPERATING_CONTEXT).toBeDefined();
   });
 });
 
@@ -36,12 +37,15 @@ describe("SUBSTRATE_FILE_SPECS", () => {
     }
   });
 
-  it("uses APPEND mode for PROGRESS, CONVERSATION, and ESCALATE_TO_STEFAN", () => {
+  it("uses APPEND mode for PROGRESS, CONVERSATION, OPERATING_CONTEXT, and ESCALATE_TO_STEFAN", () => {
     expect(SUBSTRATE_FILE_SPECS[SubstrateFileType.PROGRESS].writeMode).toBe(
       WriteMode.APPEND
     );
     expect(
       SUBSTRATE_FILE_SPECS[SubstrateFileType.CONVERSATION].writeMode
+    ).toBe(WriteMode.APPEND);
+    expect(
+      SUBSTRATE_FILE_SPECS[SubstrateFileType.OPERATING_CONTEXT].writeMode
     ).toBe(WriteMode.APPEND);
     expect(
       SUBSTRATE_FILE_SPECS[SubstrateFileType.ESCALATE_TO_STEFAN].writeMode
@@ -52,6 +56,7 @@ describe("SUBSTRATE_FILE_SPECS", () => {
     const appendTypes = [
       SubstrateFileType.PROGRESS,
       SubstrateFileType.CONVERSATION,
+      SubstrateFileType.OPERATING_CONTEXT,
       SubstrateFileType.ESCALATE_TO_STEFAN,
     ];
     const overwriteTypes = Object.values(SubstrateFileType).filter(
@@ -66,6 +71,7 @@ describe("SUBSTRATE_FILE_SPECS", () => {
     const optionalTypes = [
       SubstrateFileType.BOUNDARIES,
       SubstrateFileType.PEERS,
+      SubstrateFileType.OPERATING_CONTEXT,
       SubstrateFileType.ESCALATE_TO_STEFAN,
       SubstrateFileType.HEARTBEAT,
     ];

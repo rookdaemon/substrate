@@ -815,7 +815,8 @@ export async function createLoopLayer(
     });
   }
 
-  // HeartbeatScheduler — reads HEARTBEAT.md, fires due entries, appends to CONVERSATION.md
+  // HeartbeatScheduler — reads HEARTBEAT.md, fires due entries, persists to OPERATING_CONTEXT.md,
+  // and injects into pending messages for processing.
   {
     const heartbeatPath = path.join(config.substratePath, "HEARTBEAT.md");
     const conditionEvaluators = new Map<string, IConditionEvaluator>();
@@ -841,7 +842,8 @@ export async function createLoopLayer(
       heartbeatPath,
       conversationManager,
       conditionEvaluators,
-      orchestrator
+      orchestrator,
+      conversationManager
     );
     schedulers.push(heartbeatScheduler);
     orchestrator.setSchedulerCoordinator(new SchedulerCoordinator(schedulers, config.schedulerCoalesceEnabled ?? true));
@@ -881,10 +883,11 @@ export async function createLoopLayer(
     orchestrator.setTickDependencies({ tickPromptBuilder, sdkSessionFactory });
   }
 
-  // Startup scan: check CONVERSATION.md for **[UNPROCESSED]** messages from before a restart.
+  // Startup scan: check CONVERSATION.md for **[UNPROCESSED...]** messages from before a restart.
   // If found, queue a startup prompt so the agent will check for and handle them on the first cycle.
   // The regex matches the badge only in the format AgoraMessageHandler and ConversationProvider
-  // actually write it: after a colon (e.g. "publish: **[UNPROCESSED]**" or "(type):**[UNPROCESSED]**").
+  // actually write it: after a colon (e.g. "publish: **[UNPROCESSED envelopeId=...]**"
+  // or "(type):**[UNPROCESSED]**").
   // This avoids false triggers from backtick-quoted mentions in EGO log entries like
   // `**[UNPROCESSED]**` that discuss the marker rather than being actual markers.
   try {
@@ -894,10 +897,10 @@ export async function createLoopLayer(
     // Only trigger STARTUP SCAN for actionable [UNPROCESSED] messages.
     const lines = conversationContent.rawMarkdown.split("\n");
     const hasActionableUnprocessed = lines.some(
-      (line) => /:\s*\*\*\[UNPROCESSED\]\*\*/.test(line) && !/ announce:\s*\*\*\[UNPROCESSED\]\*\*/.test(line)
+      (line) => /:\s*\*\*\[UNPROCESSED(?:\s+[^\]]+)?\]\*\*/.test(line) && !/ announce:\s*\*\*\[UNPROCESSED(?:\s+[^\]]+)?\]\*\*/.test(line)
     );
     if (hasActionableUnprocessed) {
-      const startupPrompt = "[STARTUP SCAN] Unprocessed messages detected in CONVERSATION.md from before the last restart. Please read CONVERSATION.md and respond to any messages marked with **[UNPROCESSED]**.";
+      const startupPrompt = "[STARTUP SCAN] Unprocessed messages detected in CONVERSATION.md from before the last restart. Please read CONVERSATION.md and respond to any messages marked with **[UNPROCESSED]** or **[UNPROCESSED envelopeId=...]**.";
       orchestrator.queueStartupMessage(startupPrompt);
       logger.debug("createApplication: queued startup message for unprocessed messages in CONVERSATION.md");
     }

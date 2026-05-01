@@ -11,8 +11,14 @@ import type { IMessageInjector } from "../../src/loop/IMessageInjector";
 
 class MockConversationManager implements IConversationManager {
   public appendedEntries: Array<{ role: AgentRole; entry: string }> = [];
+  public operatingContextEntries: Array<{ role: AgentRole; entry: string }> = [];
+
   async append(role: AgentRole, entry: string): Promise<void> {
     this.appendedEntries.push({ role, entry });
+  }
+
+  async appendOperatingContext(role: AgentRole, entry: string): Promise<void> {
+    this.operatingContextEntries.push({ role, entry });
   }
 }
 
@@ -289,6 +295,28 @@ describe("HeartbeatScheduler", () => {
   });
 
   describe("message injection", () => {
+    it("persists heartbeat entries to OPERATING_CONTEXT when a writer is provided", async () => {
+      await fs.writeFile(HEARTBEAT_PATH, "# @once\nOperating note.\n");
+      const injector = new MockMessageInjector();
+      const scheduler = new HeartbeatScheduler(
+        fs,
+        clock,
+        new InMemoryLogger(),
+        HEARTBEAT_PATH,
+        conversationManager,
+        new Map(),
+        injector,
+        conversationManager
+      );
+
+      await scheduler.run();
+
+      expect(conversationManager.appendedEntries).toHaveLength(0);
+      expect(conversationManager.operatingContextEntries).toHaveLength(1);
+      expect(conversationManager.operatingContextEntries[0].entry).toContain("Operating note.");
+      expect(injector.injectedMessages).toHaveLength(1);
+    });
+
     it("injects fired entries into messageInjector when provided", async () => {
       await fs.writeFile(HEARTBEAT_PATH, "# @once\nDo the thing.\n");
       const injector = new MockMessageInjector();
