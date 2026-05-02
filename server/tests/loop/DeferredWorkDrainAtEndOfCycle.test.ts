@@ -14,6 +14,7 @@ import { defaultLoopConfig } from "../../src/loop/types";
 import { InMemoryLogger } from "../../src/logging";
 import { Ego } from "../../src/agents/roles/Ego";
 import { Subconscious } from "../../src/agents/roles/Subconscious";
+import type { TaskResult } from "../../src/agents/roles/Subconscious";
 import { Superego } from "../../src/agents/roles/Superego";
 import { Id } from "../../src/agents/roles/Id";
 import { InMemoryFileSystem } from "../../src/substrate/abstractions/InMemoryFileSystem";
@@ -92,6 +93,31 @@ function createOrchestrator() {
 }
 
 describe("DeferredWorkQueue drain at end-of-cycle", () => {
+  it("converts SKILLS and MEMORY updates into governed proposals instead of direct writes", () => {
+    const { orchestrator } = createOrchestrator();
+    const taskResult: TaskResult = {
+      result: "success",
+      summary: "Learned durable context",
+      progressEntry: "Completed work",
+      skillUpdates: "# Skills\n\nNew skill",
+      memoryUpdates: "# Memory\n\nNew memory",
+      proposals: [{ target: "PLAN", content: "- [ ] Follow-up" }],
+      agoraReplies: [],
+    };
+
+    const proposals = (
+      orchestrator as unknown as {
+        governedProposalsFromTaskResult(result: TaskResult): Array<{ target: string; content: string }>;
+      }
+    ).governedProposalsFromTaskResult(taskResult);
+
+    expect(proposals).toEqual([
+      { target: "PLAN", content: "- [ ] Follow-up" },
+      { target: "SKILLS", content: "# Skills\n\nNew skill" },
+      { target: "MEMORY", content: "# Memory\n\nNew memory" },
+    ]);
+  });
+
   it("deferred item enqueued before cycle runs within that cycle before cycle returns", async () => {
     const { orchestrator, deps } = createOrchestrator();
     await setupIdleSubstrate(deps.fs);

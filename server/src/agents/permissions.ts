@@ -15,12 +15,11 @@ function append(fileType: SubstrateFileType): FilePermission {
 
 /**
  * ROLE_PERMISSIONS governs structured substrate API calls only
- * (SubstrateFileWriter, AppendOnlyWriter). It does NOT restrict direct
- * file-system writes made via LLM tool calls (Bash/Write/Edit tools).
+ * (SubstrateFileWriter, AppendOnlyWriter). Direct file-system writes made
+ * via LLM tool calls are governed by prompt/BOUNDARIES.md constraints.
  *
- * Behavioral constraints on direct tool writes (e.g., "no modifying
- * source code") are enforced at the prompt/BOUNDARIES.md layer, not here.
- * This table is not a complete access-control specification.
+ * Durable self-modification domains (HABITS, SECURITY, SKILLS, MEMORY) are
+ * intentionally writable only by Superego after proposal evaluation.
  */
 export const ROLE_PERMISSIONS: Record<AgentRole, FilePermission[]> = {
   [AgentRole.EGO]: [
@@ -53,8 +52,6 @@ export const ROLE_PERMISSIONS: Record<AgentRole, FilePermission[]> = {
     // CONVERSATION.md excluded: Subconscious does not participate in conversation cycles;
     // injecting conversation context would duplicate what Ego already processes and risk stale reads.
     write(SubstrateFileType.PLAN),
-    write(SubstrateFileType.SKILLS),
-    write(SubstrateFileType.MEMORY),
     write(SubstrateFileType.PEERS),
     write(SubstrateFileType.CONVERSATION),
     append(SubstrateFileType.PROGRESS),
@@ -67,6 +64,8 @@ export const ROLE_PERMISSIONS: Record<AgentRole, FilePermission[]> = {
     ...Object.values(SubstrateFileType).map((ft) => read(ft, SubstrateFileLoadStrategy.EAGER)),
     write(SubstrateFileType.HABITS),
     write(SubstrateFileType.SECURITY),
+    write(SubstrateFileType.SKILLS),
+    write(SubstrateFileType.MEMORY),
     write(SubstrateFileType.PLAN),
     append(SubstrateFileType.PROGRESS),
     append(SubstrateFileType.ESCALATE_TO_STEFAN),

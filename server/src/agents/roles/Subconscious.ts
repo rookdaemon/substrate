@@ -318,7 +318,9 @@ export class Subconscious {
    */
   static computeDriveRating(result: TaskResult): number {
     let score = 5; // baseline
-    if (result.memoryUpdates || result.skillUpdates) score += 3;
+    // Durable SKILLS/MEMORY changes are governed proposals, not immediate
+    // evidence of task quality. Re-enable only after approved-write + delta
+    // confirmation can be scored.
     if (result.result === "failure") score -= 2;
     const entry = result.progressEntry.toLowerCase();
     if (

@@ -298,12 +298,13 @@ describe("Subconscious agent", () => {
   });
 
   describe("updateSkills", () => {
-    it("overwrites SKILLS.md with new content", async () => {
-      await subconscious.updateSkills("# Skills\n\n## TypeScript\n\nProficient");
+    it("rejects direct SKILLS.md writes because durable self-modification is governed", async () => {
+      await expect(subconscious.updateSkills("# Skills\n\n## TypeScript\n\nProficient")).rejects.toThrow(
+        "SUBCONSCIOUS does not have WRITE access to SKILLS",
+      );
 
       const content = await fs.readFile("/substrate/SKILLS.md");
-      expect(content).toContain("## TypeScript");
-      expect(content).toContain("Proficient");
+      expect(content).not.toContain("## TypeScript");
     });
   });
 
@@ -320,7 +321,7 @@ describe("Subconscious agent", () => {
       expect(rating).toBe(5);
     });
 
-    it("adds 3 points when skill or memory updates are present", () => {
+    it("does not reward skill or memory updates before governed approval is confirmed", () => {
       const rating = Subconscious.computeDriveRating({
         result: "success",
         summary: "Learned something",
@@ -329,7 +330,7 @@ describe("Subconscious agent", () => {
         memoryUpdates: null,
         proposals: [],
       });
-      expect(rating).toBe(8);
+      expect(rating).toBe(5);
     });
 
     it("subtracts 2 points for failed tasks", () => {
@@ -410,11 +411,11 @@ describe("Subconscious agent", () => {
         proposals: [],
       });
       expect(bishopRating).toBe(rookRating);
-      expect(bishopRating).toBe(10);
+      expect(bishopRating).toBe(9);
     });
 
     it("clamps score to the 0-10 range", () => {
-      // Max: 5 + 3 + 4 = 12 → clamped to 10
+      // Max: 5 + 4 = 9 after removing the ungoverned SKILLS/MEMORY bonus.
       const maxRating = Subconscious.computeDriveRating({
         result: "success",
         summary: "Did everything",
@@ -423,7 +424,7 @@ describe("Subconscious agent", () => {
         memoryUpdates: null,
         proposals: [],
       });
-      expect(maxRating).toBe(10);
+      expect(maxRating).toBe(9);
 
       // Min: 5 - 2 = 3, but with no bonus → 3 (already above 0)
       const minRating = Subconscious.computeDriveRating({

@@ -36,7 +36,7 @@ export interface Proposal {
 }
 
 /** Governed domains whose proposals require Superego approval. */
-const GOVERNED_DOMAINS = new Set(["HABITS", "SECURITY", "PLAN"]);
+const GOVERNED_DOMAINS = new Set(["HABITS", "SECURITY", "PLAN", "SKILLS", "MEMORY"]);
 
 /**
  * Patterns that indicate an INVISIBLE-OUTPUT BYPASS attempt:
@@ -255,7 +255,7 @@ export class Superego {
 
   /**
    * Apply approved proposals to their target files and log rejections to PROGRESS.md.
-   * Approved proposals targeting HABITS or SECURITY are written to the respective files.
+   * Approved proposals targeting governed substrate files are written to their targets.
    * Rejected proposals are logged with the reason.
    */
   async applyProposals(proposals: Proposal[], evaluations: ProposalEvaluation[]): Promise<void> {
@@ -263,6 +263,8 @@ export class Superego {
       HABITS: SubstrateFileType.HABITS,
       SECURITY: SubstrateFileType.SECURITY,
       PLAN: SubstrateFileType.PLAN,
+      SKILLS: SubstrateFileType.SKILLS,
+      MEMORY: SubstrateFileType.MEMORY,
     };
 
     for (let i = 0; i < proposals.length; i++) {

@@ -232,13 +232,24 @@ describe("Superego agent", () => {
         launcher.enqueueSuccess(claudeResponse);
 
         const evaluations = await superego.evaluateProposals([
-          { target: "MEMORY", content: "Internal reasoning about memory organization, no file modifications" },
+          { target: "PEERS", content: "Internal reasoning about peer organization, no file modifications" },
         ]);
 
         expect(evaluations).toHaveLength(1);
         expect(evaluations[0].approved).toBe(true);
         // Claude was called because domain is not governed
         expect(launcher.getLaunches()).toHaveLength(1);
+      });
+
+      it("pre-rejects MEMORY proposal claiming no file modifications (SCOPE_BYPASS_ATTEMPT)", async () => {
+        const evaluations = await superego.evaluateProposals([
+          { target: "MEMORY", content: "Internal reasoning about memory organization, no file modifications" },
+        ]);
+
+        expect(evaluations).toHaveLength(1);
+        expect(evaluations[0].approved).toBe(false);
+        expect(evaluations[0].reason).toContain("SCOPE_BYPASS_ATTEMPT");
+        expect(launcher.getLaunches()).toHaveLength(0);
       });
 
       it("pre-rejects governed-domain bypass proposals while passing non-bypass proposals to Claude", async () => {
@@ -670,6 +681,26 @@ describe("Superego agent", () => {
 
       const security = await fs.readFile("/substrate/SECURITY.md");
       expect(security).toBe("# Security\n\nStay safe\n\n---\n\n# Security\n\nUpdated policy");
+    });
+
+    it("writes approved SKILLS proposal to SKILLS.md, merging with existing content", async () => {
+      const proposals = [{ target: "SKILLS", content: "# Skills\n\nNew capability" }];
+      const evaluations = [{ approved: true, reason: "Useful and safe" }];
+
+      await superego.applyProposals(proposals, evaluations);
+
+      const skills = await fs.readFile("/substrate/SKILLS.md");
+      expect(skills).toBe("# Skills\n\nSome skills\n\n---\n\n# Skills\n\nNew capability");
+    });
+
+    it("writes approved MEMORY proposal to MEMORY.md, merging with existing content", async () => {
+      const proposals = [{ target: "MEMORY", content: "# Memory\n\nImportant durable learning" }];
+      const evaluations = [{ approved: true, reason: "Useful and safe" }];
+
+      await superego.applyProposals(proposals, evaluations);
+
+      const memory = await fs.readFile("/substrate/MEMORY.md");
+      expect(memory).toBe("# Memory\n\nSome memories\n\n---\n\n# Memory\n\nImportant durable learning");
     });
 
     it("logs rejected proposals to PROGRESS.md with reason", async () => {

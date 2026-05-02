@@ -2,7 +2,7 @@ import * as path from "path";
 import { IFileSystem } from "../substrate/abstractions/IFileSystem";
 import { SubstrateFileType } from "../substrate/types";
 import { Ego } from "../agents/roles/Ego";
-import { Subconscious, TaskResult, OutcomeEvaluation, AgoraReply } from "../agents/roles/Subconscious";
+import { Subconscious, TaskResult, OutcomeEvaluation, AgoraReply, SubconsciousProposal } from "../agents/roles/Subconscious";
 import { Superego } from "../agents/roles/Superego";
 import { Id } from "../agents/roles/Id";
 import { extractJson } from "../agents/parsers/extractJson";
@@ -647,14 +647,6 @@ export class LoopOrchestrator implements IMessageInjector {
           await this.subconscious.logProgress(taskResult.progressEntry);
         }
 
-        if (taskResult.skillUpdates) {
-          await this.subconscious.updateSkills(taskResult.skillUpdates);
-        }
-
-        if (taskResult.memoryUpdates) {
-          await this.subconscious.updateMemory(taskResult.memoryUpdates);
-        }
-
         if (taskResult.summary) {
           await this.subconscious.logConversation(taskResult.summary);
         }
@@ -688,13 +680,15 @@ export class LoopOrchestrator implements IMessageInjector {
         await this.recordDriveRatingIfApplicable(dispatch.description, taskResult);
       }
 
+      const proposals = this.governedProposalsFromTaskResult(taskResult);
+
       // Enqueue proposal evaluation as deferred work (overlaps with next cycle's dispatch)
-      if (taskResult.proposals.length > 0) {
-        this.logger.debug(`cycle ${this.cycleNumber}: deferring evaluation of ${taskResult.proposals.length} proposal(s)`);
+      if (proposals.length > 0) {
+        this.logger.debug(`cycle ${this.cycleNumber}: deferring evaluation of ${proposals.length} proposal(s)`);
         this.deferredWork.enqueue(
           (async () => {
-            const evaluations = await this.superego.evaluateProposals(taskResult.proposals, this.createLogCallback("SUPEREGO"));
-            await this.superego.applyProposals(taskResult.proposals, evaluations);
+            const evaluations = await this.superego.evaluateProposals(proposals, this.createLogCallback("SUPEREGO"));
+            await this.superego.applyProposals(proposals, evaluations);
           })(),
           "proposal_evaluation"
         );
@@ -1418,6 +1412,23 @@ export class LoopOrchestrator implements IMessageInjector {
 
     const idleInterval = policy.idleIntervalCycles ?? this.config.superegoAuditInterval * 4;
     return cyclesSinceAudit >= idleInterval;
+  }
+
+  private governedProposalsFromTaskResult(taskResult: TaskResult): SubconsciousProposal[] {
+    const proposals = [...taskResult.proposals];
+    if (taskResult.skillUpdates) {
+      proposals.push({
+        target: "SKILLS",
+        content: taskResult.skillUpdates,
+      });
+    }
+    if (taskResult.memoryUpdates) {
+      proposals.push({
+        target: "MEMORY",
+        content: taskResult.memoryUpdates,
+      });
+    }
+    return proposals;
   }
 
   private async recordDriveRatingIfApplicable(description: string, taskResult: TaskResult): Promise<void> {
