@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { IEnvironment } from "./substrate/abstractions/IEnvironment";
 import type { IFileSystem } from "./substrate/abstractions/IFileSystem";
 import type { AppPaths } from "./paths";
+import { MIN_SURVIVAL_ROUTINE_CYCLE_DELAY_MS } from "./loop/types";
 
 export class ConfigValidationError extends Error {
   constructor(message: string) {
@@ -394,8 +395,8 @@ export async function resolveConfig(
         ? path.posix.join(path.posix.dirname(appPaths.data), "substrate-backups")
         : path.join(path.dirname(appPaths.data), "substrate-backups"),
     port: 3000,
-    model: "claude-sonnet-4-6",
-    strategicModel: "claude-opus-4-6",
+    model: "claude-haiku-4-5",
+    strategicModel: "claude-sonnet-4-6",
     tacticalModel: "claude-sonnet-4-6",
     mode: "cycle",
     autoStartOnFirstRun: true,
@@ -403,7 +404,7 @@ export async function resolveConfig(
     backupRetentionCount: 14,
     superegoAuditInterval: 50,
     dynamicSuperegoAudit: undefined,
-    cycleDelayMs: 30000,
+    cycleDelayMs: MIN_SURVIVAL_ROUTINE_CYCLE_DELAY_MS,
     evaluateOutcome: {
       enabled: false,
       qualityThreshold: 85,
@@ -492,7 +493,7 @@ export async function resolveConfig(
         maxIntervalMs: fileConfig.dynamicSuperegoAudit.maxIntervalMs,
       }
       : defaults.dynamicSuperegoAudit,
-    cycleDelayMs: fileConfig.cycleDelayMs ?? defaults.cycleDelayMs,
+    cycleDelayMs: Math.max(fileConfig.cycleDelayMs ?? defaults.cycleDelayMs, MIN_SURVIVAL_ROUTINE_CYCLE_DELAY_MS),
     evaluateOutcome: fileConfig.evaluateOutcome
       ? {
         enabled: fileConfig.evaluateOutcome.enabled ?? defaults.evaluateOutcome!.enabled,

@@ -1,6 +1,7 @@
 import { InMemoryFileSystem } from "../src/substrate/abstractions/InMemoryFileSystem";
 import { resolveConfig, ConfigValidationError } from "../src/config";
 import type { AppPaths } from "../src/paths";
+import { MIN_SURVIVAL_ROUTINE_CYCLE_DELAY_MS } from "../src/loop/types";
 
 const TEST_PATHS: AppPaths = {
   config: "/xdg/config/substrate",
@@ -21,7 +22,9 @@ describe("resolveConfig", () => {
     expect(config.workingDirectory).toBe("/xdg/data/substrate");
     expect(config.backupPath).toBe("/xdg/data/substrate-backups");
     expect(config.port).toBe(3000);
-    expect(config.model).toBe("claude-sonnet-4-6");
+    expect(config.model).toBe("claude-haiku-4-5");
+    expect(config.strategicModel).toBe("claude-sonnet-4-6");
+    expect(config.tacticalModel).toBe("claude-sonnet-4-6");
   });
 
   it("loads from explicit configPath", async () => {
@@ -265,7 +268,7 @@ describe("resolveConfig", () => {
     });
   });
 
-  it("uses cycleDelayMs from config file", async () => {
+  it("clamps cycleDelayMs from config file below the survival minimum", async () => {
     await fs.mkdir("/project", { recursive: true });
     await fs.writeFile("/project/config.json", JSON.stringify({
       cycleDelayMs: 60000,
@@ -277,16 +280,31 @@ describe("resolveConfig", () => {
       env: {},
     });
 
-    expect(config.cycleDelayMs).toBe(60000);
+    expect(config.cycleDelayMs).toBe(MIN_SURVIVAL_ROUTINE_CYCLE_DELAY_MS);
   });
 
-  it("defaults cycleDelayMs to 30000", async () => {
+  it("uses cycleDelayMs from config file at or above the survival minimum", async () => {
+    await fs.mkdir("/project", { recursive: true });
+    await fs.writeFile("/project/config.json", JSON.stringify({
+      cycleDelayMs: MIN_SURVIVAL_ROUTINE_CYCLE_DELAY_MS + 1000,
+    }));
+
+    const config = await resolveConfig(fs, {
+      appPaths: TEST_PATHS,
+      cwd: "/project",
+      env: {},
+    });
+
+    expect(config.cycleDelayMs).toBe(MIN_SURVIVAL_ROUTINE_CYCLE_DELAY_MS + 1000);
+  });
+
+  it("defaults cycleDelayMs to the survival minimum", async () => {
     const config = await resolveConfig(fs, {
       appPaths: TEST_PATHS,
       env: {},
     });
 
-    expect(config.cycleDelayMs).toBe(30000);
+    expect(config.cycleDelayMs).toBe(MIN_SURVIVAL_ROUTINE_CYCLE_DELAY_MS);
   });
 
   it("defaults conversationIdleTimeoutMs to 20000", async () => {
@@ -435,15 +453,18 @@ describe("resolveConfig", () => {
       await expect(resolveConfig(fs, opts)).rejects.toThrow("Invalid config.json:");
     });
 
-    it("throws ConfigValidationError when cycleDelayMs <= conversationIdleTimeoutMs", async () => {
+    it("clamps minute-poll cycleDelayMs before validating conversationIdleTimeoutMs", async () => {
       await writeConfig({ cycleDelayMs: 10000, conversationIdleTimeoutMs: 20000 });
-      await expect(resolveConfig(fs, opts)).rejects.toThrow(ConfigValidationError);
-      await expect(resolveConfig(fs, opts)).rejects.toThrow("cycleDelayMs must be greater than conversationIdleTimeoutMs");
+      const config = await resolveConfig(fs, opts);
+      expect(config.cycleDelayMs).toBe(MIN_SURVIVAL_ROUTINE_CYCLE_DELAY_MS);
+      expect(config.conversationIdleTimeoutMs).toBe(20000);
     });
 
-    it("throws ConfigValidationError when cycleDelayMs equals conversationIdleTimeoutMs", async () => {
+    it("clamps equal low cycleDelayMs before validating conversationIdleTimeoutMs", async () => {
       await writeConfig({ cycleDelayMs: 20000, conversationIdleTimeoutMs: 20000 });
-      await expect(resolveConfig(fs, opts)).rejects.toThrow(ConfigValidationError);
+      const config = await resolveConfig(fs, opts);
+      expect(config.cycleDelayMs).toBe(MIN_SURVIVAL_ROUTINE_CYCLE_DELAY_MS);
+      expect(config.conversationIdleTimeoutMs).toBe(20000);
     });
 
     it("throws ConfigValidationError for idleCyclesBeforeSleep < 1", async () => {
@@ -725,7 +746,7 @@ describe("resolveConfig", () => {
         env: {},
       });
 
-      expect(config.model).toBe("claude-sonnet-4-6");
+      expect(config.model).toBe("claude-haiku-4-5");
       expect(config.gemini).toEqual({ model: "gemini-2.5-pro" });
     });
 

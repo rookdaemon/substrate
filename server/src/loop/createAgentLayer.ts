@@ -21,6 +21,8 @@ import { ApiSemaphore } from "../agents/claude/ApiSemaphore";
 import { SemaphoreSessionLauncher } from "../agents/claude/SemaphoreSessionLauncher";
 import { ISessionLauncher } from "../agents/claude/ISessionLauncher";
 import { TaskClassifier } from "../agents/TaskClassifier";
+import { SurvivalModelPolicyLauncher } from "../agents/SurvivalModelPolicyLauncher";
+import { ProviderFallbackLauncher, ProviderFallbackRoute, UnavailableProviderLauncher } from "../agents/ProviderFallbackLauncher";
 import { ConversationCompactor } from "../conversation/ConversationCompactor";
 import { ConversationArchiver } from "../conversation/ConversationArchiver";
 import { ConversationManager, ConversationArchiveConfig } from "../conversation/ConversationManager";
@@ -37,6 +39,7 @@ import { DelegationTracker } from "../evaluation/DelegationTracker";
 import { DriveQualityTracker } from "../evaluation/DriveQualityTracker";
 import { SqliteMetricsService } from "../metrics/SqliteMetricsService";
 import { MeteredSessionLauncher } from "../metrics/MeteredSessionLauncher";
+import { BudgetGuard } from "../budget/BudgetGuard";
 import { FlashGate } from "../gates/FlashGate";
 import type { IFlashGate } from "../gates/IFlashGate";
 import type { ApplicationConfig } from "./applicationTypes";
@@ -119,6 +122,16 @@ export async function createAgentLayer(
   // API semaphore — caps concurrent Claude sessions for rate-limit safety
   const apiSemaphore = new ApiSemaphore(config.maxConcurrentSessions ?? 2);
   const metricsService = SqliteMetricsService.forSubstratePath(config.substratePath, logger);
+  const budgetGuard = BudgetGuard.forSubstratePath(config.substratePath, fs, clock, logger);
+  const withSurvivalPolicy = (
+    inner: ISessionLauncher,
+    provider: ProviderName,
+    defaultModel?: string,
+  ): ISessionLauncher => new SurvivalModelPolicyLauncher(
+    new MeteredSessionLauncher(inner, metricsService, clock, budgetGuard, provider, defaultModel),
+    { provider, defaultModel },
+    logger,
+  );
 
   // Ollama API key — read from key file if configured (never from env vars)
   // Required for authenticated remote Ollama endpoints (e.g. ollama.lbsa71.net).
@@ -213,8 +226,8 @@ export async function createAgentLayer(
       const groqLauncher = new GroqSessionLauncher(new FetchHttpClient(), clock, groqApiKey, groqModel);
       gatedLauncher = new SemaphoreSessionLauncher(groqLauncher, apiSemaphore);
     } else {
-      logger.debug("agent-layer: sessionLauncher is \"groq\" but groqKeyPath is not set or key file unreadable — falling back to Claude SDK launcher");
-      gatedLauncher = new SemaphoreSessionLauncher(launcher, apiSemaphore);
+      logger.warn("agent-layer: sessionLauncher is \"groq\" but groqKeyPath is not set or key file unreadable — blocking silent fallback to default provider");
+      gatedLauncher = new UnavailableProviderLauncher("groq", "groqKeyPath unset or key file unreadable");
     }
   } else if (config.sessionLauncher === "anthropic") {
     if (anthropicAccessToken) {
@@ -222,13 +235,12 @@ export async function createAgentLayer(
       const anthropicLauncher = new AnthropicSessionLauncher(new FetchHttpClient(), clock, anthropicAccessToken, anthropicModel);
       gatedLauncher = new SemaphoreSessionLauncher(anthropicLauncher, apiSemaphore);
     } else {
-      logger.debug("agent-layer: sessionLauncher is \"anthropic\" but token unavailable — falling back to Claude SDK launcher");
-      gatedLauncher = new SemaphoreSessionLauncher(launcher, apiSemaphore);
+      logger.warn("agent-layer: sessionLauncher is \"anthropic\" but token unavailable — blocking silent fallback to default provider");
+      gatedLauncher = new UnavailableProviderLauncher("anthropic", "claudeOAuthKeyPath unset or token unreadable");
     }
   } else {
     gatedLauncher = new SemaphoreSessionLauncher(launcher, apiSemaphore);
   }
-  gatedLauncher = new MeteredSessionLauncher(gatedLauncher, metricsService, clock);
 
   // Metrics collection components
   const taskMetrics = new TaskClassificationMetrics(fs, clock, config.substratePath);
@@ -307,6 +319,48 @@ export async function createAgentLayer(
     logger.debug("agent-layer: FlashGate disabled — no Vertex subprocess launcher available");
   }
 
+  const fallbackRoutes: ProviderFallbackRoute[] = [];
+  if (sessionProvider !== "ollama") {
+    const ollamaBaseUrl = ollamaConfig?.baseUrl ?? config.ollamaBaseUrl ?? "http://localhost:11434";
+    const ollamaModel = ollamaConfig?.model ?? config.ollamaModel ?? "qwen3:14b";
+    const ollamaLauncher = new OllamaSessionLauncher(new FetchHttpClient(), clock, ollamaModel, ollamaBaseUrl, ollamaApiKey);
+    fallbackRoutes.push({
+      provider: "ollama",
+      model: ollamaModel,
+      launcher: withSurvivalPolicy(new SemaphoreSessionLauncher(ollamaLauncher, apiSemaphore), "ollama", ollamaModel),
+    });
+  }
+  if (vertexSubprocessLauncher && sessionProvider !== "vertex") {
+    fallbackRoutes.push({
+      provider: "vertex",
+      model: "gemini-2.5-flash",
+      launcher: withSurvivalPolicy(new SemaphoreSessionLauncher(vertexSubprocessLauncher, apiSemaphore), "vertex", "gemini-2.5-flash"),
+    });
+  }
+  if (groqApiKey && sessionProvider !== "groq") {
+    const groqFallbackModel = "llama-3.1-8b-instant";
+    const groqFallbackLauncher = new GroqSessionLauncher(new FetchHttpClient(), clock, groqApiKey, groqFallbackModel);
+    fallbackRoutes.push({
+      provider: "groq",
+      model: groqFallbackModel,
+      launcher: withSurvivalPolicy(new SemaphoreSessionLauncher(groqFallbackLauncher, apiSemaphore), "groq", groqFallbackModel),
+    });
+  }
+  if (anthropicAccessToken && sessionProvider !== "anthropic") {
+    const anthropicFallbackModel = "claude-haiku-4-20250514";
+    const anthropicFallbackLauncher = new AnthropicSessionLauncher(new FetchHttpClient(), clock, anthropicAccessToken, anthropicFallbackModel);
+    fallbackRoutes.push({
+      provider: "anthropic",
+      model: anthropicFallbackModel,
+      launcher: withSurvivalPolicy(new SemaphoreSessionLauncher(anthropicFallbackLauncher, apiSemaphore), "anthropic", anthropicFallbackModel),
+    });
+  }
+  gatedLauncher = new ProviderFallbackLauncher(
+    withSurvivalPolicy(gatedLauncher, sessionProvider, activeModel),
+    fallbackRoutes,
+    logger,
+  );
+
   // Conversation manager with compaction and optional archiving
   const compactor = new ConversationCompactor(gatedLauncher, cwd, ollamaOffloadService, logger, vertexSubprocessLauncher);
 
@@ -346,33 +400,48 @@ export async function createAgentLayer(
   // This is a semantic no-op for Id: Id produces stateless advisory output and does not need cross-call session continuity.
   let idGatedLauncher: ISessionLauncher = gatedLauncher;
   if (config.idLauncher === "vertex" && vertexSubprocessLauncher) {
-    idGatedLauncher = new MeteredSessionLauncher(new SemaphoreSessionLauncher(vertexSubprocessLauncher, apiSemaphore), metricsService, clock);
+    idGatedLauncher = withSurvivalPolicy(new SemaphoreSessionLauncher(vertexSubprocessLauncher, apiSemaphore), "vertex", vertexModel);
     logger.debug("agent-layer: Id using VertexSessionLauncher (idLauncher: vertex)");
   } else if (config.idLauncher === "vertex") {
-    logger.debug("agent-layer: idLauncher is \"vertex\" but no Vertex launcher available — Id falling back to default launcher");
+    logger.warn("agent-layer: idLauncher is \"vertex\" but no Vertex launcher available — blocking silent fallback to default provider");
+    idGatedLauncher = new ProviderFallbackLauncher(
+      new UnavailableProviderLauncher("vertex", "vertexKeyPath unset, unreadable, or unhealthy"),
+      fallbackRoutes,
+      logger,
+    );
   } else if (config.idLauncher === "ollama") {
     const ollamaBaseUrl = ollamaConfig?.baseUrl ?? config.ollamaBaseUrl ?? "http://localhost:11434";
     const ollamaModel = ollamaConfig?.idModel ?? config.idOllamaModel ?? ollamaConfig?.model ?? config.ollamaModel;
     const ollamaLauncher = new OllamaSessionLauncher(new FetchHttpClient(), clock, ollamaModel, ollamaBaseUrl, ollamaApiKey);
-    idGatedLauncher = new MeteredSessionLauncher(new SemaphoreSessionLauncher(ollamaLauncher, apiSemaphore), metricsService, clock);
+    idGatedLauncher = withSurvivalPolicy(new SemaphoreSessionLauncher(ollamaLauncher, apiSemaphore), "ollama", ollamaModel);
     logger.debug(`agent-layer: Id using OllamaSessionLauncher (idLauncher: ollama, model: ${ollamaModel ?? "default"})`);
   } else if (config.idLauncher === "groq") {
     if (groqApiKey) {
       const model = idGroqModel ?? groqModel;
       const groqLauncher = new GroqSessionLauncher(new FetchHttpClient(), clock, groqApiKey, model);
-      idGatedLauncher = new MeteredSessionLauncher(new SemaphoreSessionLauncher(groqLauncher, apiSemaphore), metricsService, clock);
+      idGatedLauncher = withSurvivalPolicy(new SemaphoreSessionLauncher(groqLauncher, apiSemaphore), "groq", model);
       logger.debug(`agent-layer: Id using GroqSessionLauncher (idLauncher: groq, model: ${model ?? "default"})`);
     } else {
-      logger.debug("agent-layer: idLauncher is \"groq\" but groqKeyPath is not set or key file unreadable — Id falling back to default launcher");
+      logger.warn("agent-layer: idLauncher is \"groq\" but groqKeyPath is not set or key file unreadable — blocking silent fallback to default provider");
+      idGatedLauncher = new ProviderFallbackLauncher(
+        new UnavailableProviderLauncher("groq", "groqKeyPath unset or key file unreadable"),
+        fallbackRoutes,
+        logger,
+      );
     }
   } else if (config.idLauncher === "anthropic") {
     if (anthropicAccessToken) {
       const model = idAnthropicModel ?? anthropicModel;
       const anthropicLauncher = new AnthropicSessionLauncher(new FetchHttpClient(), clock, anthropicAccessToken, model);
-      idGatedLauncher = new MeteredSessionLauncher(new SemaphoreSessionLauncher(anthropicLauncher, apiSemaphore), metricsService, clock);
+      idGatedLauncher = withSurvivalPolicy(new SemaphoreSessionLauncher(anthropicLauncher, apiSemaphore), "anthropic", model);
       logger.debug(`agent-layer: Id using AnthropicSessionLauncher (idLauncher: anthropic, model: ${model ?? "default"})`);
     } else {
-      logger.debug("agent-layer: idLauncher is \"anthropic\" but token unavailable — Id falling back to default launcher");
+      logger.warn("agent-layer: idLauncher is \"anthropic\" but token unavailable — blocking silent fallback to default provider");
+      idGatedLauncher = new ProviderFallbackLauncher(
+        new UnavailableProviderLauncher("anthropic", "claudeOAuthKeyPath unset or token unreadable"),
+        fallbackRoutes,
+        logger,
+      );
     }
   }
 

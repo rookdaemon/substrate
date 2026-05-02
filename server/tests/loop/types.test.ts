@@ -1,6 +1,7 @@
 import {
   LoopState,
   defaultLoopConfig,
+  MIN_SURVIVAL_ROUTINE_CYCLE_DELAY_MS,
   CycleResult,
   LoopEvent,
   createInitialMetrics,
@@ -18,7 +19,7 @@ describe("defaultLoopConfig", () => {
   it("returns default configuration", () => {
     const config = defaultLoopConfig();
 
-    expect(config.cycleDelayMs).toBe(30000);
+    expect(config.cycleDelayMs).toBe(MIN_SURVIVAL_ROUTINE_CYCLE_DELAY_MS);
     expect(config.superegoAuditInterval).toBe(50);
     expect(config.dynamicSuperegoAudit).toBeUndefined();
     expect(config.maxConsecutiveIdleCycles).toBe(10);
@@ -26,12 +27,18 @@ describe("defaultLoopConfig", () => {
     expect(config.evaluateOutcomeQualityThreshold).toBe(70);
   });
 
-  it("allows overriding individual fields", () => {
+  it("clamps routine cycle delay overrides below the survival minimum", () => {
     const config = defaultLoopConfig({ cycleDelayMs: 500 });
 
-    expect(config.cycleDelayMs).toBe(500);
+    expect(config.cycleDelayMs).toBe(MIN_SURVIVAL_ROUTINE_CYCLE_DELAY_MS);
     expect(config.superegoAuditInterval).toBe(50);
     expect(config.maxConsecutiveIdleCycles).toBe(10);
+  });
+
+  it("allows routine cycle delay overrides at or above the survival minimum", () => {
+    const config = defaultLoopConfig({ cycleDelayMs: MIN_SURVIVAL_ROUTINE_CYCLE_DELAY_MS + 1 });
+
+    expect(config.cycleDelayMs).toBe(MIN_SURVIVAL_ROUTINE_CYCLE_DELAY_MS + 1);
   });
 
   it("ignores undefined overrides and keeps defaults", () => {
@@ -41,14 +48,14 @@ describe("defaultLoopConfig", () => {
       maxConsecutiveIdleCycles: undefined,
     });
 
-    expect(config.cycleDelayMs).toBe(30000);
+    expect(config.cycleDelayMs).toBe(MIN_SURVIVAL_ROUTINE_CYCLE_DELAY_MS);
     expect(config.superegoAuditInterval).toBe(50);
     expect(config.maxConsecutiveIdleCycles).toBe(10);
   });
 
   it("allows overriding all fields", () => {
     const config = defaultLoopConfig({
-      cycleDelayMs: 2000,
+      cycleDelayMs: MIN_SURVIVAL_ROUTINE_CYCLE_DELAY_MS + 2000,
       superegoAuditInterval: 20,
       dynamicSuperegoAudit: {
         enabled: true,
@@ -59,7 +66,7 @@ describe("defaultLoopConfig", () => {
       maxConsecutiveIdleCycles: 3,
     });
 
-    expect(config.cycleDelayMs).toBe(2000);
+    expect(config.cycleDelayMs).toBe(MIN_SURVIVAL_ROUTINE_CYCLE_DELAY_MS + 2000);
     expect(config.superegoAuditInterval).toBe(20);
     expect(config.dynamicSuperegoAudit).toEqual({
       enabled: true,

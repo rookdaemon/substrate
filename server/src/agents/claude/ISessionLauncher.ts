@@ -40,6 +40,8 @@ export interface ClaudeSessionResult {
 
 export interface LaunchOptions {
   model?: string;
+  /** Frontier/expensive model use must be opted into at the call site under Survival Mode. */
+  allowFrontierModel?: boolean;
   maxRetries?: number;
   retryDelayMs?: number;
   timeoutMs?: number;

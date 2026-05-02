@@ -18,7 +18,11 @@ describe("INSHook Phase 3 — compliance pattern detection", () => {
   const now = new Date("2026-03-01T12:00:00.000Z");
 
   async function createHook(configOverrides?: Partial<INSConfig>): Promise<INSHook> {
-    const finalConfig = { ...config, ...configOverrides };
+    const finalConfig = {
+      ...config,
+      survivalIntegrity: { ...config.survivalIntegrity, enabled: false },
+      ...configOverrides,
+    };
     const complianceState = await ComplianceStateManager.load(
       finalConfig.statePath, fs, logger,
     );
@@ -416,7 +420,11 @@ describe("INSHook — compliance routing (Gap 1)", () => {
   const now = new Date("2026-03-01T12:00:00.000Z");
 
   async function createHook(configOverrides?: Partial<INSConfig>): Promise<INSHook> {
-    const finalConfig = { ...config, ...configOverrides };
+    const finalConfig = {
+      ...config,
+      survivalIntegrity: { ...config.survivalIntegrity, enabled: false },
+      ...configOverrides,
+    };
     const complianceState = await ComplianceStateManager.load(finalConfig.statePath, fs, logger);
     return new INSHook(reader, fs, clock, logger, finalConfig, complianceState);
   }

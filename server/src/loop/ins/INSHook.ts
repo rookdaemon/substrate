@@ -5,6 +5,7 @@ import { IClock } from "../../substrate/abstractions/IClock";
 import { ILogger } from "../../logging";
 import { INSResult, INSAction, INSConfig, InsAcknowledgment, CompactionRiskTier } from "./types";
 import { ComplianceStateManager } from "./ComplianceStateManager";
+import { SurvivalIntegrityChecker } from "../../survival/SurvivalIntegrityChecker";
 
 /** Precondition extraction patterns — matches common blocking language in task summaries */
 const PRECONDITION_PATTERNS = [
@@ -118,6 +119,10 @@ export class INSHook {
       // Rule 6: memory/ subdirectory accumulation
       const subdirAction = await this.checkSubdirectoryAccumulation();
       if (subdirAction) actions.push(subdirAction);
+
+      // Rule 7: Survival Mode integrity anchor/hash check (FM-6), deterministic and no-LLM.
+      const survivalIntegrityActions = await this.checkSurvivalIntegrity();
+      actions.push(...survivalIntegrityActions);
     } catch (err) {
       // INS never blocks the cycle
       this.logger.debug(
@@ -479,5 +484,25 @@ export class INSHook {
       // Directory read errors are not fatal
     }
     return actions;
+  }
+
+  private async checkSurvivalIntegrity(): Promise<INSAction[]> {
+    if (!this.config.survivalIntegrity.enabled) return [];
+
+    const checker = new SurvivalIntegrityChecker(this.fs, {
+      substratePath: this.config.substratePath,
+      canonicalFilePath: this.config.survivalIntegrity.canonicalFilePath,
+      expectedCanonicalHash: this.config.survivalIntegrity.expectedCanonicalHash,
+    });
+
+    const result = await checker.check();
+    if (result.ok) return [];
+
+    return result.issues.map((issue) => ({
+      type: "survival_integrity_failure",
+      target: issue.code,
+      detail: issue.detail,
+      requiresStefanReview: true,
+    }));
   }
 }

@@ -1471,6 +1471,10 @@ export class LoopOrchestrator implements IMessageInjector {
         lines.push(
           `- ${action.type}: ${action.target} — ${action.detail} [ROUTING: Stefan (required) + peer agents — not resolvable by Ego alone]`,
         );
+      } else if (action.type === "survival_integrity_failure") {
+        lines.push(
+          `- ${action.type}: ${action.target} — ${action.detail} [FM-6: Stefan alert required; do not compact or rewrite survival governance]`,
+        );
       } else {
         lines.push(`- ${action.type}: ${action.target} — ${action.detail}`);
       }

@@ -18,7 +18,11 @@ describe("INSHook", () => {
   const now = new Date("2026-03-01T12:00:00.000Z");
 
   async function createHook(configOverrides?: Partial<INSConfig>): Promise<INSHook> {
-    const finalConfig = { ...config, ...configOverrides };
+    const finalConfig = {
+      ...config,
+      survivalIntegrity: { ...config.survivalIntegrity, enabled: false },
+      ...configOverrides,
+    };
     const complianceState = await ComplianceStateManager.load(
       finalConfig.statePath, fs, logger,
     );
@@ -175,7 +179,14 @@ describe("INSHook", () => {
     const brokenConfig = new SubstrateConfig("/nonexistent");
     const brokenReader = new SubstrateFileReader(fs, brokenConfig, false);
     const complianceState = await ComplianceStateManager.load(config.statePath, fs, logger);
-    const hook = new INSHook(brokenReader, fs, clock, logger, config, complianceState);
+    const hook = new INSHook(
+      brokenReader,
+      fs,
+      clock,
+      logger,
+      { ...config, survivalIntegrity: { ...config.survivalIntegrity, enabled: false } },
+      complianceState,
+    );
 
     // Should not throw
     const result = await hook.evaluate(1);
@@ -190,7 +201,14 @@ describe("INSHook", () => {
     await fs.mkdir("/empty", { recursive: true });
     const emptyReader = new SubstrateFileReader(fs, emptySubstrate, false);
     const complianceState = await ComplianceStateManager.load(config.statePath, fs, logger);
-    const hook = new INSHook(emptyReader, fs, clock, logger, config, complianceState);
+    const hook = new INSHook(
+      emptyReader,
+      fs,
+      clock,
+      logger,
+      { ...config, survivalIntegrity: { ...config.survivalIntegrity, enabled: false } },
+      complianceState,
+    );
 
     const result = await hook.evaluate(1);
     expect(result.noop).toBe(true);

@@ -51,7 +51,7 @@ export interface INSResult {
 export type CompactionRiskTier = 'low' | 'medium' | 'high';
 
 export interface INSAction {
-  type: "compaction" | "archive_tag" | "compliance_flag";
+  type: "compaction" | "archive_tag" | "compliance_flag" | "survival_integrity_failure";
   target: string;
   detail: string;
   linesRemoved?: number;
@@ -76,6 +76,8 @@ export interface INSAction {
 }
 
 export interface INSConfig {
+  /** Root substrate path used by deterministic survival integrity checks. */
+  substratePath: string;
   /**
    * CONVERSATION.md line threshold for compaction flag (default: 80).
    * @stefanGated — not adjustable via Ego or peer proposal.
@@ -117,10 +119,20 @@ export interface INSConfig {
   statePath: string;
   /** Path to memory directory for archive scanning */
   memoryPath: string;
+  /**
+   * Survival integrity checker config. Enabled by default because FM-6 survival-plan loss
+   * must be detected without an LLM.
+   */
+  survivalIntegrity: {
+    enabled: boolean;
+    canonicalFilePath: string;
+    expectedCanonicalHash: string;
+  };
 }
 
 export function defaultINSConfig(substratePath: string): INSConfig {
   return {
+    substratePath,
     conversationLineThreshold: 80,
     progressLineThreshold: 200,
     planLineThreshold: 150,
@@ -130,6 +142,11 @@ export function defaultINSConfig(substratePath: string): INSConfig {
     archiveAgeDays: 30,
     statePath: `${substratePath}/../.ins/state`,
     memoryPath: `${substratePath}/memory`,
+    survivalIntegrity: {
+      enabled: true,
+      canonicalFilePath: `${substratePath}/memory/SURVIVAL_PLAN_2026-04-30.md`,
+      expectedCanonicalHash: "b9c49a885dc9cf3bd30947a15a291ffeebf20e1501c2cbc10582f88277b56d0f",
+    },
   };
 }
 

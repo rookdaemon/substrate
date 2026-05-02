@@ -20,9 +20,11 @@ export interface LoopConfig {
   evaluateOutcomeQualityThreshold: number;
 }
 
+export const MIN_SURVIVAL_ROUTINE_CYCLE_DELAY_MS = 4 * 60 * 60 * 1000;
+
 export function defaultLoopConfig(overrides?: Partial<LoopConfig>): LoopConfig {
   const defaults: LoopConfig = {
-    cycleDelayMs: 30000,
+    cycleDelayMs: MIN_SURVIVAL_ROUTINE_CYCLE_DELAY_MS,
     superegoAuditInterval: 50,
     dynamicSuperegoAudit: undefined,
     maxConsecutiveIdleCycles: 10,
@@ -32,7 +34,7 @@ export function defaultLoopConfig(overrides?: Partial<LoopConfig>): LoopConfig {
   };
   if (!overrides) return defaults;
   return {
-    cycleDelayMs: overrides.cycleDelayMs ?? defaults.cycleDelayMs,
+    cycleDelayMs: Math.max(overrides.cycleDelayMs ?? defaults.cycleDelayMs, MIN_SURVIVAL_ROUTINE_CYCLE_DELAY_MS),
     superegoAuditInterval: overrides.superegoAuditInterval ?? defaults.superegoAuditInterval,
     dynamicSuperegoAudit: overrides.dynamicSuperegoAudit ?? defaults.dynamicSuperegoAudit,
     maxConsecutiveIdleCycles: overrides.maxConsecutiveIdleCycles ?? defaults.maxConsecutiveIdleCycles,

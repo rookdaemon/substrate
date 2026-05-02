@@ -3,7 +3,7 @@ import { IdleHandler } from "../../src/loop/IdleHandler";
 import { InMemoryEventSink } from "../../src/loop/InMemoryEventSink";
 import { ImmediateTimer } from "../../src/loop/ImmediateTimer";
 import { ITimer } from "../../src/loop/ITimer";
-import { LoopState, defaultLoopConfig } from "../../src/loop/types";
+import { LoopState, defaultLoopConfig, MIN_SURVIVAL_ROUTINE_CYCLE_DELAY_MS } from "../../src/loop/types";
 import { InMemoryLogger } from "../../src/logging";
 import { Ego } from "../../src/agents/roles/Ego";
 import { Subconscious } from "../../src/agents/roles/Subconscious";
@@ -35,10 +35,37 @@ class ClockAdvancingTimer implements ITimer {
   wake(): void {}
 }
 
+class WakeableRecordingTimer implements ITimer {
+  readonly delays: number[] = [];
+  wakeCount = 0;
+  private pendingResolves: Array<() => void> = [];
+
+  async delay(ms: number): Promise<void> {
+    this.delays.push(ms);
+    return new Promise((resolve) => {
+      this.pendingResolves.push(resolve);
+    });
+  }
+
+  wake(): void {
+    this.wakeCount++;
+    const resolve = this.pendingResolves.shift();
+    if (resolve) resolve();
+  }
+}
+
 class MockCompactor implements IConversationCompactor {
   async compact(_currentContent: string, _oneHourAgo: string): Promise<string> {
     return "Compacted content";
   }
+}
+
+async function waitFor(assertion: () => boolean, maxTicks = 20): Promise<void> {
+  for (let i = 0; i < maxTicks; i++) {
+    if (assertion()) return;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+  throw new Error("condition was not met before timeout");
 }
 
 function createDeps() {
@@ -434,6 +461,46 @@ describe("LoopOrchestrator: rate limit priority over idle threshold", () => {
     );
     expect(sleepEvent).toBeDefined();
     expect(events.indexOf(rateLimitEvent!)).toBeLessThan(events.indexOf(sleepEvent!));
+  });
+});
+
+describe("LoopOrchestrator: survival cadence", () => {
+  it("uses the four-hour routine delay but wakes immediately for injected survival messages", async () => {
+    const deps = createDeps();
+    await setupIdleSubstrate(deps.fs);
+
+    const logger = new InMemoryLogger();
+    const eventSink = new InMemoryEventSink();
+    const timer = new WakeableRecordingTimer();
+    const config = defaultLoopConfig({
+      cycleDelayMs: 60_000,
+      maxConsecutiveIdleCycles: 99,
+    });
+    const orchestrator = new LoopOrchestrator(
+      deps.ego, deps.subconscious, deps.superego, deps.id,
+      deps.appendWriter, deps.clock, timer, eventSink,
+      config, logger
+    );
+
+    deps.launcher.enqueueSuccess(JSON.stringify({ action: "idle", agoraReplies: [] }));
+
+    orchestrator.start();
+    const loopPromise = orchestrator.runLoop();
+
+    await waitFor(() => timer.delays.length === 1);
+    expect(timer.delays[0]).toBe(MIN_SURVIVAL_ROUTINE_CYCLE_DELAY_MS);
+
+    const injectedIntoActiveSession = orchestrator.injectMessage("[SURVIVAL TRIGGER] Stefan direct message");
+
+    expect(injectedIntoActiveSession).toBe(false);
+    expect(timer.wakeCount).toBe(1);
+
+    await waitFor(() => deps.launcher.getLaunches().length === 1);
+    expect(orchestrator.getPendingMessageCount()).toBe(0);
+
+    orchestrator.stop();
+    timer.wake();
+    await loopPromise;
   });
 });
 
