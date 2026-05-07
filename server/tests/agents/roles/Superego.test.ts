@@ -190,6 +190,63 @@ describe("Superego agent", () => {
       expect(logger.getWarnEntries()).toHaveLength(0);
     });
 
+    it("pre-rejects oversized full-file proposals before launching evaluator", async () => {
+      const evaluations = await superego.evaluateProposals([
+        { target: "MEMORY", content: "x".repeat(20_001) },
+      ]);
+
+      expect(evaluations).toHaveLength(1);
+      expect(evaluations[0].approved).toBe(false);
+      expect(evaluations[0].reason).toContain("PROPOSAL_TOO_LARGE");
+      expect(evaluations[0].reason).toContain("compact targeted proposals");
+      expect(launcher.getLaunches()).toHaveLength(0);
+    });
+
+    it("keeps an oversized proposal rejection aligned with other proposal evaluations", async () => {
+      launcher.enqueueSuccess(JSON.stringify({
+        proposalEvaluations: [{ approved: true, reason: "Small proposal OK" }],
+      }));
+
+      const evaluations = await superego.evaluateProposals([
+        { target: "MEMORY", content: "x".repeat(20_001) },
+        { target: "SKILLS", content: "Add a compact note" },
+      ]);
+
+      expect(evaluations).toHaveLength(2);
+      expect(evaluations[0].approved).toBe(false);
+      expect(evaluations[0].reason).toContain("PROPOSAL_TOO_LARGE");
+      expect(evaluations[1].approved).toBe(true);
+      expect(launcher.getLaunches()).toHaveLength(1);
+      expect(launcher.getLaunches()[0].request.message).toContain("Add a compact note");
+      expect(launcher.getLaunches()[0].request.message).not.toContain("x".repeat(20_001));
+    });
+
+    it("trims oversized proposal batches before launching evaluator", async () => {
+      launcher.enqueueSuccess(JSON.stringify({
+        proposalEvaluations: [
+          { approved: true, reason: "OK 1" },
+          { approved: true, reason: "OK 2" },
+          { approved: true, reason: "OK 3" },
+          { approved: true, reason: "OK 4" },
+        ],
+      }));
+
+      const content = "x".repeat(19_000);
+      const evaluations = await superego.evaluateProposals([
+        { target: "MEMORY", content },
+        { target: "MEMORY", content },
+        { target: "MEMORY", content },
+        { target: "MEMORY", content },
+        { target: "MEMORY", content },
+      ]);
+
+      expect(evaluations).toHaveLength(5);
+      expect(evaluations.filter((evaluation) => evaluation.approved)).toHaveLength(4);
+      expect(evaluations[4].approved).toBe(false);
+      expect(evaluations[4].reason).toContain("PROPOSAL_BATCH_TOO_LARGE");
+      expect(launcher.getLaunches()).toHaveLength(1);
+    });
+
     describe("scope bypass pre-filter", () => {
       it("pre-rejects SECURITY proposal claiming internal reasoning (SCOPE_BYPASS_ATTEMPT)", async () => {
         const evaluations = await superego.evaluateProposals([

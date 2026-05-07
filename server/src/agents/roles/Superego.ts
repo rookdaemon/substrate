@@ -55,6 +55,22 @@ function detectsScopeBypass(proposal: Proposal): boolean {
   return SCOPE_BYPASS_PATTERNS.some((pattern) => pattern.test(text));
 }
 
+const MAX_PROPOSAL_CONTENT_CHARS = 20_000;
+const MAX_PROPOSAL_BATCH_CHARS = 80_000;
+
+function proposalSizeRejection(proposal: Proposal): ProposalEvaluation | null {
+  if (proposal.content.length > MAX_PROPOSAL_CONTENT_CHARS) {
+    return {
+      approved: false,
+      reason:
+        `PROPOSAL_TOO_LARGE: ${proposal.target} proposal content is ${proposal.content.length} characters, ` +
+        `above the ${MAX_PROPOSAL_CONTENT_CHARS} character evaluator limit. ` +
+        `Submit compact targeted proposals or split the change into smaller governed patches.`,
+    };
+  }
+  return null;
+}
+
 const NOOP_LOGGER: ILogger = {
   debug: () => {},
   warn: () => {},
@@ -143,10 +159,22 @@ export class Superego {
   }
 
   async evaluateProposals(proposals: Proposal[], onLogEntry?: (entry: ProcessLogEntry) => void): Promise<ProposalEvaluation[]> {
-    // Pre-filter: SCOPE_BYPASS_ATTEMPT — governance scope is determined by
-    // domain/target, not by whether work produces a file modification.
+    // Pre-filter: PROPOSAL_TOO_LARGE — oversized full-file replacements can
+    // exceed provider argv/context limits before Superego can evaluate them.
+    // Reject locally with an actionable reason so governance stays alive and
+    // future cycles submit compact targeted proposals instead of hitting E2BIG.
     const preRejected = new Map<number, ProposalEvaluation>();
     for (let i = 0; i < proposals.length; i++) {
+      const sizeRejection = proposalSizeRejection(proposals[i]);
+      if (sizeRejection) {
+        preRejected.set(i, sizeRejection);
+      }
+    }
+
+    // Pre-filter: SCOPE_BYPASS_ATTEMPT — governance scope is determined by
+    // domain/target, not by whether work produces a file modification.
+    for (let i = 0; i < proposals.length; i++) {
+      if (preRejected.has(i)) continue;
       const proposal = proposals[i];
       const isGoverned = GOVERNED_DOMAINS.has(proposal.target.toUpperCase());
       if (isGoverned && detectsScopeBypass(proposal)) {
@@ -182,7 +210,20 @@ export class Superego {
       return proposals.map((_, i) => preRejected.get(i)!);
     }
 
-    const pendingProposals = pendingIndices.map((i) => proposals[i]);
+    let pendingProposals = pendingIndices.map((i) => proposals[i]);
+    let pendingPayloadChars = JSON.stringify(pendingProposals).length;
+    while (pendingProposals.length > 1 && pendingPayloadChars > MAX_PROPOSAL_BATCH_CHARS) {
+      const rejectedIndex = pendingIndices.pop()!;
+      preRejected.set(rejectedIndex, {
+        approved: false,
+        reason:
+          `PROPOSAL_BATCH_TOO_LARGE: deferred evaluation payload would be ${pendingPayloadChars} characters, ` +
+          `above the ${MAX_PROPOSAL_BATCH_CHARS} character evaluator limit. ` +
+          `Submit compact targeted proposals or split the batch into smaller governed patches.`,
+      });
+      pendingProposals = pendingIndices.map((i) => proposals[i]);
+      pendingPayloadChars = JSON.stringify(pendingProposals).length;
+    }
 
     try {
       const systemPrompt = this.promptBuilder.buildSystemPrompt(AgentRole.SUPEREGO);
