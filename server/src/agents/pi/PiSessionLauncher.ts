@@ -54,7 +54,8 @@ export class PiSessionLauncher implements ISessionLauncher {
   ): Promise<ClaudeSessionResult> {
     const startMs = this.clock.now().getTime();
     const modelToUse = options?.model ?? this.config.model;
-    const args = this.buildArgs(request, options, modelToUse);
+    const stdin = this.buildPrompt(request);
+    const args = this.buildArgs(options, modelToUse);
 
     this.logger?.debug(
       `pi-launch: mode=${this.mode} provider=${this.config.provider ?? "default"} model=${modelToUse ?? "default"} cwd=${options?.cwd ?? process.cwd()}`,
@@ -65,6 +66,7 @@ export class PiSessionLauncher implements ISessionLauncher {
         cwd: options?.cwd,
         timeoutMs: options?.timeoutMs,
         idleTimeoutMs: options?.idleTimeoutMs,
+        stdin,
         onStdout: options?.onLogEntry && this.mode === "json"
           ? this.createJsonLogAdapter(options.onLogEntry)
           : undefined,
@@ -103,6 +105,12 @@ export class PiSessionLauncher implements ISessionLauncher {
     }
   }
 
+  private buildPrompt(request: ClaudeSessionRequest): string {
+    return request.systemPrompt
+      ? `SYSTEM INSTRUCTIONS:\n${request.systemPrompt}\n\n---\n\n${request.message}`
+      : request.message;
+  }
+
   private buildEnvironment(): Record<string, string | undefined> | undefined {
     const env = {
       ...this.config.providerEnv,
@@ -112,7 +120,6 @@ export class PiSessionLauncher implements ISessionLauncher {
   }
 
   private buildArgs(
-    request: ClaudeSessionRequest,
     options: LaunchOptions | undefined,
     model: string | undefined,
   ): string[] {
@@ -137,15 +144,12 @@ export class PiSessionLauncher implements ISessionLauncher {
     } else if (options?.persistSession === false) {
       args.push("--no-session");
     }
-    if (request.systemPrompt) {
-      args.push("--append-system-prompt", request.systemPrompt);
-    }
-    args.push(request.message);
     return args;
   }
 
   private createJsonLogAdapter(onLogEntry: (entry: ProcessLogEntry) => void): (chunk: string) => void {
     let buffer = "";
+    let lastTextEntry = "";
     return (chunk) => {
       buffer += chunk;
       const lines = buffer.split(/\r?\n/);
@@ -154,6 +158,10 @@ export class PiSessionLauncher implements ISessionLauncher {
         const event = this.parseJsonLine(line);
         if (!event) continue;
         for (const entry of this.logEntriesFromEvent(event)) {
+          if (entry.type === "text") {
+            if (entry.content === lastTextEntry) continue;
+            lastTextEntry = entry.content;
+          }
           onLogEntry(entry);
         }
       }
@@ -194,14 +202,10 @@ export class PiSessionLauncher implements ISessionLauncher {
   private logEntriesFromEvent(event: Record<string, unknown>): ProcessLogEntry[] {
     const type = event.type;
     if (type === "message_update") {
-      const delta = this.recordField(event, "assistantMessageEvent");
-      const deltaType = typeof delta?.type === "string" ? delta.type : "";
-      const text = this.stringField(delta, "delta") ?? this.stringField(delta, "content");
-      if (!text) return [];
-      if (deltaType === "thinking_delta") return [{ type: "thinking", content: text }];
-      if (deltaType === "toolcall_delta") return [{ type: "tool_use", content: text }];
-      return [{ type: "text", content: text }];
+      return [];
     }
+    const finalText = this.finalTextFromEvent(event);
+    if (finalText) return [{ type: "text", content: finalText }];
     if (type === "tool_execution_start") {
       return [{
         type: "tool_use",

@@ -29,10 +29,11 @@ describe("PiSessionLauncher", () => {
     const call = runner.getCalls()[0];
     expect(call.command).toBe("pi");
     expect(call.args.slice(0, 2)).toEqual(["--mode", "json"]);
-    expect(call.args.at(-1)).toBe("Do work");
+    expect(call.args).not.toContain("Do work");
+    expect(call.options?.stdin).toBe("Do work");
   });
 
-  it("passes provider, model, session directory, cwd, and system prompt as Pi shell args", async () => {
+  it("passes provider, model, session directory, cwd, and full prompt to Pi shell", async () => {
     runner.enqueue({ stdout: "", stderr: "", exitCode: 0 });
     const launcher = new PiSessionLauncher(runner, clock, {
       provider: "openai",
@@ -64,8 +65,10 @@ describe("PiSessionLauncher", () => {
     expect(call.args).toContain("--session-dir");
     expect(call.args[call.args.indexOf("--session-dir") + 1]).toBe("/substrate/pi-sessions");
     expect(call.args).toContain("--continue");
-    expect(call.args).toContain("--append-system-prompt");
-    expect(call.args[call.args.indexOf("--append-system-prompt") + 1]).toBe("System rules");
+    expect(call.args).not.toContain("--append-system-prompt");
+    expect(call.args).not.toContain("System rules");
+    expect(call.args).not.toContain("Task");
+    expect(call.options?.stdin).toBe("SYSTEM INSTRUCTIONS:\nSystem rules\n\n---\n\nTask");
   });
 
   it("supports print mode and ephemeral sessions", async () => {
@@ -76,6 +79,8 @@ describe("PiSessionLauncher", () => {
 
     expect(runner.getCalls()[0].args.slice(0, 1)).toEqual(["-p"]);
     expect(runner.getCalls()[0].args).toContain("--no-session");
+    expect(runner.getCalls()[0].args).not.toContain("Task");
+    expect(runner.getCalls()[0].options?.stdin).toBe("Task");
     expect(result.rawOutput).toBe("plain response");
   });
 
@@ -102,6 +107,8 @@ describe("PiSessionLauncher", () => {
     runner.enqueue({
       stdout: [
         JSON.stringify({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "hello" } }),
+        JSON.stringify({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: " world" } }),
+        JSON.stringify({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "hello world" }] } }),
         JSON.stringify({ type: "tool_execution_start", toolName: "bash", args: { command: "npm test" } }),
         JSON.stringify({ type: "tool_execution_end", result: { content: [{ type: "text", text: "ok" }] }, isError: false }),
       ].join("\n") + "\n",
@@ -113,7 +120,7 @@ describe("PiSessionLauncher", () => {
     await launcher.launch(makeRequest(), { onLogEntry: (entry) => entries.push(entry) });
 
     expect(entries).toEqual([
-      { type: "text", content: "hello" },
+      { type: "text", content: "hello world" },
       { type: "tool_use", content: JSON.stringify({ tool: "bash", args: { command: "npm test" } }) },
       { type: "tool_result", content: "ok" },
     ]);
