@@ -12,6 +12,8 @@ export interface SurvivalModelPolicyConfig {
   defaultModel?: string;
   lowCostModel?: string;
   nonFrontierModel?: string;
+  configuredFrontierModels?: string[];
+  allowConfiguredFrontierModels?: boolean;
 }
 
 const FRONTIER_MODELS = new Set([
@@ -82,6 +84,14 @@ export class SurvivalModelPolicyLauncher implements ISessionLauncher {
       const replacement = this.config.lowCostModel ?? LOW_COST_BY_PROVIDER[this.config.provider];
       this.logger?.warn(`survival-model-policy: replaced incompatible ${this.config.provider} model ${requestedModel} with ${replacement ?? "provider default"}`);
       return replacement;
+    }
+
+    if (
+      this.config.allowConfiguredFrontierModels === true &&
+      isFrontierModel(requestedModel) &&
+      this.config.configuredFrontierModels?.includes(requestedModel)
+    ) {
+      return requestedModel;
     }
 
     if (role === "SUBCONSCIOUS" && isFrontierModel(requestedModel) && !allowFrontierModel) {

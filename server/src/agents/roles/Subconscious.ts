@@ -133,6 +133,17 @@ export function validateTaskResult(parsed: Record<string, unknown>): string[] {
   return errors;
 }
 
+export function normalizeTaskResult(parsed: Record<string, unknown>): Record<string, unknown> {
+  return {
+    ...parsed,
+    skillUpdates: parsed.skillUpdates ?? null,
+    memoryUpdates: parsed.memoryUpdates ?? null,
+    operatingContextEntry: parsed.operatingContextEntry ?? null,
+    proposals: parsed.proposals ?? [],
+    agoraReplies: parsed.agoraReplies ?? [],
+  };
+}
+
 /**
  * JSON Schema for OutcomeEvaluation — used by OllamaSessionLauncher for
  * grammar-constrained decoding via the `format` field.
@@ -228,7 +239,7 @@ export class Subconscious {
         };
       }
 
-      const parsed = extractJson(result.rawOutput);
+      const parsed = normalizeTaskResult(extractJson(result.rawOutput));
       const schemaErrors = validateTaskResult(parsed);
       if (schemaErrors.length > 0) {
         return {

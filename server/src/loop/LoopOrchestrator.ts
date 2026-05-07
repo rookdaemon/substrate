@@ -49,6 +49,8 @@ export const MAX_RATE_LIMIT_BACKOFF_MS = 2 * 60 * 60 * 1000;
 
 class EndorsementExternalActionBlockedError extends Error {}
 type EndorsementInterceptEvaluation = Awaited<ReturnType<EndorsementInterceptor["evaluateOutput"]>>;
+const WATCHDOG_MESSAGE_PREFIX = "[Watchdog]";
+const ROUTINE_INS_MESSAGE_PREFIX = "[INS:ROUTINE]";
 
 export class LoopOrchestrator implements IMessageInjector {
   private state: LoopState = LoopState.STOPPED;
@@ -495,14 +497,14 @@ export class LoopOrchestrator implements IMessageInjector {
     }
 
     // INS pre-cycle hook — deterministic rule checks
-    const pendingBeforeINS = this.pendingMessages.length;
+    const hadExternalPendingBeforeINS = this.pendingMessages.some((message) => !this.isInternalMaintenanceMessage(message));
     await this.runINSHook();
 
     // R2 pre-dispatch ceiling check (deterministic, no LLM)
     const r2Halt = this.checkR2Ceiling();
     if (r2Halt) return r2Halt;
 
-    const { dispatch: rawDispatch, blockedTaskIds, timeBlockedTasks, snapshot } = await this.ego.dispatchNext();
+    const { dispatch: rawDispatch, blockedTaskIds, timeBlockedTasks, taskCount, snapshot } = await this.ego.dispatchNext();
     const nextTimeBlockedUntil = this.nextTimeBlockedUntil(timeBlockedTasks);
 
     for (const { taskId, blockedUntil } of timeBlockedTasks) {
@@ -537,29 +539,35 @@ export class LoopOrchestrator implements IMessageInjector {
         this.logger.debug(`cycle ${this.cycleNumber}: task "${taskId}" skipped — status: skipped, reason: blocked`);
       }
 
-      // Cycle mode: process pending messages (e.g. Agora) when idle so they get a response
+      // Cycle mode: process pending messages (e.g. Agora) when idle so they get a response.
+      // Routine watchdog/INS signals are diagnostics, not conversational work.
       if (this.pendingMessages.length > 0) {
         const toProcess = [...this.pendingMessages];
         this.pendingMessages = [];
-        this.logger.debug(`cycle ${this.cycleNumber}: processing ${toProcess.length} pending message(s) (no task)`);
-        const combined = toProcess.join("\n\n---\n\n");
-        try {
-          const egoResponse = await this.ego.respondToMessage(combined, this.createLogCallback("EGO"));
-          llmSessionInvokedThisCycle = true;
-          if (egoResponse) {
-            await this.checkEndorsement(egoResponse);
-            const agoraReplies = this.extractAgoraReplies(egoResponse);
-            if (agoraReplies.length > 0 && this.agoraService) {
-              this.deferredWork.enqueue(this.sendAgoraReplies(agoraReplies), "agora_replies");
+        const messagesForEgo = toProcess.filter((message) => !this.isInternalMaintenanceMessage(message));
+        if (messagesForEgo.length === 0) {
+          this.logger.debug(`cycle ${this.cycleNumber}: skipping ${toProcess.length} routine internal message(s) (no task)`);
+        } else {
+          this.logger.debug(`cycle ${this.cycleNumber}: processing ${messagesForEgo.length} pending message(s) (no task)`);
+          const combined = messagesForEgo.join("\n\n---\n\n");
+          try {
+            const egoResponse = await this.ego.respondToMessage(combined, this.createLogCallback("EGO"));
+            llmSessionInvokedThisCycle = true;
+            if (egoResponse) {
+              await this.checkEndorsement(egoResponse);
+              const agoraReplies = this.extractAgoraReplies(egoResponse);
+              if (agoraReplies.length > 0 && this.agoraService) {
+                this.deferredWork.enqueue(this.sendAgoraReplies(agoraReplies), "agora_replies");
+              }
             }
+          } catch (err) {
+            if (err instanceof RateLimitError) throw err;
+            this.logger.debug(`cycle ${this.cycleNumber}: pending message response failed — ${err instanceof Error ? err.message : String(err)}`);
           }
-        } catch (err) {
-          if (err instanceof RateLimitError) throw err;
-          this.logger.debug(`cycle ${this.cycleNumber}: pending message response failed — ${err instanceof Error ? err.message : String(err)}`);
         }
-        // Only reset idle counter if there were external messages (not just INS maintenance).
-        // INS-only messages are system noise that shouldn't prevent the idle handler from firing.
-        if (pendingBeforeINS > 0) {
+        // Only reset idle counter if there were external messages. Internal
+        // maintenance should not prevent empty-plan recovery from firing.
+        if (hadExternalPendingBeforeINS) {
           this.metrics.consecutiveIdleCycles = 0;
         }
       }
@@ -573,6 +581,7 @@ export class LoopOrchestrator implements IMessageInjector {
         summary: blockedUntilForIdle
           ? `No actionable tasks until ${blockedUntilForIdle.toISOString()}`
           : "No tasks available — idle",
+        planEmpty: taskCount === 0,
         ...(blockedUntilForIdle ? { blocked: true, blockedUntil: blockedUntilForIdle.toISOString() } : {}),
       };
 
@@ -847,9 +856,14 @@ export class LoopOrchestrator implements IMessageInjector {
         const currentTaskId = cycleResult.action === "dispatch" ? cycleResult.taskId : undefined;
         await this.applyRateLimitBackoff(resetDate, currentTaskId);
       } else {
-        if (this.metrics.consecutiveIdleCycles >= this.config.maxConsecutiveIdleCycles) {
+        const shouldRecoverEmptyPlan = cycleResult.action === "idle" && !cycleResult.blocked && cycleResult.planEmpty === true;
+        if (shouldRecoverEmptyPlan || this.metrics.consecutiveIdleCycles >= this.config.maxConsecutiveIdleCycles) {
           if (this.idleHandler) {
-            this.logger.debug(`runLoop: idle threshold reached (${this.metrics.consecutiveIdleCycles}), invoking IdleHandler`);
+            this.logger.debug(
+              shouldRecoverEmptyPlan
+                ? "runLoop: no actionable tasks — invoking IdleHandler immediately"
+                : `runLoop: idle threshold reached (${this.metrics.consecutiveIdleCycles}), invoking IdleHandler`,
+            );
             const result = await this.idleHandler.handleIdle((role) => this.createLogCallback(role), this.cycleNumber);
             this.logger.debug(`runLoop: IdleHandler result: ${result.action} (goalCount: ${result.goalCount ?? 0})`);
             this.eventSink.emit({
@@ -862,9 +876,11 @@ export class LoopOrchestrator implements IMessageInjector {
               continue;
             }
           }
-          this.logger.debug("runLoop: idle threshold exceeded with no plan created — sleeping");
-          this.enterSleep();
-          break;
+          if (this.metrics.consecutiveIdleCycles >= this.config.maxConsecutiveIdleCycles) {
+            this.logger.debug("runLoop: idle threshold exceeded with no plan created — sleeping");
+            this.enterSleep();
+            break;
+          }
         }
 
         if (this.state !== LoopState.RUNNING) {
@@ -877,7 +893,14 @@ export class LoopOrchestrator implements IMessageInjector {
           this.logger.debug("runLoop: pending messages detected, skipping cycle delay");
         } else {
           this.logger.debug(`runLoop: delaying ${this.config.cycleDelayMs}ms before next cycle`);
-          await this.timer.delay(this.config.cycleDelayMs);
+          this.watchdog?.pause("routine cycle delay");
+          try {
+            await this.timer.delay(this.config.cycleDelayMs);
+          } finally {
+            if (this.state === LoopState.RUNNING) {
+              this.watchdog?.resume("routine cycle delay ended");
+            }
+          }
         }
       }
       } catch (err) {
@@ -1457,7 +1480,8 @@ export class LoopOrchestrator implements IMessageInjector {
   }
 
   private formatINSMessage(result: INSResult): string {
-    const lines = [`[INS] Pre-cycle check flagged ${result.actions.length} issue(s):`];
+    const prefix = this.isRoutineINSResult(result) ? ROUTINE_INS_MESSAGE_PREFIX : "[INS:ACTION_REQUIRED]";
+    const lines = [`${prefix} Pre-cycle check flagged ${result.actions.length} issue(s):`];
     for (const action of result.actions) {
       if (action.type === "compaction" && action.riskTier) {
         const authNote =
@@ -1480,6 +1504,15 @@ export class LoopOrchestrator implements IMessageInjector {
       }
     }
     return lines.join("\n");
+  }
+
+  private isRoutineINSResult(result: INSResult): boolean {
+    return result.actions.length > 0 && result.actions.every((action) => action.type === "compaction");
+  }
+
+  private isInternalMaintenanceMessage(message: string): boolean {
+    const trimmed = message.trimStart();
+    return trimmed.startsWith(WATCHDOG_MESSAGE_PREFIX) || trimmed.startsWith(ROUTINE_INS_MESSAGE_PREFIX);
   }
 
   private async sendAgoraReplies(replies: AgoraReply[]): Promise<void> {

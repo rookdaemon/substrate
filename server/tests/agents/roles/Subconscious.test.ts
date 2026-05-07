@@ -151,6 +151,25 @@ describe("Subconscious agent", () => {
       expect(result.summary).toMatch(/schema validation failed/i);
     });
 
+    it("defaults omitted optional JSON fields before validation", async () => {
+      launcher.enqueueSuccess(JSON.stringify({
+        result: "success",
+        summary: "Done",
+        progressEntry: "Finished",
+      }));
+
+      const result = await subconscious.execute({
+        taskId: "task-1",
+        description: "Implement task A",
+      });
+
+      expect(result.result).toBe("success");
+      expect(result.skillUpdates).toBeNull();
+      expect(result.memoryUpdates).toBeNull();
+      expect(result.proposals).toEqual([]);
+      expect(result.agoraReplies).toEqual([]);
+    });
+
     it("uses snapshot content for PLAN instead of re-reading from disk", async () => {
       launcher.enqueueSuccess(JSON.stringify({
         result: "success", summary: "Done", progressEntry: "", skillUpdates: null, memoryUpdates: null, proposals: [], agoraReplies: [],

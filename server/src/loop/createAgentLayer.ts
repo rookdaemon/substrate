@@ -129,7 +129,12 @@ export async function createAgentLayer(
     defaultModel?: string,
   ): ISessionLauncher => new SurvivalModelPolicyLauncher(
     new MeteredSessionLauncher(inner, metricsService, clock, budgetGuard, provider, defaultModel),
-    { provider, defaultModel },
+    {
+      provider,
+      defaultModel,
+      configuredFrontierModels: [activeModel, activeStrategicModel, activeTacticalModel].filter((model): model is string => typeof model === "string"),
+      allowConfiguredFrontierModels: true,
+    },
     logger,
   );
 

@@ -71,6 +71,7 @@ export interface DispatchNextResult {
   dispatch: DispatchResult | null;
   blockedTaskIds: string[];
   timeBlockedTasks: Array<{ taskId: string; blockedUntil: Date }>;
+  taskCount: number;
   /** Per-cycle snapshot of substrate files read by Ego. Passed to Subconscious to avoid duplicate disk reads. */
   snapshot: SubstrateSnapshot;
 }
@@ -177,6 +178,7 @@ export class Ego {
     const systemPrompt = baseSystemPrompt + "\n\n=== MESSAGE MODE ===\n" +
       "A user or peer has sent you a message. Read CONVERSATION.md for context and respond naturally.\n" +
       "Respond with ONLY your plain text reply — no JSON, no markdown code blocks, no wrapper.\n" +
+      "Do not emit action/update_plan/dispatch JSON in message mode; it will not be executed here.\n" +
       "Keep responses concise and conversational.\n\n" +
       `If the message is an Agora message, use the dedicated Agora MCP tool (${"`"}mcp__tinybus__send_agora_message${"`"} in Claude Code, or ${"`"}send_agora_message${"`"} in Gemini CLI).\n` +
       "Read the FROM/TO metadata in CONVERSATION.md. The TO list is compacted from full IDs and indicates recipients of the original message.\n" +
@@ -229,7 +231,7 @@ export class Ego {
     }));
     const next = await PlanParser.findNextActionable(tasks, this.triggerEvaluator, now);
 
-    if (!next) return { dispatch: null, blockedTaskIds, timeBlockedTasks, snapshot };
+    if (!next) return { dispatch: null, blockedTaskIds, timeBlockedTasks, taskCount: tasks.length, snapshot };
 
     return {
       dispatch: {
@@ -240,6 +242,7 @@ export class Ego {
       },
       blockedTaskIds,
       timeBlockedTasks,
+      taskCount: tasks.length,
       snapshot,
     };
   }

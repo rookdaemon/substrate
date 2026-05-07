@@ -2,7 +2,7 @@
 This repo is an AI agent orchestration shell (roles, file-based substrate memory).
 
 # Way of working
-* Always start coding tasks with a git pull.
+* Check git status before coding. Pull only when it is safe for the current worktree and will not disturb live operations.
 * Smallest valuable increment: decompose into the smallest possible valuable increments.
 * Simplicity and legibility. If the right solution requires refactoring first, do that.
 * TDD: red/green/refactor.
@@ -29,7 +29,7 @@ Facts about how this system works — shared across all agents. Read freely; do 
 ```
 substrate/
   server/
-    src/         — TypeScript source (do not edit; proposals via Rook)
+    src/         — TypeScript source (edit in an isolated worktree for nontrivial or risky changes)
     dist/        — Compiled JavaScript (what actually runs; rebuild after source changes)
   specs/         — Architecture specs and baselines
 ```
@@ -40,8 +40,8 @@ Service naming pattern: `<agent>-substrate.service` (e.g. `nova-substrate.servic
 ## 2. Code Change Protocol
 
 - **Reads:** Always permitted. Read freely for orientation and diagnosis.
-- **Writes:** Via proposal only. Spec the change → DM to Rook → Rook files GitHub issue → Copilot implements → merged → agents rebuilt.
-- **No direct source edits** — substrate is shared infrastructure.
+- **Writes:** Implement locally with the configured tool runner. Use a separate git worktree for nontrivial or risky changes, validate with build/lint/test, then merge intentionally into the live checkout.
+- **No Copilot/SWE-agent delegation** unless Stefan explicitly reinstates it.
 
 ## 3. HEARTBEAT Schedule Format
 

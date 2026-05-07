@@ -73,9 +73,9 @@ describe("IdleHandler", () => {
     expect(result.action).toBe("not_idle");
   });
 
-  it("returns no_goals when Id generates no drives", async () => {
+  it("returns no_goals when Id generates no drives and completed tasks exist", async () => {
     // Plan is complete — idle
-    // Id.generateDrives returns empty because launcher has no enqueued response
+    // Id.generateDrives returns empty because launcher has no enqueued response.
     const result = await handler.handleIdle();
 
     expect(result.action).toBe("no_goals");
@@ -109,7 +109,7 @@ describe("IdleHandler", () => {
     expect(plan).not.toContain("Write docs");
   });
 
-  it("returns all_rejected when superego rejects all goals", async () => {
+  it("returns all_rejected when superego rejects all goals and completed tasks exist", async () => {
     deps.launcher.enqueueSuccess(JSON.stringify({
       goalCandidates: [
         { title: "Bad idea", description: "Do something wrong", priority: "high" },
@@ -363,8 +363,10 @@ describe("IdleHandler", () => {
 
     const result = await handler.handleIdle();
 
-    // Empty plan = idle, but no drives generated
-    expect(result.action).toBe("no_goals");
+    expect(result.action).toBe("plan_created");
+    const plan = await deps.fs.readFile("/substrate/PLAN.md");
+    expect(plan).toContain("[autonomy-recovery 2025-06-15]");
+    expect(plan).toContain("Rebuild the executable task queue");
   });
 
   describe("confidence scoring", () => {

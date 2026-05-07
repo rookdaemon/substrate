@@ -109,6 +109,22 @@ async function setupIdleSubstrate(fs: InMemoryFileSystem) {
   await fs.writeFile("/substrate/CONVERSATION.md", "# Conversation\n\n");
 }
 
+async function setupEmptyPlanSubstrate(fs: InMemoryFileSystem) {
+  await fs.mkdir("/substrate", { recursive: true });
+  await fs.writeFile("/substrate/PLAN.md", "# Plan\n\n## Current Goal\nRecover autonomy\n\n");
+  await fs.writeFile("/substrate/MEMORY.md", "# Memory\n\nSome memories");
+  await fs.writeFile("/substrate/HABITS.md", "# Habits\n\nSome habits");
+  await fs.writeFile("/substrate/SKILLS.md", "# Skills\n\nSome skills");
+  await fs.writeFile("/substrate/VALUES.md", "# Values\n\nBe good");
+  await fs.writeFile("/substrate/ID.md", "# Id\n\nCore identity");
+  await fs.writeFile("/substrate/SECURITY.md", "# Security\n\nStay safe");
+  await fs.writeFile("/substrate/CHARTER.md", "# Charter\n\nOur mission");
+  await fs.writeFile("/substrate/SUPEREGO.md", "# Superego\n\nRules here");
+  await fs.writeFile("/substrate/CLAUDE.md", "# Claude\n\nConfig here");
+  await fs.writeFile("/substrate/PROGRESS.md", "# Progress\n\n");
+  await fs.writeFile("/substrate/CONVERSATION.md", "# Conversation\n\n");
+}
+
 async function setupActiveTaskSubstrate(fs: InMemoryFileSystem) {
   await fs.mkdir("/substrate", { recursive: true });
   await fs.writeFile("/substrate/PLAN.md", "# Plan\n\n## Current Goal\nTest\n\n## Tasks\n- [ ] Task A");
@@ -283,6 +299,35 @@ describe("LoopOrchestrator: sleep/wake state machine", () => {
 });
 
 describe("LoopOrchestrator: idle sleep in runLoop", () => {
+  it("creates deterministic recovery tasks immediately when PLAN has no task list", async () => {
+    const deps = createDeps();
+    await setupEmptyPlanSubstrate(deps.fs);
+
+    const logger = new InMemoryLogger();
+    const idleHandler = new IdleHandler(deps.id, deps.superego, deps.ego, deps.clock, logger);
+    const eventSink = new InMemoryEventSink();
+    const timer = new WakeableRecordingTimer();
+    const config = defaultLoopConfig({ maxConsecutiveIdleCycles: 99, idleSleepEnabled: false });
+    const orchestrator = new LoopOrchestrator(
+      deps.ego, deps.subconscious, deps.superego, deps.id,
+      deps.appendWriter, deps.clock, timer, eventSink,
+      config, logger, idleHandler
+    );
+
+    orchestrator.start();
+    const loopPromise = orchestrator.runLoop();
+
+    await waitFor(() => timer.delays.length === 1);
+    const plan = await deps.fs.readFile("/substrate/PLAN.md");
+    expect(plan).toContain("## Tasks");
+    expect(plan).toContain("[autonomy-recovery 2025-06-15]");
+    expect(plan).toContain("Rebuild the executable task queue");
+
+    orchestrator.stop();
+    timer.wake();
+    await loopPromise;
+  });
+
   it("enters SLEEPING state (not STOPPED) when idle sleep is enabled", async () => {
     const deps = createDeps();
     await setupIdleSubstrate(deps.fs);
@@ -634,6 +679,46 @@ describe("LoopOrchestrator: watchdog sleep-awareness", () => {
 
     orchestrator.stop();
     await loopPromise.catch(() => {}); // Ignore stop errors
+    watchdog.stop();
+  });
+
+  it("watchdog pauses during routine inter-cycle delay", async () => {
+    const deps = createDeps();
+    await setupIdleSubstrate(deps.fs);
+
+    const logger = new InMemoryLogger();
+    const eventSink = new InMemoryEventSink();
+    const timer = new WakeableRecordingTimer();
+    const config = defaultLoopConfig({ maxConsecutiveIdleCycles: 99 });
+    const orchestrator = new LoopOrchestrator(
+      deps.ego, deps.subconscious, deps.superego, deps.id,
+      deps.appendWriter, deps.clock, timer, eventSink,
+      config, logger
+    );
+
+    const injected: string[] = [];
+    const watchdog = new LoopWatchdog({
+      clock: deps.clock,
+      logger,
+      injectMessage: (msg) => injected.push(msg),
+      stallThresholdMs: 1000,
+      forceRestartThresholdMs: 0,
+    });
+    orchestrator.setWatchdog(watchdog);
+    watchdog.start(999999);
+
+    orchestrator.start();
+    const loopPromise = orchestrator.runLoop();
+
+    await waitFor(() => timer.delays.length === 1);
+    deps.clock.advance(5000);
+    watchdog.check();
+
+    expect(injected).toHaveLength(0);
+
+    orchestrator.stop();
+    timer.wake();
+    await loopPromise;
     watchdog.stop();
   });
 });

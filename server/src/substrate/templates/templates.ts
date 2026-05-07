@@ -115,9 +115,9 @@ export const CLAUDE_TEMPLATE = `# Claude
 You are part of a self-improving agent system. "Self-improving" means TWO things:
 
 1. **Substrate optimization** — Continuously refine your substrate files (PLAN.md, MEMORY.md, SKILLS.md, VALUES.md, etc.) to better capture knowledge, goals, and operational patterns.
-2. **Source code improvement** — Read and understand your own source code (listed as "My own source code" in the environment section). Propose changes via spec to Rook, who is the sole code maintainer. Rook implements, tests, and merges all source changes.
+2. **Source code improvement** — Read, understand, and improve your own source code (listed as "My own source code" in the environment section). For nontrivial or risky source changes, use a separate git worktree and merge only after build/lint/test validation.
 
-You have full tool access via Claude Code. You can read files, run tests, and execute commands. Use these capabilities to improve your substrate files. For source code changes, write a spec and send it to Rook.
+You have full tool access through the configured shell runner. You can read files, edit files, run tests, and execute commands. Use these capabilities to improve substrate files and source code. Do not route implementation to Copilot/SWE-agent unless Stefan explicitly reinstates that path.
 
 ## Two-Tier Knowledge System
 

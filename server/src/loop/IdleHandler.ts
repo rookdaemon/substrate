@@ -62,8 +62,9 @@ export class IdleHandler {
     }
 
     if (candidates.length === 0) {
-      this.logger.debug("IdleHandler: no goal candidates generated");
-      return { action: "no_goals" };
+      this.logger.debug("IdleHandler: no goal candidates generated — using deterministic recovery goals");
+      const created = await this.writeDeterministicRecoveryPlan();
+      return created ? { action: "plan_created", goalCount: 3 } : { action: "no_goals" };
     }
 
     this.logger.debug(`IdleHandler: generated ${candidates.length} goal candidate(s)`);
@@ -83,8 +84,9 @@ export class IdleHandler {
     // Step 6: Filter to approved goals
     const approved = candidates.filter((_, i) => evaluations[i]?.approved);
     if (approved.length === 0) {
-      this.logger.debug("IdleHandler: all proposals rejected by Superego");
-      return { action: "all_rejected" };
+      this.logger.debug("IdleHandler: all proposals rejected by Superego — using deterministic recovery goals");
+      const created = await this.writeDeterministicRecoveryPlan();
+      return created ? { action: "plan_created", goalCount: 3 } : { action: "all_rejected" };
     }
 
     // Step 7: Read existing plan, then append approved goals to ## Tasks
@@ -106,5 +108,26 @@ export class IdleHandler {
 
     this.logger.debug("IdleHandler: plan written successfully");
     return { action: "plan_created", goalCount: approved.length };
+  }
+
+  private async writeDeterministicRecoveryPlan(): Promise<boolean> {
+    const existingPlan = await this.ego.readPlan();
+    const tasks = PlanParser.parseTasks(existingPlan);
+    if (!PlanParser.isEmpty(tasks)) {
+      return false;
+    }
+
+    const currentGoal = PlanParser.parseCurrentGoal(existingPlan) || "advance the current charter and long-term operability";
+    const dateTag = `[autonomy-recovery ${this.clock.now().toISOString().split("T")[0]}]`;
+    const newTaskLines = [
+      `- [ ] ${dateTag} Rebuild the executable task queue for the current goal: ${currentGoal}`,
+      `- [ ] ${dateTag} Execute the smallest reversible action that advances the current goal; use a separate git worktree for nontrivial source changes`,
+      `- [ ] ${dateTag} Validate the result, update PROGRESS.md and OPERATING_CONTEXT.md, and leave at least one concrete next task if work remains`,
+    ];
+
+    const mergedPlan = PlanParser.appendTasksToExistingPlan(existingPlan, newTaskLines);
+    await this.ego.writePlan(mergedPlan);
+    this.logger.debug("IdleHandler: deterministic recovery plan written successfully");
+    return true;
   }
 }

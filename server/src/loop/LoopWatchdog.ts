@@ -48,19 +48,19 @@ export class LoopWatchdog {
     this.reminderSentAt = null;
   }
 
-  /** Pause watchdog checks — call when the loop enters SLEEPING state. */
-  pause(): void {
+  /** Pause watchdog checks while the loop is intentionally inactive. */
+  pause(reason = "loop is sleeping"): void {
     this.paused = true;
-    this.logger.debug("watchdog: paused (loop is sleeping)");
+    this.logger.debug(`watchdog: paused (${reason})`);
   }
 
-  /** Resume watchdog checks — call when the loop wakes. Resets the activity timer. */
-  resume(): void {
+  /** Resume watchdog checks after intentional inactivity. Resets the activity timer. */
+  resume(reason = "loop woke"): void {
     this.paused = false;
     this.lastActivityTime = this.clock.now();
     this.reminderSent = false;
     this.reminderSentAt = null;
-    this.logger.debug("watchdog: resumed (loop woke)");
+    this.logger.debug(`watchdog: resumed (${reason})`);
   }
 
   check(): void {

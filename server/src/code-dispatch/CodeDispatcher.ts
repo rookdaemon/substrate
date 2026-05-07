@@ -105,15 +105,15 @@ export class CodeDispatcher {
 
     const testsPassed = await this.runTests(task.testCommand, cwd);
 
-    // 7. Revert changes if tests fail
+    // 7. Do not auto-revert on test failure. This dispatcher may run in a shared
+    // or live checkout; destructive cleanup could erase unrelated user work.
     if (!testsPassed) {
-      await this.revertChanges(cwd);
       return {
         success: false,
         output: backendResult.output,
         filesChanged,
         testsPassed: false,
-        error: "Tests failed — changes reverted",
+        error: "Tests failed — changes preserved for review",
         backendUsed: backendType,
         durationMs: this.clock.now().getTime() - startMs,
       };
@@ -137,13 +137,10 @@ export class CodeDispatcher {
       return this.defaultBackend;
     }
 
-    // Heuristic — use usage data to tune thresholds over time:
-    // Many files or no files listed → prefer copilot (agentic, discovers scope)
-    // Single file listed           → prefer claude (fast, surgical)
-    // No test command              → analysis task, prefer claude
-    if (!task.testCommand) return "claude";
-    if (task.files.length === 1) return "claude";
-    return "copilot";
+    // Copilot/SWE-agent is historical only. Auto routing now stays on Codex,
+    // which can discover scope while remaining under the local tool/worktree
+    // discipline expected by the current substrate.
+    return "codex";
   }
 
   private async getChangedFiles(cwd: string): Promise<string[]> {
@@ -169,12 +166,4 @@ export class CodeDispatcher {
     }
   }
 
-  private async revertChanges(cwd: string): Promise<void> {
-    try {
-      await this.processRunner.run("git", ["checkout", "--", "."], { cwd });
-    } catch { /* best-effort */ }
-    try {
-      await this.processRunner.run("git", ["clean", "-fd"], { cwd });
-    } catch { /* best-effort */ }
-  }
 }
