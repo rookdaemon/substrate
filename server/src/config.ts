@@ -313,7 +313,7 @@ export interface AppConfig {
   ollamaBaseUrl?: string;
   /** Model name for Ollama when sessionLauncher is "ollama" (default: "qwen3:14b"). Separate from `model` which is the Claude/Gemini model name. */
   ollamaModel?: string;
-  /** Default code backend to use for code dispatch tasks (default: "claude"). */
+  /** Default code backend to use for code dispatch tasks (default: "auto", which routes to Codex). */
   defaultCodeBackend?: "claude" | "copilot" | "codex" | "gemini" | "auto";
   /** Configuration for Ollama offload — offloads maintenance tasks (compaction) to local Ollama.
    *  Uses ollamaBaseUrl/ollamaModel for endpoint config. Works regardless of sessionLauncher setting. */

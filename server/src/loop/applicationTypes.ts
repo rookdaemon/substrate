@@ -123,7 +123,7 @@ export interface ApplicationConfig {
    *  Key is read from this file at startup (never from env vars). Never logged.
    *  When set, all Ollama requests include `Authorization: Bearer <key>`. */
   ollamaKeyPath?: string;
-  /** Default code backend to use for code dispatch tasks (default: "claude"). */
+  /** Default code backend to use for code dispatch tasks (default: "auto", which routes to Codex). */
   defaultCodeBackend?: "claude" | "copilot" | "codex" | "gemini" | "auto";
   /** Configuration for Ollama offload — offloads maintenance tasks (compaction) to local Ollama.
    *  Uses ollamaBaseUrl/ollamaModel for endpoint config. Works regardless of sessionLauncher setting. */

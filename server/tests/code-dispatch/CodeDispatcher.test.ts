@@ -188,6 +188,45 @@ describe("CodeDispatcher", () => {
       expect(codexBackend.calls).toHaveLength(1);
     });
 
+    it("uses configured codex default for auto dispatch", async () => {
+      codexBackend.enqueue(successBackendResult());
+      processRunner.enqueue({ stdout: "", stderr: "", exitCode: 0 }); // git diff
+      const codexDefaultDispatcher = new CodeDispatcher(
+        fs,
+        processRunner,
+        SUBSTRATE_PATH,
+        new Map<BackendType, ICodeBackend>([["codex", codexBackend]]),
+        clock,
+        "codex",
+      );
+
+      const result = await codexDefaultDispatcher.dispatch(makeTask({ backend: "auto" }));
+
+      expect(result.success).toBe(true);
+      expect(result.backendUsed).toBe("codex");
+      expect(codexBackend.calls).toHaveLength(1);
+    });
+
+    it("blocks configured legacy commercial shell defaults for auto dispatch", async () => {
+      const geminiBackend = new InMemoryCodeBackend("gemini");
+      geminiBackend.enqueue(successBackendResult());
+      const geminiDefaultDispatcher = new CodeDispatcher(
+        fs,
+        processRunner,
+        SUBSTRATE_PATH,
+        new Map<BackendType, ICodeBackend>([["gemini", geminiBackend]]),
+        clock,
+        "gemini",
+      );
+
+      const result = await geminiDefaultDispatcher.dispatch(makeTask({ backend: "auto" }));
+
+      expect(result.success).toBe(false);
+      expect(result.backendUsed).toBe("gemini");
+      expect(result.error).toContain("legacy commercial shell route");
+      expect(geminiBackend.calls).toHaveLength(0);
+    });
+
     it("returns error when backend is not registered", async () => {
       const backends = new Map<BackendType, ICodeBackend>(); // empty
       const emptyDispatcher = new CodeDispatcher(fs, processRunner, SUBSTRATE_PATH, backends, clock);

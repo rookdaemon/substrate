@@ -43,7 +43,20 @@ export class CodeDispatcher {
     }
 
     // 3. Select backend
-    const backendType = this.selectBackend(task);
+    const backendSelection = this.selectBackend(task);
+    const backendType = backendSelection.backend;
+    if (backendSelection.error) {
+      return {
+        success: false,
+        output: "",
+        filesChanged: [],
+        testsPassed: null,
+        error: backendSelection.error,
+        backendUsed: backendType,
+        durationMs: this.clock.now().getTime() - startMs,
+      };
+    }
+
     const backend = this.backends.get(backendType);
     if (!backend) {
       return {
@@ -129,18 +142,27 @@ export class CodeDispatcher {
     };
   }
 
-  private selectBackend(task: CodeTask): BackendType {
-    if (task.backend && task.backend !== "auto") return task.backend;
+  private selectBackend(task: CodeTask): { backend: BackendType; error?: string } {
+    if (task.backend && task.backend !== "auto") return { backend: task.backend };
 
-    // When a non-auto default is configured, use it directly
+    // A configured legacy shell default would make paid/opaque dispatch implicit
+    // again. Keep those paths explicit per dispatch instead.
     if (this.defaultBackend !== "auto") {
-      return this.defaultBackend;
+      if (isLegacyCommercialShellBackend(this.defaultBackend)) {
+        return {
+          backend: this.defaultBackend,
+          error:
+            `Default code backend "${this.defaultBackend}" is a legacy commercial shell route. ` +
+            `Set defaultCodeBackend to "codex" or "auto", or pass backend="${this.defaultBackend}" on an individual dispatch for an explicit one-off override.`,
+        };
+      }
+      return { backend: this.defaultBackend };
     }
 
     // Copilot/SWE-agent is historical only. Auto routing now stays on Codex,
     // which can discover scope while remaining under the local tool/worktree
     // discipline expected by the current substrate.
-    return "codex";
+    return { backend: "codex" };
   }
 
   private async getChangedFiles(cwd: string): Promise<string[]> {
@@ -166,4 +188,8 @@ export class CodeDispatcher {
     }
   }
 
+}
+
+function isLegacyCommercialShellBackend(backend: BackendType): boolean {
+  return backend === "claude" || backend === "copilot" || backend === "gemini";
 }
