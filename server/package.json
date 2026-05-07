@@ -1,15 +1,15 @@
 {
   "name": "@substrate/server",
-  "version": "0.4.46",
+  "version": "0.4.47",
   "private": true,
   "description": "Substrate backend execution loop",
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
     "init": "tsx src/cli.ts init",
-    "start": "tsup || (echo '[supervisor] Build failed, recovering environment...' && . ~/.nvm/nvm.sh && nvm install --lts && nvm use --lts && npm install && tsup) || echo '[supervisor] Build failed, falling back to existing dist/' && node dist/supervisor.js",
+    "start": "tsup && node scripts/generate-version.js || (echo '[supervisor] Build failed, recovering environment...' && . ~/.nvm/nvm.sh && nvm install --lts && nvm use --lts && npm install && tsup && node scripts/generate-version.js) || echo '[supervisor] Build failed, falling back to existing dist/' && node dist/supervisor.js",
     "dev": "tsx watch src/cli.ts start",
-    "build": "node scripts/generate-version.js && tsup",
+    "build": "tsup && node scripts/generate-version.js",
     "test": "jest",
     "backup": "tsx src/cli.ts backup",
     "restore": "tsx src/cli.ts restore",
