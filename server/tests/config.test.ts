@@ -514,6 +514,12 @@ describe("resolveConfig", () => {
       expect(config.sessionLauncher).toBe("codex");
     });
 
+    it("accepts sessionLauncher: 'pi'", async () => {
+      await writeConfig({ sessionLauncher: "pi" });
+      const config = await resolveConfig(fs, opts);
+      expect(config.sessionLauncher).toBe("pi");
+    });
+
     it("accepts defaultCodeBackend: 'codex'", async () => {
       await writeConfig({ defaultCodeBackend: "codex" });
       const config = await resolveConfig(fs, opts);
@@ -678,6 +684,53 @@ describe("resolveConfig", () => {
       expect(config.model).toBe("gemini-2.5-pro");
       expect(config.strategicModel).toBe("gemini-2.5-pro");
       expect(config.tacticalModel).toBe("gemini-2.5-flash");
+    });
+
+    it("resolves Pi provider block model and shell settings", async () => {
+      await fs.mkdir("/project", { recursive: true });
+      await fs.writeFile("/project/config.json", JSON.stringify({
+        sessionLauncher: "pi",
+        pi: {
+          provider: "openai",
+          model: "gpt-5.5",
+          strategicModel: "gpt-5.5",
+          tacticalModel: "gpt-5.4",
+          mode: "json",
+          sessionDir: "/substrate/pi-sessions",
+        },
+      }));
+
+      const config = await resolveConfig(fs, {
+        appPaths: TEST_PATHS,
+        cwd: "/project",
+        env: {},
+      });
+
+      expect(config.model).toBe("gpt-5.5");
+      expect(config.strategicModel).toBe("gpt-5.5");
+      expect(config.tacticalModel).toBe("gpt-5.4");
+      expect(config.pi).toEqual({
+        provider: "openai",
+        model: "gpt-5.5",
+        strategicModel: "gpt-5.5",
+        tacticalModel: "gpt-5.4",
+        mode: "json",
+        sessionDir: "/substrate/pi-sessions",
+      });
+    });
+
+    it("rejects invalid Pi shell mode", async () => {
+      await fs.mkdir("/project", { recursive: true });
+      await fs.writeFile("/project/config.json", JSON.stringify({
+        sessionLauncher: "pi",
+        pi: { mode: "rpc" },
+      }));
+
+      await expect(resolveConfig(fs, {
+        appPaths: TEST_PATHS,
+        cwd: "/project",
+        env: {},
+      })).rejects.toThrow(ConfigValidationError);
     });
 
     it("falls back to legacy flat fields when models block is absent", async () => {

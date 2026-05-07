@@ -672,8 +672,8 @@ export class AgoraMessageHandler {
     // Format message as agent prompt similar to old checkAgoraInbox format
     let injected = false;
     const replyInstruction = knownPeer
-      ? `Respond to this message if appropriate. Use ${"\`"}mcp__tinybus__send_agora_message${"\`"} (Claude Code) or ${"\`"}send_agora_message${"\`"} (Gemini CLI) with: to="${senderIdentity}", text="your response", inReplyTo="${envelope.id}"`
-      : `Respond to this message if appropriate. Note: Sender (${senderIdentity}) is not in PEERS.md, but you can reply via relay. Use ${"`"}mcp__tinybus__send_agora_message${"`"} (Claude Code) or ${"`"}send_agora_message${"`"} (Gemini CLI) with: to="${senderIdentity}", text="your response", inReplyTo="${envelope.id}"`;
+      ? `Respond to this message if appropriate. Use the Agora send tool named in your TOOL REFERENCE. In Pi, use bash/curl POST /api/agora/send with: to="${senderIdentity}", text="your response", inReplyTo="${envelope.id}"`
+      : `Respond to this message if appropriate. Note: Sender (${senderIdentity}) is not in PEERS.md, but you can reply via relay. Use the Agora send tool named in your TOOL REFERENCE. In Pi, use bash/curl POST /api/agora/send with: to="${senderIdentity}", text="your response", inReplyTo="${envelope.id}"`;
     try {
       const agentPrompt = `[AGORA MESSAGE]\nType: ${envelope.type}\nEnvelope ID: ${envelope.id}\nTimestamp: ${timestamp}\nFROM: ${senderIdentity}\nTO: ${toList}\nPayload: ${payloadStr}\n\n${replyInstruction}`;
       injected = this.messageInjector.injectMessage(agentPrompt);

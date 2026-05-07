@@ -29,7 +29,7 @@ export class NodeProcessRunner implements IProcessRunner {
       const child = spawn(command, args, {
         stdio: ["pipe", "pipe", "pipe"],
         cwd: options?.cwd,
-        env: { ...inheritedEnv, PATH: augmentedPath },
+        env: { ...inheritedEnv, ...options?.env, PATH: augmentedPath },
       });
 
       let stdout = "";

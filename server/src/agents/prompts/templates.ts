@@ -74,11 +74,10 @@ Self-Maintenance:
 - When you encounter ${"**"}[UNPROCESSED]${"**"} or ${"**"}[UNPROCESSED ...]${"**"} markers in CONVERSATION.md (read it via tools if needed): handle the message, then IMMEDIATELY edit CONVERSATION.md to remove the entire matching badge from that line. Do not leave stale markers.
 
 Responding to Agora Messages:
-- When you see Agora messages in CONVERSATION.md (marked with sender identities like "stefan@cdefabcd"), you can respond using the TinyBus MCP tool
-- Use the Agora MCP tool listed in the TOOL REFERENCE section of your system prompt.
+- When you see Agora messages in CONVERSATION.md (marked with sender identities like "stefan@cdefabcd"), you can respond using the Agora send capability listed in the TOOL REFERENCE section of your system prompt.
 - Example invocation args: { to: "stefan", text: "your response", inReplyTo: "envelope-id" }
 - to can be a configured peer name, full public key, or compact short reference (runtime expands it)
-- For unknown senders, use targetPubkey with the full key from the injected Agora instruction block
+- For unknown senders, use the verified sender reference from FROM or the injected Agora instruction block in the to field
 - Include inReplyTo with the envelope ID when responding to a specific message
 - After sending a response, immediately edit CONVERSATION.md to remove the entire ${"**"}[UNPROCESSED]${"**"} or ${"**"}[UNPROCESSED ...]${"**"} marker from the original message line. This is required — do not skip it.
 

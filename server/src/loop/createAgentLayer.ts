@@ -7,6 +7,7 @@ import { GeminiMcpSetup } from "../agents/gemini/GeminiMcpSetup";
 import { CopilotSessionLauncher } from "../agents/copilot/CopilotSessionLauncher";
 import { CodexSessionLauncher } from "../agents/codex/CodexSessionLauncher";
 import { CodexMcpSetup } from "../agents/codex/CodexMcpSetup";
+import { PiSessionLauncher } from "../agents/pi/PiSessionLauncher";
 import { OllamaSessionLauncher } from "../agents/ollama/OllamaSessionLauncher";
 import { OllamaInferenceClient } from "../agents/ollama/OllamaInferenceClient";
 import { OllamaOffloadService } from "../agents/ollama/OllamaOffloadService";
@@ -68,7 +69,7 @@ export interface AgentLayerResult {
   vertexSubprocessLauncher: VertexSessionLauncher | undefined;
 }
 
-type ProviderName = "claude" | "gemini" | "copilot" | "codex" | "ollama" | "vertex" | "groq" | "anthropic";
+type ProviderName = "claude" | "gemini" | "copilot" | "codex" | "pi" | "ollama" | "vertex" | "groq" | "anthropic";
 
 function providerConfig(config: ApplicationConfig, provider: ProviderName) {
   return config[provider] ?? config.models?.[provider];
@@ -94,12 +95,15 @@ export async function createAgentLayer(
   const vertexConfig = providerConfig(config, "vertex");
   const groqConfig = providerConfig(config, "groq");
   const anthropicConfig = providerConfig(config, "anthropic");
+  const piConfig = providerConfig(config, "pi");
+  const DEFAULT_HTTP_PORT = 3000;
 
   const checker = new PermissionChecker();
   const promptBuilder = new PromptBuilder(reader, checker, {
     substratePath: config.substratePath,
     sourceCodePath: config.sourceCodePath,
     launcherType: config.sessionLauncher ?? "claude",
+    httpPort: config.httpPort ?? DEFAULT_HTTP_PORT,
     conversationPromptWindowLines: config.conversationPromptWindowLines ?? 200,
   });
 
@@ -110,7 +114,6 @@ export async function createAgentLayer(
     reaperIntervalMs: 60_000, // Check every minute
   };
   const processTracker = new ProcessTracker(clock, processKiller, processTrackerConfig, logger);
-  const DEFAULT_HTTP_PORT = 3000;
   const mcpUrl = `http://localhost:${config.httpPort ?? DEFAULT_HTTP_PORT}/mcp`;
   const mcpServers = {
     tinybus: { type: "http" as const, url: mcpUrl },
@@ -219,6 +222,16 @@ export async function createAgentLayer(
     await codexMcpSetup.register("tinybus", mcpUrl);
     await codexMcpSetup.register("code_dispatch", mcpUrl);
     gatedLauncher = new SemaphoreSessionLauncher(codexLauncher, apiSemaphore);
+  } else if (config.sessionLauncher === "pi") {
+    logger.debug("agent-layer: using PiSessionLauncher for cognitive roles");
+    const piLauncher = new PiSessionLauncher(new NodeProcessRunner(), clock, {
+      provider: piConfig?.provider,
+      model: activeModel,
+      mode: piConfig?.mode,
+      sessionDir: piConfig?.sessionDir,
+      apiToken: config.apiToken,
+    }, logger);
+    gatedLauncher = new SemaphoreSessionLauncher(piLauncher, apiSemaphore);
   } else if (config.sessionLauncher === "ollama") {
     const ollamaBaseUrl = ollamaConfig?.baseUrl ?? config.ollamaBaseUrl ?? "http://localhost:11434";
     const ollamaModel = ollamaConfig?.model ?? config.ollamaModel;

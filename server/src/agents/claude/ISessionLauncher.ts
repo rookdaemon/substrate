@@ -9,7 +9,7 @@ export interface ClaudeSessionRequest {
 }
 
 export interface SessionUsage {
-  provider: "claude" | "codex" | "gemini" | "groq" | "anthropic" | "ollama" | "vertex" | "copilot" | "deterministic";
+  provider: "claude" | "codex" | "gemini" | "groq" | "anthropic" | "ollama" | "vertex" | "copilot" | "pi" | "deterministic";
   model?: string;
   promptTokens?: number;
   cachedInputTokens?: number;

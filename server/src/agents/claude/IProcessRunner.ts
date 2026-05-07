@@ -10,6 +10,7 @@ export interface ProcessRunOptions {
   onStdout?: (chunk: string) => void;
   cwd?: string;
   stdin?: string;
+  env?: Record<string, string | undefined>;
 }
 
 export interface IProcessRunner {

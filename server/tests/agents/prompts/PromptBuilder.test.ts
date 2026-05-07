@@ -152,7 +152,39 @@ describe("PromptBuilder", () => {
       expect(prompt).not.toContain("`read_file`");
     });
 
-    it("uses Claude tool names for ollama launcher", () => {
+    it("uses Pi tool names and direct HTTP tool surfaces for pi launcher", () => {
+      const piBuilder = new PromptBuilder(reader, checker, {
+        substratePath: "/substrate",
+        sourceCodePath: "/home/user/substrate",
+        launcherType: "pi",
+      });
+      const prompt = piBuilder.buildSystemPrompt(AgentRole.SUBCONSCIOUS);
+      expect(prompt).toContain("Built-in Pi tool names");
+      expect(prompt).toContain("`read`");
+      expect(prompt).toContain("`write`");
+      expect(prompt).toContain("`edit`");
+      expect(prompt).toContain("`bash`");
+      expect(prompt).toContain("POST http://localhost:3000/api/agora/send");
+      expect(prompt).toContain("POST http://localhost:3000/api/metrics/query");
+      expect(prompt).toContain("POST http://localhost:3000/api/code-dispatch/invoke");
+	    expect(prompt).not.toContain("`mcp__tinybus__send_agora_message`");
+	  });
+
+	  it("uses the configured HTTP port in Pi direct tool surfaces", () => {
+	    const piBuilder = new PromptBuilder(reader, checker, {
+	      substratePath: "/substrate",
+	      sourceCodePath: "/home/user/substrate",
+	      launcherType: "pi",
+	      httpPort: 4123,
+	    });
+	    const prompt = piBuilder.buildSystemPrompt(AgentRole.SUBCONSCIOUS);
+	    expect(prompt).toContain("POST http://localhost:4123/api/agora/send");
+	    expect(prompt).toContain("GET http://localhost:4123/api/metrics/usage-summary");
+	    expect(prompt).toContain("POST http://localhost:4123/api/code-dispatch/invoke");
+	    expect(prompt).not.toContain("localhost:3000/api");
+	  });
+
+	  it("uses Claude tool names for ollama launcher", () => {
       const ollamaBuilder = new PromptBuilder(reader, checker, {
         substratePath: "/substrate",
         sourceCodePath: "/home/user/substrate",

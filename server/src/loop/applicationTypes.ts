@@ -8,10 +8,13 @@ import type { SubstrateLayerOverrides } from "./createSubstrateLayer";
 export interface ProviderConfig {
   keyPath?: string;
   baseUrl?: string;
+  provider?: string;
   model?: string;
   strategicModel?: string;
   tacticalModel?: string;
   idModel?: string;
+  mode?: "json" | "print";
+  sessionDir?: string;
 }
 
 export interface ApplicationConfig {
@@ -27,6 +30,7 @@ export interface ApplicationConfig {
   gemini?: ProviderConfig;
   copilot?: ProviderConfig;
   codex?: ProviderConfig;
+  pi?: ProviderConfig;
   ollama?: ProviderConfig;
   vertex?: ProviderConfig;
   groq?: ProviderConfig;
@@ -114,7 +118,7 @@ export interface ApplicationConfig {
    *  NOTE: "groq" uses Groq's free tier (100k tokens/day, 30 req/min) — adequate for Id subprocess
    *  roles but NOT recommended for cyclical cognitive roles (Ego/Subconscious/Superego) which exhaust
    *  the daily token budget in 1-2 active days. Use idLauncher: "groq" for targeted Id use instead. */
-  sessionLauncher?: "claude" | "gemini" | "copilot" | "codex" | "ollama" | "groq" | "anthropic";
+  sessionLauncher?: "claude" | "gemini" | "copilot" | "codex" | "pi" | "ollama" | "groq" | "anthropic";
   /** Base URL for the Ollama server when sessionLauncher is "ollama" (default: "http://localhost:11434"). */
   ollamaBaseUrl?: string;
   /** Model name for Ollama when sessionLauncher is "ollama" (default: "qwen3:14b"). Separate from `model` which is the Claude/Gemini model name. */

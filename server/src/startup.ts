@@ -136,6 +136,7 @@ export async function startServer(config: AppConfig, options?: StartServerOption
     gemini: config.gemini,
     copilot: config.copilot,
     codex: config.codex,
+    pi: config.pi,
     ollama: config.ollama,
     vertex: config.vertex,
     groq: config.groq,

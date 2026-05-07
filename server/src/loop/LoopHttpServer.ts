@@ -21,6 +21,7 @@ import { addCodeDispatchTools } from "../mcp/CodeDispatchMcpServer";
 import { registerMetricsTools } from "../mcp/MetricsMcpTools";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import type { CodeDispatcher } from "../code-dispatch/CodeDispatcher";
+import type { BackendType } from "../code-dispatch/types";
 import type { IMetricsService } from "../metrics/IMetricsService";
 import { AgoraMessageHandler } from "../agora/AgoraMessageHandler";
 import { IAgoraService } from "../agora/IAgoraService";
@@ -203,7 +204,8 @@ export class LoopHttpServer {
   }
 
   private handleRequest(req: http.IncomingMessage, res: http.ServerResponse): void {
-    const url = req.url ?? "";
+    const requestUrl = new URL(req.url ?? "/", "http://localhost");
+    const url = requestUrl.pathname;
     const method = req.method ?? "";
 
     // API token authentication — enforced on all routes including /hooks/agent.
@@ -259,6 +261,21 @@ export class LoopHttpServer {
         this.json(res, 200, {
           fileCache: this.reader ? this.reader.getMetrics() : { cacheHits: 0, cacheMisses: 0 },
         });
+        break;
+      case "GET /api/metrics/usage-summary":
+        this.handleUsageSummary(requestUrl, res);
+        break;
+      case "POST /api/metrics/query":
+        this.handleMetricsQuery(req, res);
+        break;
+      case "POST /api/agora/send":
+        this.handleAgoraSend(req, res);
+        break;
+      case "GET /api/agora/peers":
+        this.handleAgoraPeers(res);
+        break;
+      case "POST /api/code-dispatch/invoke":
+        this.handleCodeDispatchInvoke(req, res);
         break;
       case "POST /api/loop/start":
         this.tryStateTransition(res, () => {
@@ -387,6 +404,158 @@ export class LoopHttpServer {
         this.json(res, 500, { error: String(error) });
       }
     }
+  }
+
+  private handleUsageSummary(requestUrl: URL, res: http.ServerResponse): void {
+    if (!this.usageMetrics) {
+      this.json(res, 503, { error: "Usage metrics not configured" });
+      return;
+    }
+    const rawWindow = requestUrl.searchParams.get("windowHours");
+    const windowHours = rawWindow ? Number(rawWindow) : 24;
+    if (!Number.isFinite(windowHours) || windowHours <= 0 || windowHours > 24 * 365) {
+      this.json(res, 400, { error: "windowHours must be positive and <= 8760" });
+      return;
+    }
+    this.usageMetrics.summarizeUsage(windowHours).then(
+      (summary) => this.json(res, 200, { success: true, summary }),
+      (error) => this.json(res, 500, { success: false, error: error instanceof Error ? error.message : String(error) }),
+    );
+  }
+
+  private async handleMetricsQuery(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    if (!this.usageMetrics) {
+      this.json(res, 503, { error: "Usage metrics not configured" });
+      return;
+    }
+    const parsed = await this.readJsonBody(req, res);
+    if (!parsed) return;
+    const sql = typeof parsed.sql === "string" ? parsed.sql : undefined;
+    if (!sql) {
+      this.json(res, 400, { error: "Missing required field: sql" });
+      return;
+    }
+    const params = Array.isArray(parsed.params) ? parsed.params : undefined;
+    const maxRows = typeof parsed.maxRows === "number" ? parsed.maxRows : undefined;
+    this.usageMetrics.query({ sql, params, maxRows }).then(
+      (rows) => this.json(res, 200, { success: true, rows }),
+      (error) => this.json(res, 400, { success: false, error: error instanceof Error ? error.message : String(error) }),
+    );
+  }
+
+  private async handleAgoraSend(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    if (!this.tinyBus) {
+      this.json(res, 503, { error: "TinyBus not configured" });
+      return;
+    }
+    const parsed = await this.readJsonBody(req, res);
+    if (!parsed) return;
+    const text = typeof parsed.text === "string" ? parsed.text : undefined;
+    if (!text) {
+      this.json(res, 400, { error: "Missing required field: text" });
+      return;
+    }
+    const to = typeof parsed.to === "string"
+      ? parsed.to
+      : Array.isArray(parsed.to)
+        ? parsed.to.filter((recipient): recipient is string => typeof recipient === "string")
+        : undefined;
+    const targetPubkey = typeof parsed.targetPubkey === "string" ? parsed.targetPubkey : undefined;
+    const inReplyTo = typeof parsed.inReplyTo === "string" ? parsed.inReplyTo : undefined;
+    if ((!to || (Array.isArray(to) && to.length === 0)) && !targetPubkey) {
+      this.json(res, 400, { error: "Missing recipient: to or targetPubkey is required" });
+      return;
+    }
+
+    const payload: Record<string, unknown> = {
+      type: "publish",
+      payload: { text },
+    };
+    if (to) payload.to = Array.isArray(to) ? to : [to];
+    if (targetPubkey) payload.targetPubkey = targetPubkey;
+    if (inReplyTo) payload.inReplyTo = inReplyTo;
+
+    const message = createMessage({ type: "agora.send", payload });
+    this.tinyBus.publish(message).then(
+      () => this.json(res, 200, { success: true, messageId: message.id }),
+      (error) => this.json(res, 500, { success: false, error: error instanceof Error ? error.message : String(error) }),
+    );
+  }
+
+  private handleAgoraPeers(res: http.ServerResponse): void {
+    if (!this.agoraService) {
+      this.json(res, 503, { error: "Agora service not configured" });
+      return;
+    }
+    const peers = this.agoraService
+      .getPeers()
+      .map((peerRef: string) => {
+        const peerConfig = this.agoraService!.getPeerConfig(peerRef);
+        return peerConfig ? { name: peerConfig.name, publicKey: peerConfig.publicKey } : null;
+      })
+      .filter((peer): peer is { name?: string; publicKey: string } => peer !== null);
+    this.json(res, 200, { success: true, peers });
+  }
+
+  private async handleCodeDispatchInvoke(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    if (!this.codeDispatcher) {
+      this.json(res, 503, { error: "Code dispatcher not configured" });
+      return;
+    }
+    const parsed = await this.readJsonBody(req, res);
+    if (!parsed) return;
+    const spec = typeof parsed.spec === "string" ? parsed.spec : undefined;
+    if (!spec) {
+      this.json(res, 400, { error: "Missing required field: spec" });
+      return;
+    }
+    const backend = typeof parsed.backend === "string" ? parsed.backend as BackendType : "auto";
+    const files = Array.isArray(parsed.files)
+      ? parsed.files.filter((file): file is string => typeof file === "string")
+      : [];
+    const testCommand = typeof parsed.testCommand === "string" ? parsed.testCommand : undefined;
+    const model = typeof parsed.model === "string" ? parsed.model : undefined;
+    const cwd = typeof parsed.cwd === "string" ? parsed.cwd : undefined;
+
+    this.codeDispatcher.dispatch({ spec, backend, files, testCommand, model, cwd }).then(
+      (result) => this.json(res, 200, result),
+      (error) => this.json(res, 500, { success: false, error: error instanceof Error ? error.message : String(error) }),
+    );
+  }
+
+  private readJsonBody(req: http.IncomingMessage, res: http.ServerResponse): Promise<Record<string, unknown> | null> {
+    return new Promise((resolve) => {
+      let body = "";
+      let bodyBytes = 0;
+      let aborted = false;
+      req.on("data", (chunk: Buffer) => {
+        bodyBytes += chunk.byteLength;
+        if (bodyBytes > MAX_BODY_BYTES) {
+          aborted = true;
+          this.json(res, 413, { error: "Request body too large" });
+          req.destroy();
+          resolve(null);
+          return;
+        }
+        body += chunk.toString();
+      });
+      req.on("end", () => {
+        if (aborted) return;
+        try {
+          const parsed = JSON.parse(body || "{}");
+          if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+            this.json(res, 400, { error: "Invalid JSON object" });
+            resolve(null);
+            return;
+          }
+          resolve(parsed as Record<string, unknown>);
+        } catch {
+          this.json(res, 400, { error: "Invalid JSON" });
+          resolve(null);
+        }
+      });
+      req.on("error", () => resolve(null));
+    });
   }
 
   private handleSubstrateRead(res: http.ServerResponse, fileTypeStr: string): void {

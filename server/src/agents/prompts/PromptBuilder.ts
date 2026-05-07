@@ -55,8 +55,27 @@ export const TOOL_NAMES_BY_LAUNCHER: Record<string, ToolNames> = {
 };
 
 const DEFAULT_LAUNCHER = "claude";
+const DEFAULT_HTTP_PORT = 3000;
 
-function getToolNames(launcherType?: string): ToolNames {
+function makePiToolNames(httpPort: number): ToolNames {
+  const baseUrl = `http://localhost:${httpPort}`;
+  return {
+    readFile: "read",
+    writeFile: "write",
+    editFile: "edit",
+    runShell: "bash",
+    grepSearch: "grep",
+    globSearch: "find",
+    sendAgoraMessage: `bash/curl POST ${baseUrl}/api/agora/send`,
+    getUsageSummary: `bash/curl GET ${baseUrl}/api/metrics/usage-summary`,
+    queryMetrics: `bash/curl POST ${baseUrl}/api/metrics/query`,
+  };
+}
+
+function getToolNames(launcherType?: string, httpPort = DEFAULT_HTTP_PORT): ToolNames {
+  if (launcherType === "pi") {
+    return makePiToolNames(httpPort);
+  }
   return TOOL_NAMES_BY_LAUNCHER[launcherType ?? DEFAULT_LAUNCHER] ?? CLAUDE_TOOL_NAMES;
 }
 
@@ -75,7 +94,26 @@ function getContextBudget(launcherType?: string, override?: number): number | un
   return CONTEXT_BUDGET_LINES_BY_LAUNCHER[launcherType ?? DEFAULT_LAUNCHER];
 }
 
-function buildToolReferenceSection(tools: ToolNames): string {
+function buildToolReferenceSection(tools: ToolNames, launcherType?: string): string {
+  if (launcherType === "pi") {
+    const codeDispatchTool = tools.sendAgoraMessage.replace("/api/agora/send", "/api/code-dispatch/invoke");
+    return `\n\n=== TOOL REFERENCE ===
+
+Built-in Pi tool names for this session (use these exact names when calling tools):
+- Read file: \`${tools.readFile}\`
+- Write file: \`${tools.writeFile}\`
+- Edit file (replace text): \`${tools.editFile}\`
+- Run shell command: \`${tools.runShell}\`
+- Search file contents: \`${tools.grepSearch}\`
+- Find files by pattern: \`${tools.globSearch}\`
+
+Direct substrate tool surfaces for Pi (use \`${tools.runShell}\` with curl; include Authorization: Bearer $SUBSTRATE_API_TOKEN only if that environment variable is set):
+- Send Agora message: \`${tools.sendAgoraMessage}\` with JSON {"to":"peer-or-pubkey","text":"message","inReplyTo":"optional-envelope-id"}
+- Get usage summary: \`${tools.getUsageSummary}?windowHours=24\`
+- Query metrics with read-only SQL: \`${tools.queryMetrics}\` with JSON {"sql":"SELECT ...","params":[],"maxRows":100}
+- Dispatch code work: \`${codeDispatchTool}\` with JSON {"spec":"task","backend":"auto","files":[],"testCommand":"npm test","cwd":"optional"}`;
+  }
+
   return `\n\n=== TOOL REFERENCE ===
 
 Built-in tool names for this session (use these exact names when calling tools):
@@ -109,8 +147,10 @@ export interface PromptBuilderPaths {
   substratePath: string;
   sourceCodePath?: string;
   /** Session launcher type — determines built-in tool names in the TOOL REFERENCE section.
-   *  Defaults to "claude". Valid values: "claude" | "gemini" | "copilot" | "codex" | "ollama" | "groq". */
+   *  Defaults to "claude". Valid values: "claude" | "gemini" | "copilot" | "codex" | "pi" | "ollama" | "groq". */
   launcherType?: string;
+  /** Local HTTP port for direct tool surfaces when launcherType is "pi" (default: 3000). */
+  httpPort?: number;
   /** Override the default context budget (total inlined lines) for eager file references.
    *  When unset, the per-launcher default from CONTEXT_BUDGET_LINES_BY_LAUNCHER is used.
    *  Set to 0 to disable budget enforcement regardless of launcher. */
@@ -181,8 +221,8 @@ export class PromptBuilder {
       prompt += `\n\n=== ENVIRONMENT ===\n\n${lines.join("\n")}`;
     }
 
-    const tools = getToolNames(this.paths?.launcherType);
-    prompt += buildToolReferenceSection(tools);
+    const tools = getToolNames(this.paths?.launcherType, this.paths?.httpPort ?? DEFAULT_HTTP_PORT);
+    prompt += buildToolReferenceSection(tools, this.paths?.launcherType);
 
     prompt += AUTONOMY_REMINDER;
 

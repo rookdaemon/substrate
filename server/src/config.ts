@@ -17,19 +17,25 @@ const DEFAULT_SESSION_LAUNCHER = "claude" as const;
 export interface ProviderConfig {
   keyPath?: string;
   baseUrl?: string;
+  provider?: string;
   model?: string;
   strategicModel?: string;
   tacticalModel?: string;
   idModel?: string;
+  mode?: "json" | "print";
+  sessionDir?: string;
 }
 
 const ProviderConfigSchema = z.object({
   keyPath: z.string().optional(),
   baseUrl: z.string().url().optional(),
+  provider: z.string().optional(),
   model: z.string().optional(),
   strategicModel: z.string().optional(),
   tacticalModel: z.string().optional(),
   idModel: z.string().optional(),
+  mode: z.enum(["json", "print"]).optional(),
+  sessionDir: z.string().optional(),
 });
 
 const AppConfigSchema = z
@@ -47,6 +53,7 @@ const AppConfigSchema = z
     gemini: ProviderConfigSchema.optional(),
     copilot: ProviderConfigSchema.optional(),
     codex: ProviderConfigSchema.optional(),
+    pi: ProviderConfigSchema.optional(),
     ollama: ProviderConfigSchema.optional(),
     vertex: ProviderConfigSchema.optional(),
     groq: ProviderConfigSchema.optional(),
@@ -115,7 +122,7 @@ const AppConfigSchema = z
     enableFileReadCache: z.boolean().optional(),
     progressMaxBytes: z.number().int().min(1).optional(),
     conversationPromptWindowLines: z.number().int().min(1).optional(),
-    sessionLauncher: z.enum(["claude", "gemini", "copilot", "codex", "ollama", "vertex", "groq", "anthropic"]).optional(),
+    sessionLauncher: z.enum(["claude", "gemini", "copilot", "codex", "pi", "ollama", "vertex", "groq", "anthropic"]).optional(),
     ollamaBaseUrl: z.string().url().optional(),
     ollamaModel: z.string().optional(),
     ollamaKeyPath: z.string().optional(),
@@ -179,7 +186,7 @@ function pathJoin(base: string, ...segments: string[]): string {
   return path.join(base, ...segments);
 }
 
-type ProviderName = "claude" | "gemini" | "copilot" | "codex" | "ollama" | "vertex" | "groq" | "anthropic";
+type ProviderName = "claude" | "gemini" | "copilot" | "codex" | "pi" | "ollama" | "vertex" | "groq" | "anthropic";
 
 function providerConfig(config: Partial<AppConfig>, provider: ProviderName): ProviderConfig | undefined {
   return config[provider];
@@ -227,6 +234,7 @@ export interface AppConfig {
   gemini?: ProviderConfig;
   copilot?: ProviderConfig;
   codex?: ProviderConfig;
+  pi?: ProviderConfig;
   ollama?: ProviderConfig;
   vertex?: ProviderConfig;
   groq?: ProviderConfig;
@@ -308,7 +316,7 @@ export interface AppConfig {
   conversationPromptWindowLines?: number;
   /** Which session launcher to use for agent reasoning sessions (default: "claude").
    *  "vertex" is NOT allowed here — Vertex is for subprocess tasks only. Use vertexKeyPath instead. */
-  sessionLauncher?: "claude" | "gemini" | "copilot" | "codex" | "ollama" | "groq" | "anthropic";
+  sessionLauncher?: "claude" | "gemini" | "copilot" | "codex" | "pi" | "ollama" | "groq" | "anthropic";
   /** Base URL for the Ollama server when sessionLauncher is "ollama" (default: "http://localhost:11434"). */
   ollamaBaseUrl?: string;
   /** Model name for Ollama when sessionLauncher is "ollama" (default: "qwen3:14b"). Separate from `model` which is the Claude/Gemini model name. */
@@ -476,6 +484,7 @@ export async function resolveConfig(
     gemini: fileConfig.gemini,
     copilot: fileConfig.copilot,
     codex: fileConfig.codex,
+    pi: fileConfig.pi,
     ollama: fileConfig.ollama,
     vertex: fileConfig.vertex,
     groq: fileConfig.groq,
