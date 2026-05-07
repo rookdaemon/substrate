@@ -34,12 +34,13 @@ describe("PiSessionLauncher", () => {
 
   it("passes provider, model, session directory, cwd, and system prompt as Pi shell args", async () => {
     runner.enqueue({ stdout: "", stderr: "", exitCode: 0 });
-	    const launcher = new PiSessionLauncher(runner, clock, {
-	      provider: "openai",
-	      model: "gpt-5.5",
-	      sessionDir: "/substrate/pi-sessions",
-	      apiToken: "local-token",
-	    });
+    const launcher = new PiSessionLauncher(runner, clock, {
+      provider: "openai",
+      model: "gpt-5.5",
+      sessionDir: "/substrate/pi-sessions",
+      apiToken: "local-token",
+      providerEnv: { OPENAI_API_KEY: "provider-token" },
+    });
 
     await launcher.launch(makeRequest({
       systemPrompt: "System rules",
@@ -50,9 +51,12 @@ describe("PiSessionLauncher", () => {
       persistSession: true,
     });
 
-	    const call = runner.getCalls()[0];
-	    expect(call.options?.cwd).toBe("/workspace/ego");
-	    expect(call.options?.env).toEqual({ SUBSTRATE_API_TOKEN: "local-token" });
+    const call = runner.getCalls()[0];
+    expect(call.options?.cwd).toBe("/workspace/ego");
+    expect(call.options?.env).toEqual({
+      OPENAI_API_KEY: "provider-token",
+      SUBSTRATE_API_TOKEN: "local-token",
+    });
     expect(call.args).toContain("--provider");
     expect(call.args[call.args.indexOf("--provider") + 1]).toBe("openai");
     expect(call.args).toContain("--model");
@@ -119,7 +123,7 @@ describe("PiSessionLauncher", () => {
     const launcher = new PiSessionLauncher(runner, clock, { model: "gpt-5.5" });
     runner.enqueue({
       stdout: [
-        JSON.stringify({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "ok" }], usage: { input: 100, cacheRead: 40, output: 10, total: 110, cost: 0.01 } } }),
+        JSON.stringify({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "ok" }], usage: { input: 100, cacheRead: 40, output: 10, totalTokens: 110, cost: { total: 0.01 } } } }),
       ].join("\n"),
       stderr: "",
       exitCode: 0,

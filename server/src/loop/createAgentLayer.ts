@@ -75,6 +75,34 @@ function providerConfig(config: ApplicationConfig, provider: ProviderName) {
   return config[provider] ?? config.models?.[provider];
 }
 
+function inferPiProvider(model: string | undefined, configuredProvider: string | undefined): string | undefined {
+  if (configuredProvider) return configuredProvider;
+  const providerPrefix = model?.split("/", 1)[0];
+  return providerPrefix && providerPrefix !== model ? providerPrefix : undefined;
+}
+
+function piProviderKeyEnvVar(provider: string | undefined): string | undefined {
+  switch (provider?.toLowerCase()) {
+    case "openai":
+      return "OPENAI_API_KEY";
+    case "google":
+    case "gemini":
+      return "GEMINI_API_KEY";
+    case "groq":
+      return "GROQ_API_KEY";
+    case "anthropic":
+    case "claude":
+      return "ANTHROPIC_API_KEY";
+    case "xai":
+    case "grok":
+      return "XAI_API_KEY";
+    case "openrouter":
+      return "OPENROUTER_API_KEY";
+    default:
+      return undefined;
+  }
+}
+
 /**
  * Creates all agent-layer objects: permission checker, prompt builder,
  * process tracker, SDK launcher, task classifier, conversation manager,
@@ -96,6 +124,7 @@ export async function createAgentLayer(
   const groqConfig = providerConfig(config, "groq");
   const anthropicConfig = providerConfig(config, "anthropic");
   const piConfig = providerConfig(config, "pi");
+  const piProvider = inferPiProvider(activeModel, piConfig?.provider);
   const DEFAULT_HTTP_PORT = 3000;
 
   const checker = new PermissionChecker();
@@ -202,6 +231,27 @@ export async function createAgentLayer(
     }
   }
 
+  // Pi provider API key — read from key file if configured and expose only to the Pi child process.
+  let piProviderEnv: Record<string, string | undefined> | undefined;
+  const piKeyPath = piConfig?.keyPath;
+  const piKeyEnvVar = piProviderKeyEnvVar(piProvider);
+  if (piKeyPath && piKeyEnvVar) {
+    try {
+      const key = (await fs.readFile(piKeyPath)).trim();
+      if (key) {
+        piProviderEnv = { [piKeyEnvVar]: key };
+      } else {
+        logger.debug("agent-layer: Pi key file is empty — relying on inherited provider environment");
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const redacted = msg.replaceAll(piKeyPath, "[REDACTED]");
+      logger.debug(`agent-layer: Cannot read Pi key file — relying on inherited provider environment (${redacted})`);
+    }
+  } else if (piKeyPath && !piKeyEnvVar) {
+    logger.warn(`agent-layer: pi.keyPath configured but no provider env mapping exists for ${piProvider ?? "default"} — relying on inherited provider environment`);
+  }
+
   // Cognitive role launcher — switch based on sessionLauncher config
   let gatedLauncher: ISessionLauncher;
   if (config.sessionLauncher === "gemini") {
@@ -225,11 +275,12 @@ export async function createAgentLayer(
   } else if (config.sessionLauncher === "pi") {
     logger.debug("agent-layer: using PiSessionLauncher for cognitive roles");
     const piLauncher = new PiSessionLauncher(new NodeProcessRunner(), clock, {
-      provider: piConfig?.provider,
+      provider: piProvider,
       model: activeModel,
       mode: piConfig?.mode,
       sessionDir: piConfig?.sessionDir,
       apiToken: config.apiToken,
+      providerEnv: piProviderEnv,
     }, logger);
     gatedLauncher = new SemaphoreSessionLauncher(piLauncher, apiSemaphore);
   } else if (config.sessionLauncher === "ollama") {

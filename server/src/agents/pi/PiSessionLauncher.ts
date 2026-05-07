@@ -23,6 +23,8 @@ export interface PiSessionLauncherConfig {
   sessionDir?: string;
   /** Local Substrate API token exposed to Pi direct HTTP tool calls as SUBSTRATE_API_TOKEN. */
   apiToken?: string;
+  /** Provider API key environment for Pi, e.g. OPENAI_API_KEY or GEMINI_API_KEY. */
+  providerEnv?: Record<string, string | undefined>;
 }
 
 /**
@@ -66,9 +68,7 @@ export class PiSessionLauncher implements ISessionLauncher {
         onStdout: options?.onLogEntry && this.mode === "json"
           ? this.createJsonLogAdapter(options.onLogEntry)
           : undefined,
-        env: this.config.apiToken
-          ? { SUBSTRATE_API_TOKEN: this.config.apiToken }
-          : undefined,
+        env: this.buildEnvironment(),
       });
 
       const durationMs = this.clock.now().getTime() - startMs;
@@ -101,6 +101,14 @@ export class PiSessionLauncher implements ISessionLauncher {
         error: err instanceof Error ? err.message : String(err),
       };
     }
+  }
+
+  private buildEnvironment(): Record<string, string | undefined> | undefined {
+    const env = {
+      ...this.config.providerEnv,
+      ...(this.config.apiToken ? { SUBSTRATE_API_TOKEN: this.config.apiToken } : {}),
+    };
+    return Object.keys(env).length > 0 ? env : undefined;
   }
 
   private buildArgs(
@@ -288,7 +296,8 @@ export class PiSessionLauncher implements ISessionLauncher {
       );
     const costUsd = this.numberField(rawUsage, "cost")
       ?? this.numberField(rawUsage, "costUsd")
-      ?? this.numberField(rawUsage, "cost_usd");
+      ?? this.numberField(rawUsage, "cost_usd")
+      ?? this.numberField(this.recordField(rawUsage, "cost"), "total");
 
     if (
       promptTokens === undefined &&
