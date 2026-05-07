@@ -11,6 +11,7 @@ import type {
 } from "../claude/ISessionLauncher";
 
 export type PiShellMode = "json" | "print";
+export type PiThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
 
 export interface PiSessionLauncherConfig {
   /** Pi LLM provider name passed as `--provider`, e.g. openai, anthropic, google, ollama. */
@@ -19,6 +20,8 @@ export interface PiSessionLauncherConfig {
   model?: string;
   /** Noninteractive shell mode. `json` preserves event parsing; `print` is a plain fallback. */
   mode?: PiShellMode;
+  /** Optional Pi reasoning level passed as `--thinking`. */
+  thinking?: PiThinkingLevel;
   /** Optional Pi session directory passed as `--session-dir`. */
   sessionDir?: string;
   /** Local Substrate API token exposed to Pi direct HTTP tool calls as SUBSTRATE_API_TOKEN. */
@@ -135,6 +138,9 @@ export class PiSessionLauncher implements ISessionLauncher {
     }
     if (model) {
       args.push("--model", model);
+    }
+    if (this.config.thinking) {
+      args.push("--thinking", this.config.thinking);
     }
     if (this.config.sessionDir) {
       args.push("--session-dir", this.config.sessionDir);

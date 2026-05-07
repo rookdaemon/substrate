@@ -278,6 +278,7 @@ export async function createAgentLayer(
       provider: piProvider,
       model: activeModel,
       mode: piConfig?.mode,
+      thinking: piConfig?.thinking,
       sessionDir: piConfig?.sessionDir,
       apiToken: config.apiToken,
       providerEnv: piProviderEnv,

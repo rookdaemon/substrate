@@ -696,6 +696,7 @@ describe("resolveConfig", () => {
           strategicModel: "gpt-5.5",
           tacticalModel: "gpt-5.4",
           mode: "json",
+          thinking: "off",
           sessionDir: "/substrate/pi-sessions",
         },
       }));
@@ -715,6 +716,7 @@ describe("resolveConfig", () => {
         strategicModel: "gpt-5.5",
         tacticalModel: "gpt-5.4",
         mode: "json",
+        thinking: "off",
         sessionDir: "/substrate/pi-sessions",
       });
     });

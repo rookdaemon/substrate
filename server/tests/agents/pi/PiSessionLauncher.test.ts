@@ -39,6 +39,7 @@ describe("PiSessionLauncher", () => {
       provider: "openai",
       model: "gpt-5.5",
       sessionDir: "/substrate/pi-sessions",
+      thinking: "off",
       apiToken: "local-token",
       providerEnv: { OPENAI_API_KEY: "provider-token" },
     });
@@ -62,6 +63,8 @@ describe("PiSessionLauncher", () => {
     expect(call.args[call.args.indexOf("--provider") + 1]).toBe("openai");
     expect(call.args).toContain("--model");
     expect(call.args[call.args.indexOf("--model") + 1]).toBe("gpt-5.5");
+    expect(call.args).toContain("--thinking");
+    expect(call.args[call.args.indexOf("--thinking") + 1]).toBe("off");
     expect(call.args).toContain("--session-dir");
     expect(call.args[call.args.indexOf("--session-dir") + 1]).toBe("/substrate/pi-sessions");
     expect(call.args).toContain("--continue");

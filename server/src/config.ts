@@ -23,6 +23,7 @@ export interface ProviderConfig {
   tacticalModel?: string;
   idModel?: string;
   mode?: "json" | "print";
+  thinking?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
   sessionDir?: string;
 }
 
@@ -35,6 +36,7 @@ const ProviderConfigSchema = z.object({
   tacticalModel: z.string().optional(),
   idModel: z.string().optional(),
   mode: z.enum(["json", "print"]).optional(),
+  thinking: z.enum(["off", "minimal", "low", "medium", "high", "xhigh"]).optional(),
   sessionDir: z.string().optional(),
 });
 
