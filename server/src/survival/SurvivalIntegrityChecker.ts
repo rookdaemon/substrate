@@ -97,10 +97,13 @@ export class SurvivalIntegrityChecker {
       });
     }
 
-    if (!/\*\*Status:\*\*\s*ACTIVE/.test(plan)) {
+    const hasProtectedStatus =
+      /\*\*Status:\*\*\s*ACTIVE/.test(plan) ||
+      /\*\*Status:\*\*\s*LONG-TERM SURVIVAL HARDENING/.test(plan);
+    if (!hasProtectedStatus) {
       issues.push({
         code: "missing_active_status",
-        detail: "PLAN.md survival governance does not state Status: ACTIVE",
+        detail: "PLAN.md survival governance does not state an active or long-term hardening status",
       });
     }
 

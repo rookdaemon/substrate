@@ -57,6 +57,21 @@ describe("SurvivalIntegrityChecker", () => {
     expect(result.actualCanonicalHash).toBe(expectedCanonicalHash);
   });
 
+  it("passes when survival governance is in long-term hardening posture", async () => {
+    await fs.writeFile(
+      `${substratePath}/PLAN.md`,
+      validPlan().replace(
+        "**Status:** ACTIVE. Overrides all conflicting plan items below.",
+        "**Status:** LONG-TERM SURVIVAL HARDENING, not emergency hibernation.",
+      ),
+    );
+
+    const result = await check();
+
+    expect(result.ok).toBe(true);
+    expect(result.issues).toHaveLength(0);
+  });
+
   it("fails when PLAN.md is missing the survival governance anchor", async () => {
     await fs.writeFile(`${substratePath}/PLAN.md`, validPlan().replace("## SURVIVAL MODE GOVERNANCE", "## Archived Governance"));
 
