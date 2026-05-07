@@ -30,6 +30,8 @@ export interface PiSessionLauncherConfig {
   providerEnv?: Record<string, string | undefined>;
 }
 
+const MAX_PROCESS_LOG_CONTENT_CHARS = 2_000;
+
 /**
  * ISessionLauncher implementation that invokes Pi Coding Agent as an external
  * shell process for cognitive role sessions.
@@ -210,20 +212,25 @@ export class PiSessionLauncher implements ISessionLauncher {
     if (type === "message_update") {
       return [];
     }
+    if (type === "message") {
+      return this.logEntriesFromMessageEvent(event);
+    }
     const finalText = this.finalTextFromEvent(event);
-    if (finalText) return [{ type: "text", content: finalText }];
+    if (finalText && !this.looksLikeJsonObject(finalText)) {
+      return [{ type: "text", content: this.toProcessLogContent(finalText) }];
+    }
     if (type === "tool_execution_start") {
       return [{
         type: "tool_use",
-        content: JSON.stringify({
+        content: this.toProcessLogContent(JSON.stringify({
           tool: event.toolName,
           args: event.args,
-        }),
+        })),
       }];
     }
     if (type === "tool_execution_update" || type === "tool_execution_end") {
       const result = event.partialResult ?? event.result;
-      return [{ type: "tool_result", content: this.toolResultText(result) }];
+      return [{ type: "tool_result", content: this.toProcessLogContent(this.toolResultText(result)) }];
     }
     if (type === "agent_start" || type === "agent_end" || type === "turn_start" || type === "turn_end") {
       return [{ type: "status", content: String(type) }];
@@ -231,9 +238,37 @@ export class PiSessionLauncher implements ISessionLauncher {
     return [];
   }
 
+  private logEntriesFromMessageEvent(event: Record<string, unknown>): ProcessLogEntry[] {
+    const message = this.recordField(event, "message");
+    if (!message) return [];
+
+    const role = this.stringField(message, "role");
+    if (role === "toolResult") {
+      const text = this.messageContentText(message);
+      return text ? [{ type: "tool_result", content: this.toProcessLogContent(text) }] : [];
+    }
+
+    if (role !== "assistant") return [];
+
+    const toolCallEntries = this.toolCallEntries(message);
+    if (toolCallEntries.length > 0) {
+      // Pi assistant messages commonly pair short narration with tool calls.
+      // The tool call itself is the useful process-log event; logging both
+      // creates repeated low-signal "text" rows in the UI.
+      return toolCallEntries;
+    }
+
+    const text = this.cleanAssistantText(this.messageText(message));
+    if (!text || this.looksLikeJsonObject(text)) return [];
+    return [{ type: "text", content: this.toProcessLogContent(text) }];
+  }
+
   private finalTextFromEvent(event: Record<string, unknown>): string {
     if (event.type === "agent_end" && Array.isArray(event.messages)) {
       return this.lastAssistantText(event.messages);
+    }
+    if (event.type === "message" && event.message && typeof event.message === "object") {
+      return this.messageText(event.message as Record<string, unknown>);
     }
     if ((event.type === "message_end" || event.type === "turn_end") && event.message && typeof event.message === "object") {
       return this.messageText(event.message as Record<string, unknown>);
@@ -255,6 +290,10 @@ export class PiSessionLauncher implements ISessionLauncher {
     const role = this.stringField(message, "role");
     const type = this.stringField(message, "type");
     if (role && role !== "assistant" && type !== "assistant") return "";
+    return this.messageContentText(message);
+  }
+
+  private messageContentText(message: Record<string, unknown>): string {
     if (typeof message.text === "string") return message.text;
     if (typeof message.content === "string") return message.content;
     if (!Array.isArray(message.content)) return "";
@@ -266,12 +305,54 @@ export class PiSessionLauncher implements ISessionLauncher {
         const record = part as Record<string, unknown>;
         const partType = this.stringField(record, "type") ?? "";
         if (partType.includes("thinking")) return "";
+        if (partType === "toolCall") return "";
         return this.stringField(record, "text")
           ?? this.stringField(record, "content")
           ?? "";
       })
       .filter(Boolean)
       .join("");
+  }
+
+  private toolCallEntries(message: Record<string, unknown>): ProcessLogEntry[] {
+    if (!Array.isArray(message.content)) return [];
+    const entries: ProcessLogEntry[] = [];
+    for (const part of message.content) {
+      if (!part || typeof part !== "object") continue;
+      const record = part as Record<string, unknown>;
+      if (this.stringField(record, "type") !== "toolCall") continue;
+      entries.push({
+        type: "tool_use",
+        content: this.toProcessLogContent(JSON.stringify({
+          tool: this.stringField(record, "name") ?? "unknown",
+          args: record.arguments ?? {},
+        })),
+      });
+    }
+    return entries;
+  }
+
+  private cleanAssistantText(text: string): string {
+    return text
+      .replace(/<think>[\s\S]*?<\/think>/gi, "")
+      .replace(/<\/?think>/gi, "")
+      .trim();
+  }
+
+  private looksLikeJsonObject(text: string): boolean {
+    const trimmed = text.trim();
+    if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) return false;
+    try {
+      JSON.parse(trimmed);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private toProcessLogContent(content: string): string {
+    if (content.length <= MAX_PROCESS_LOG_CONTENT_CHARS) return content;
+    return `${content.slice(0, MAX_PROCESS_LOG_CONTENT_CHARS)}\n...[truncated ${content.length - MAX_PROCESS_LOG_CONTENT_CHARS} chars]`;
   }
 
   private findUsageCandidate(event: Record<string, unknown>): Record<string, unknown> | undefined {

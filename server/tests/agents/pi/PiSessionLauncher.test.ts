@@ -129,6 +129,74 @@ describe("PiSessionLauncher", () => {
     ]);
   });
 
+  it("maps current Pi message events without logging tool-call narration as text", async () => {
+    const launcher = new PiSessionLauncher(runner, clock, { model: "moonshotai/kimi-k2.6:floor" });
+    runner.enqueue({
+      stdout: [
+        JSON.stringify({
+          type: "message",
+          message: {
+            role: "assistant",
+            content: [
+              { type: "text", text: "I will inspect the file. </think> " },
+              { type: "toolCall", name: "bash", arguments: { command: "rg TODO" } },
+            ],
+          },
+        }),
+        JSON.stringify({
+          type: "message",
+          message: {
+            role: "toolResult",
+            toolName: "bash",
+            content: [{ type: "text", text: "ok" }],
+          },
+        }),
+        JSON.stringify({
+          type: "message",
+          message: {
+            role: "assistant",
+            content: [{ type: "text", text: "{\"result\":\"success\",\"summary\":\"done\"}" }],
+          },
+          usage: { input: 10, output: 2, cost: { total: 0.001 } },
+        }),
+      ].join("\n") + "\n",
+      stderr: "",
+      exitCode: 0,
+    });
+    const entries: Array<{ type: string; content: string }> = [];
+
+    const result = await launcher.launch(makeRequest(), { onLogEntry: (entry) => entries.push(entry) });
+
+    expect(result.rawOutput).toBe("{\"result\":\"success\",\"summary\":\"done\"}");
+    expect(entries).toEqual([
+      { type: "tool_use", content: JSON.stringify({ tool: "bash", args: { command: "rg TODO" } }) },
+      { type: "tool_result", content: "ok" },
+    ]);
+  });
+
+  it("emits plain assistant text from current Pi message events", async () => {
+    const launcher = new PiSessionLauncher(runner, clock);
+    runner.enqueue({
+      stdout: [
+        JSON.stringify({
+          type: "message",
+          message: {
+            role: "assistant",
+            content: [{ type: "text", text: "plain answer" }],
+          },
+        }),
+      ].join("\n") + "\n",
+      stderr: "",
+      exitCode: 0,
+    });
+    const entries: Array<{ type: string; content: string }> = [];
+
+    const result = await launcher.launch(makeRequest(), { onLogEntry: (entry) => entries.push(entry) });
+
+    expect(result.rawOutput).toBe("plain answer");
+    expect(entries).toEqual([{ type: "text", content: "plain answer" }]);
+  });
+
   it("maps usage-like JSON fields when Pi includes them", async () => {
     const launcher = new PiSessionLauncher(runner, clock, { model: "gpt-5.5" });
     runner.enqueue({
