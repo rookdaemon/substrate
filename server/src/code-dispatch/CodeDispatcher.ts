@@ -159,10 +159,11 @@ export class CodeDispatcher {
       return { backend: this.defaultBackend };
     }
 
-    // Copilot/SWE-agent is historical only. Auto routing now stays on Codex,
-    // which can discover scope while remaining under the local tool/worktree
-    // discipline expected by the current substrate.
-    return { backend: "codex" };
+    // When the cognitive launcher is already portable (pi), route code dispatch
+    // through the same portable shell rather than a separate commercial CLI.
+    // This keeps the default execution surface consistent and reduces shell-
+    // independence score blockers. Codex remains available as an explicit override.
+    return { backend: "pi" };
   }
 
   private async getChangedFiles(cwd: string): Promise<string[]> {
@@ -192,4 +193,8 @@ export class CodeDispatcher {
 
 function isLegacyCommercialShellBackend(backend: BackendType): boolean {
   return backend === "claude" || backend === "copilot" || backend === "gemini";
+}
+
+function isPortableShellBackend(backend: BackendType): boolean {
+  return backend === "pi";
 }

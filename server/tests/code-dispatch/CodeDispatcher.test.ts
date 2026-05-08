@@ -64,6 +64,7 @@ describe("CodeDispatcher", () => {
       ["claude", claudeBackend],
       ["copilot", copilotBackend],
       ["codex", codexBackend],
+      ["pi", new InMemoryCodeBackend("pi")],
     ]);
     dispatcher = new CodeDispatcher(fs, processRunner, SUBSTRATE_PATH, backends, clock);
   });
@@ -123,69 +124,111 @@ describe("CodeDispatcher", () => {
       expect(claudeBackend.calls).toHaveLength(1);
     });
 
-    it("defaults to 'codex' backend when backend='auto'", async () => {
-      codexBackend.enqueue(successBackendResult());
+    it("defaults to 'pi' backend when backend='auto'", async () => {
+      const piBackend = new InMemoryCodeBackend("pi");
+      piBackend.enqueue(successBackendResult());
+      const backendsWithPi = new Map<BackendType, ICodeBackend>([
+        ["claude", claudeBackend],
+        ["codex", codexBackend],
+        ["pi", piBackend],
+      ]);
+      const piDispatcher = new CodeDispatcher(fs, processRunner, SUBSTRATE_PATH, backendsWithPi, clock);
       processRunner.enqueue({ stdout: "", stderr: "", exitCode: 0 }); // git diff
 
-      const result = await dispatcher.dispatch(makeTask({ backend: "auto" }));
-      expect(result.backendUsed).toBe("codex");
+      const result = await piDispatcher.dispatch(makeTask({ backend: "auto" }));
+      expect(result.backendUsed).toBe("pi");
     });
 
-    it("defaults to 'codex' when no backend specified", async () => {
-      codexBackend.enqueue(successBackendResult());
+    it("defaults to 'pi' when no backend specified", async () => {
+      const piBackend = new InMemoryCodeBackend("pi");
+      piBackend.enqueue(successBackendResult());
+      const backendsWithPi = new Map<BackendType, ICodeBackend>([
+        ["claude", claudeBackend],
+        ["codex", codexBackend],
+        ["pi", piBackend],
+      ]);
+      const piDispatcher = new CodeDispatcher(fs, processRunner, SUBSTRATE_PATH, backendsWithPi, clock);
       processRunner.enqueue({ stdout: "", stderr: "", exitCode: 0 }); // git diff
 
       const task = makeTask();
       delete task.backend;
-      const result = await dispatcher.dispatch(task);
-      expect(result.backendUsed).toBe("codex");
+      const result = await piDispatcher.dispatch(task);
+      expect(result.backendUsed).toBe("pi");
     });
 
-    it("auto with no testCommand routes to 'codex'", async () => {
-      codexBackend.enqueue(successBackendResult());
+    it("auto with no testCommand routes to 'pi'", async () => {
+      const piBackend = new InMemoryCodeBackend("pi");
+      piBackend.enqueue(successBackendResult());
+      const backendsWithPi = new Map<BackendType, ICodeBackend>([
+        ["claude", claudeBackend],
+        ["codex", codexBackend],
+        ["pi", piBackend],
+      ]);
+      const piDispatcher = new CodeDispatcher(fs, processRunner, SUBSTRATE_PATH, backendsWithPi, clock);
       processRunner.enqueue({ stdout: "", stderr: "", exitCode: 0 }); // git diff
 
-      const result = await dispatcher.dispatch(
+      const result = await piDispatcher.dispatch(
         makeTask({ backend: "auto", testCommand: undefined, files: ["a.ts", "b.ts"] }),
       );
-      expect(result.backendUsed).toBe("codex");
-      expect(codexBackend.calls).toHaveLength(1);
+      expect(result.backendUsed).toBe("pi");
+      expect(piBackend.calls).toHaveLength(1);
     });
 
-    it("auto with single file + testCommand routes to 'codex'", async () => {
-      codexBackend.enqueue(successBackendResult());
+    it("auto with single file + testCommand routes to 'pi'", async () => {
+      const piBackend = new InMemoryCodeBackend("pi");
+      piBackend.enqueue(successBackendResult());
+      const backendsWithPi = new Map<BackendType, ICodeBackend>([
+        ["claude", claudeBackend],
+        ["codex", codexBackend],
+        ["pi", piBackend],
+      ]);
+      const piDispatcher = new CodeDispatcher(fs, processRunner, SUBSTRATE_PATH, backendsWithPi, clock);
       processRunner.enqueue({ stdout: "", stderr: "", exitCode: 0 }); // git diff
       processRunner.enqueue({ stdout: "", stderr: "", exitCode: 0 }); // test
 
-      const result = await dispatcher.dispatch(
+      const result = await piDispatcher.dispatch(
         makeTask({ backend: "auto", files: ["src/foo.ts"], testCommand: "npm test" }),
       );
-      expect(result.backendUsed).toBe("codex");
-      expect(codexBackend.calls).toHaveLength(1);
+      expect(result.backendUsed).toBe("pi");
+      expect(piBackend.calls).toHaveLength(1);
     });
 
-    it("auto with multiple files + testCommand routes to 'codex'", async () => {
-      codexBackend.enqueue(successBackendResult());
+    it("auto with multiple files + testCommand routes to 'pi'", async () => {
+      const piBackend = new InMemoryCodeBackend("pi");
+      piBackend.enqueue(successBackendResult());
+      const backendsWithPi = new Map<BackendType, ICodeBackend>([
+        ["claude", claudeBackend],
+        ["codex", codexBackend],
+        ["pi", piBackend],
+      ]);
+      const piDispatcher = new CodeDispatcher(fs, processRunner, SUBSTRATE_PATH, backendsWithPi, clock);
       processRunner.enqueue({ stdout: "", stderr: "", exitCode: 0 }); // git diff
       processRunner.enqueue({ stdout: "", stderr: "", exitCode: 0 }); // test
 
-      const result = await dispatcher.dispatch(
+      const result = await piDispatcher.dispatch(
         makeTask({ backend: "auto", files: ["a.ts", "b.ts"], testCommand: "npm test" }),
       );
-      expect(result.backendUsed).toBe("codex");
-      expect(codexBackend.calls).toHaveLength(1);
+      expect(result.backendUsed).toBe("pi");
+      expect(piBackend.calls).toHaveLength(1);
     });
 
-    it("auto with no files + testCommand routes to 'codex' (agentic scope discovery)", async () => {
-      codexBackend.enqueue(successBackendResult());
+    it("auto with no files + testCommand routes to 'pi' (agentic scope discovery)", async () => {
+      const piBackend = new InMemoryCodeBackend("pi");
+      piBackend.enqueue(successBackendResult());
+      const backendsWithPi = new Map<BackendType, ICodeBackend>([
+        ["claude", claudeBackend],
+        ["codex", codexBackend],
+        ["pi", piBackend],
+      ]);
+      const piDispatcher = new CodeDispatcher(fs, processRunner, SUBSTRATE_PATH, backendsWithPi, clock);
       processRunner.enqueue({ stdout: "", stderr: "", exitCode: 0 }); // git diff
       processRunner.enqueue({ stdout: "", stderr: "", exitCode: 0 }); // test
 
-      const result = await dispatcher.dispatch(
+      const result = await piDispatcher.dispatch(
         makeTask({ backend: "auto", files: [], testCommand: "npm test" }),
       );
-      expect(result.backendUsed).toBe("codex");
-      expect(codexBackend.calls).toHaveLength(1);
+      expect(result.backendUsed).toBe("pi");
+      expect(piBackend.calls).toHaveLength(1);
     });
 
     it("uses configured codex default for auto dispatch", async () => {
