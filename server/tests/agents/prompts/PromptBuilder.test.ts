@@ -104,6 +104,8 @@ describe("PromptBuilder", () => {
       expect(prompt).toContain("`Grep`");
       expect(prompt).toContain("`Glob`");
       expect(prompt).toContain("`mcp__tinybus__send_agora_message`");
+      expect(prompt).toContain("curl -s http://localhost:3000/api/shell-independence");
+      expect(prompt).toContain("Before doing repo-wide searches for launcher/provider/code-dispatch dependency inventory");
     });
 
     it("includes Gemini tool names when launcherType is gemini", () => {
@@ -166,25 +168,28 @@ describe("PromptBuilder", () => {
       expect(prompt).toContain("`bash`");
       expect(prompt).toContain("POST http://localhost:3000/api/agora/send");
       expect(prompt).toContain("POST http://localhost:3000/api/metrics/query");
+      expect(prompt).toContain("GET http://localhost:3000/api/shell-independence");
       expect(prompt).toContain("POST http://localhost:3000/api/code-dispatch/invoke");
-	    expect(prompt).not.toContain("`mcp__tinybus__send_agora_message`");
-	  });
+      expect(prompt).toContain("Before doing repo-wide searches for launcher/provider/code-dispatch dependency inventory");
+      expect(prompt).not.toContain("`mcp__tinybus__send_agora_message`");
+    });
 
-	  it("uses the configured HTTP port in Pi direct tool surfaces", () => {
-	    const piBuilder = new PromptBuilder(reader, checker, {
-	      substratePath: "/substrate",
-	      sourceCodePath: "/home/user/substrate",
-	      launcherType: "pi",
-	      httpPort: 4123,
-	    });
-	    const prompt = piBuilder.buildSystemPrompt(AgentRole.SUBCONSCIOUS);
-	    expect(prompt).toContain("POST http://localhost:4123/api/agora/send");
-	    expect(prompt).toContain("GET http://localhost:4123/api/metrics/usage-summary");
-	    expect(prompt).toContain("POST http://localhost:4123/api/code-dispatch/invoke");
-	    expect(prompt).not.toContain("localhost:3000/api");
-	  });
+    it("uses the configured HTTP port in Pi direct tool surfaces", () => {
+      const piBuilder = new PromptBuilder(reader, checker, {
+        substratePath: "/substrate",
+        sourceCodePath: "/home/user/substrate",
+        launcherType: "pi",
+        httpPort: 4123,
+      });
+      const prompt = piBuilder.buildSystemPrompt(AgentRole.SUBCONSCIOUS);
+      expect(prompt).toContain("POST http://localhost:4123/api/agora/send");
+      expect(prompt).toContain("GET http://localhost:4123/api/metrics/usage-summary");
+      expect(prompt).toContain("GET http://localhost:4123/api/shell-independence");
+      expect(prompt).toContain("POST http://localhost:4123/api/code-dispatch/invoke");
+      expect(prompt).not.toContain("localhost:3000/api");
+    });
 
-	  it("uses Claude tool names for ollama launcher", () => {
+    it("uses Claude tool names for ollama launcher", () => {
       const ollamaBuilder = new PromptBuilder(reader, checker, {
         substratePath: "/substrate",
         sourceCodePath: "/home/user/substrate",

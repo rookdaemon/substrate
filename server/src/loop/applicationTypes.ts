@@ -14,7 +14,12 @@ export interface ProviderConfig {
   tacticalModel?: string;
   idModel?: string;
   mode?: "json" | "print";
+  thinking?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
   sessionDir?: string;
+  defaultTimeoutMs?: number;
+  defaultIdleTimeoutMs?: number;
+  maxLoggedTextChars?: number;
+  minLoggedTextChars?: number;
 }
 
 export interface ApplicationConfig {

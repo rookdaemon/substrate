@@ -42,6 +42,7 @@ import { buildPeerReferenceDirectory, resolvePeerReference } from "../agora/util
 import type { INSResult } from "./ins/types";
 import type { INSHook } from "./ins/INSHook";
 import type { ISleepWakeTimer } from "./SleepWakeTimer";
+import type { IShellIndependenceService } from "../shell/ShellIndependenceService";
 
 /** Maximum rate-limit backoff duration (2 hours). Any parsed reset time beyond this
  *  is capped to prevent multi-day sleeps from poisoning the restart loop. */
@@ -85,6 +86,9 @@ export class LoopOrchestrator implements IMessageInjector {
 
   // Performance metrics — records cycle timing, api_call events, and substrate_io events
   private performanceMetrics: PerformanceMetrics | null = null;
+
+  // Deterministic shell-dependency scorecard for shell-independence work.
+  private shellIndependenceService: IShellIndependenceService | null = null;
 
   // SUPEREGO finding tracker for recurring finding escalation
   private findingTracker: SuperegoFindingTracker = new SuperegoFindingTracker();
@@ -393,6 +397,10 @@ export class LoopOrchestrator implements IMessageInjector {
     this.performanceMetrics = metrics;
   }
 
+  setShellIndependenceService(service: IShellIndependenceService): void {
+    this.shellIndependenceService = service;
+  }
+
   setEndorsementInterceptor(interceptor: EndorsementInterceptor): void {
     this.endorsementInterceptor = interceptor;
   }
@@ -495,6 +503,7 @@ export class LoopOrchestrator implements IMessageInjector {
         this.logger.debug(`before-cycle hook failed — ${err instanceof Error ? err.message : String(err)}`);
       }
     }
+    await this.refreshShellIndependenceScorecard();
 
     // INS pre-cycle hook — deterministic rule checks
     const hadExternalPendingBeforeINS = this.pendingMessages.some((message) => !this.isInternalMaintenanceMessage(message));
@@ -599,7 +608,7 @@ export class LoopOrchestrator implements IMessageInjector {
       this.logger.debug(`cycle ${this.cycleNumber}: dispatching task "${dispatch.taskId}"${dispatch.correlationId ? ` [correlationId: ${dispatch.correlationId}]` : ""}`);
 
       // Endpoint state injection — provide runtime context alongside task dispatch
-      const pending = await this.buildPendingWithEndpointState();
+      const pending = await this.buildPendingWithEndpointState(dispatch.description);
 
       const apiCallStartMs = this.clock.now().getTime();
       const taskResult = await this.subconscious.execute(
@@ -939,6 +948,20 @@ export class LoopOrchestrator implements IMessageInjector {
 
   setBeforeCycleHook(hook: (() => Promise<void>) | null): void {
     this.beforeCycleHook = hook;
+  }
+
+  private async refreshShellIndependenceScorecard(): Promise<void> {
+    if (!this.shellIndependenceService) return;
+    try {
+      const snapshot = await this.shellIndependenceService.refresh();
+      this.logger.debug(
+        `shell-independence: score=${snapshot.scorecard.score}/100 grade=${snapshot.scorecard.grade} ` +
+        `launcher=${snapshot.scorecard.activeLauncher}/${snapshot.scorecard.activeLauncherKind} ` +
+        `code=${snapshot.scorecard.codeDispatchDefault} commercial=${snapshot.scorecard.commercialShellCount} remote=${snapshot.scorecard.remoteApiCount}`,
+      );
+    } catch (err) {
+      this.logger.debug(`shell-independence: refresh failed — ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
   async runOneTick(): Promise<TickResult> {
@@ -1757,7 +1780,11 @@ export class LoopOrchestrator implements IMessageInjector {
    * Inject the current endpoint state into pendingMessages and return a snapshot
    * of all pending messages (clearing the queue). Returns undefined if there are none.
    */
-  private async buildPendingWithEndpointState(): Promise<string[] | undefined> {
+  private async buildPendingWithEndpointState(dispatchDescription?: string): Promise<string[] | undefined> {
+    const shellContext = await this.buildShellIndependenceTaskContext(dispatchDescription);
+    if (shellContext) {
+      this.pendingMessages.unshift(shellContext);
+    }
     const endpointStateContext = await this.readEndpointState();
     this.pendingMessages.unshift(`[SYSTEM: CURRENT ENDPOINT STATE]\n${endpointStateContext}`);
     const pending = this.pendingMessages.length > 0 ? [...this.pendingMessages] : undefined;
@@ -1766,5 +1793,26 @@ export class LoopOrchestrator implements IMessageInjector {
       this.logger.debug(`cycle ${this.cycleNumber}: including ${pending.length} pending message(s) with task`);
     }
     return pending;
+  }
+
+  private async buildShellIndependenceTaskContext(dispatchDescription?: string): Promise<string | null> {
+    if (!this.shellIndependenceService || !dispatchDescription || !this.isShellInventoryTask(dispatchDescription)) {
+      return null;
+    }
+    try {
+      const snapshot = this.shellIndependenceService.getLastSnapshot() ?? await this.shellIndependenceService.refresh();
+      return [
+        "[SYSTEM: DETERMINISTIC SHELL-INDEPENDENCE INVENTORY]",
+        ...snapshot.compactReport,
+        "Full report is available at GET /api/shell-independence. Use this before broad source searches; inspect source only for concrete gaps named by the report.",
+      ].join("\n");
+    } catch (err) {
+      this.logger.debug(`shell-independence: task context unavailable — ${err instanceof Error ? err.message : String(err)}`);
+      return null;
+    }
+  }
+
+  private isShellInventoryTask(text: string): boolean {
+    return /shell[- ]independ|commercial[- ]shell|launcher|provider|code[- ]dispatch|dependency inventory|mcp/i.test(text);
   }
 }

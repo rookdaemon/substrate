@@ -91,7 +91,7 @@ export async function createLoopLayer(
 ): Promise<LoopLayerResult> {
   const { fs, clock, substrateConfig, reader, appendWriter, lock, writer, logger, metaManager } = substrate;
   const { ego, subconscious, superego, id, conversationManager, launcher, gatedLauncher,
-    taskMetrics, sizeTracker, delegationTracker, driveQualityTracker, metricsService, vertexSubprocessLauncher } = agents;
+    taskMetrics, sizeTracker, delegationTracker, driveQualityTracker, metricsService, shellIndependenceService, vertexSubprocessLauncher } = agents;
 
   // Loop layer — build httpServer first for the underlying http.Server,
   // then wsServer, then orchestrator, then wire orchestrator back into httpServer
@@ -415,6 +415,11 @@ export async function createLoopLayer(
   // Set up TinyBus MCP server
   httpServer.setTinyBus(tinyBus);
   httpServer.setUsageMetrics(metricsService);
+  httpServer.setShellIndependenceService(shellIndependenceService);
+  orchestrator.setShellIndependenceService(shellIndependenceService);
+  shellIndependenceService.refresh().catch((err) => {
+    logger.debug(`shell-independence: initial refresh failed — ${err instanceof Error ? err.message : String(err)}`);
+  });
 
   // Set up Code Dispatch layer
   const codeDispatchRunner = new NodeProcessRunner();

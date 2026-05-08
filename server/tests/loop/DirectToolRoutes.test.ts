@@ -7,6 +7,7 @@ import { InMemoryFileSystem } from "../../src/substrate/abstractions/InMemoryFil
 import { InMemoryProcessRunner } from "../../src/agents/claude/InMemoryProcessRunner";
 import { FixedClock } from "../../src/substrate/abstractions/FixedClock";
 import type { IMetricsService, LlmSessionMetric, MetricsQuery, UsageSummary } from "../../src/metrics/IMetricsService";
+import type { IShellIndependenceService, ShellIndependenceSnapshot } from "../../src/shell/ShellIndependenceService";
 import type { ICodeBackend, BackendResult, SubstrateSlice } from "../../src/code-dispatch/ICodeBackend";
 import type { BackendType } from "../../src/code-dispatch/types";
 
@@ -77,6 +78,71 @@ class StaticBackend implements ICodeBackend {
   async invoke(spec: string, context: SubstrateSlice): Promise<BackendResult> {
     this.calls.push({ spec, context });
     return { success: true, output: "done", exitCode: 0, durationMs: 1 };
+  }
+}
+
+function makeShellSnapshot(): ShellIndependenceSnapshot {
+  return {
+    generatedAt: "2026-05-08T00:00:00.000Z",
+    inventory: {
+      activeCognitiveRoute: {
+        id: "cognitive:pi",
+        label: "cognitive via pi",
+        provider: "pi",
+        kind: "portable-shell",
+        status: "active",
+        risk: "medium",
+        evidence: ["sessionLauncher: pi"],
+      },
+      codeDispatchRoute: {
+        id: "code:codex",
+        label: "code dispatch via codex",
+        provider: "codex",
+        kind: "commercial-shell",
+        status: "default",
+        risk: "high",
+        evidence: ["defaultCodeBackend: auto"],
+      },
+      idRoute: {
+        id: "id:pi",
+        label: "id via pi",
+        provider: "pi",
+        kind: "portable-shell",
+        status: "active",
+        risk: "medium",
+        evidence: ["id launcher: pi"],
+      },
+      deterministicRoutes: [],
+      fallbackRoutes: [],
+      staticShellReferences: [],
+      notes: [],
+    },
+    scorecard: {
+      score: 66,
+      grade: "C",
+      riskLevel: "medium",
+      activeLauncher: "pi",
+      activeLauncherKind: "portable-shell",
+      codeDispatchDefault: "codex",
+      commercialShellCount: 1,
+      remoteApiCount: 1,
+      deterministicRouteCount: 4,
+      blockers: ["default code dispatch depends on commercial shell: codex"],
+      nextActions: ["Replace default code dispatch with a portable backend or require explicit backend selection."],
+    },
+    compactReport: ["Shell independence score: 66/100 (C, medium risk)"],
+  };
+}
+
+class StaticShellIndependenceService implements IShellIndependenceService {
+  private snapshot = makeShellSnapshot();
+
+  async refresh(): Promise<ShellIndependenceSnapshot> {
+    return this.snapshot;
+  }
+
+  getLastSnapshot(): ShellIndependenceSnapshot | null {
+    return this.snapshot;
   }
 }
 
@@ -166,5 +232,21 @@ describe("direct HTTP tool routes", () => {
       filesChanged: ["src/a.ts"],
     });
     expect(backend.calls[0].spec).toBe("change it");
+  });
+
+  it("exposes shell-independence inventory through direct HTTP", async () => {
+    server = new LoopHttpServer();
+    server.setShellIndependenceService(new StaticShellIndependenceService());
+    port = await server.listen(0);
+
+    const response = await request<{ success: boolean; snapshot: ShellIndependenceSnapshot }>(port, "GET", "/api/shell-independence");
+
+    expect(response.status).toBe(200);
+    expect(response.body.success).toBe(true);
+    expect(response.body.snapshot.scorecard).toMatchObject({
+      activeLauncher: "pi",
+      codeDispatchDefault: "codex",
+      score: 66,
+    });
   });
 });

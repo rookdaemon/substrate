@@ -94,7 +94,8 @@ function getContextBudget(launcherType?: string, override?: number): number | un
   return CONTEXT_BUDGET_LINES_BY_LAUNCHER[launcherType ?? DEFAULT_LAUNCHER];
 }
 
-function buildToolReferenceSection(tools: ToolNames, launcherType?: string): string {
+function buildToolReferenceSection(tools: ToolNames, launcherType?: string, httpPort = DEFAULT_HTTP_PORT): string {
+  const baseUrl = `http://localhost:${httpPort}`;
   if (launcherType === "pi") {
     const codeDispatchTool = tools.sendAgoraMessage.replace("/api/agora/send", "/api/code-dispatch/invoke");
     return `\n\n=== TOOL REFERENCE ===
@@ -111,7 +112,10 @@ Direct substrate tool surfaces for Pi (use \`${tools.runShell}\` with curl; incl
 - Send Agora message: \`${tools.sendAgoraMessage}\` with JSON {"to":"peer-or-pubkey","text":"message","inReplyTo":"optional-envelope-id"}
 - Get usage summary: \`${tools.getUsageSummary}?windowHours=24\`
 - Query metrics with read-only SQL: \`${tools.queryMetrics}\` with JSON {"sql":"SELECT ...","params":[],"maxRows":100}
-- Dispatch code work: \`${codeDispatchTool}\` with JSON {"spec":"task","backend":"auto","files":[],"testCommand":"npm test","cwd":"optional"}`;
+- Get shell-independence inventory and scorecard: \`bash/curl GET ${baseUrl}/api/shell-independence\`
+- Dispatch code work: \`${codeDispatchTool}\` with JSON {"spec":"task","backend":"auto","files":[],"testCommand":"npm test","cwd":"optional"}
+
+Before doing repo-wide searches for launcher/provider/code-dispatch dependency inventory, call the shell-independence endpoint and use its deterministic report as the starting point. Only inspect source after the report names a concrete gap.`;
   }
 
   return `\n\n=== TOOL REFERENCE ===
@@ -125,7 +129,10 @@ Built-in tool names for this session (use these exact names when calling tools):
 - Find files by pattern: \`${tools.globSearch}\`
 - Send Agora message (MCP): \`${tools.sendAgoraMessage}\`
 - Get usage summary (MCP): \`${tools.getUsageSummary}\`
-- Query metrics with read-only SQL (MCP): \`${tools.queryMetrics}\``;
+- Query metrics with read-only SQL (MCP): \`${tools.queryMetrics}\`
+- Get shell-independence inventory and scorecard (deterministic HTTP): use \`${tools.runShell}\` with \`curl -s ${baseUrl}/api/shell-independence\`
+
+Before doing repo-wide searches for launcher/provider/code-dispatch dependency inventory, use the shell-independence endpoint as the starting point. Only inspect source after the report names a concrete gap.`;
 }
 
 export interface FileContext {
@@ -222,7 +229,7 @@ export class PromptBuilder {
     }
 
     const tools = getToolNames(this.paths?.launcherType, this.paths?.httpPort ?? DEFAULT_HTTP_PORT);
-    prompt += buildToolReferenceSection(tools, this.paths?.launcherType);
+    prompt += buildToolReferenceSection(tools, this.paths?.launcherType, this.paths?.httpPort ?? DEFAULT_HTTP_PORT);
 
     prompt += AUTONOMY_REMINDER;
 

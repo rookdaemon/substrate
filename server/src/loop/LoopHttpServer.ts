@@ -23,6 +23,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import type { CodeDispatcher } from "../code-dispatch/CodeDispatcher";
 import type { BackendType } from "../code-dispatch/types";
 import type { IMetricsService } from "../metrics/IMetricsService";
+import type { IShellIndependenceService } from "../shell/ShellIndependenceService";
 import { AgoraMessageHandler } from "../agora/AgoraMessageHandler";
 import { IAgoraService } from "../agora/IAgoraService";
 import type { ILogger } from "../logging";
@@ -69,6 +70,7 @@ export class LoopHttpServer {
   private delegationTracker: DelegationTracker | null = null;
   private tinyBus: TinyBus | null = null;
   private usageMetrics: IMetricsService | null = null;
+  private shellIndependenceService: IShellIndependenceService | null = null;
   private codeDispatcher: CodeDispatcher | null = null;
   private meta: SubstrateMeta | null = null;
   private apiToken: string | null = null;
@@ -149,6 +151,10 @@ export class LoopHttpServer {
 
   setUsageMetrics(metrics: IMetricsService): void {
     this.usageMetrics = metrics;
+  }
+
+  setShellIndependenceService(service: IShellIndependenceService): void {
+    this.shellIndependenceService = service;
   }
 
   setCodeDispatcher(dispatcher: CodeDispatcher): void {
@@ -249,6 +255,8 @@ export class LoopHttpServer {
         const nhw = this.orc.getNextHeartbeatWake();
         if (nhw) statusPayload.nextHeartbeatWake = nhw;
         if (this.meta) statusPayload.meta = this.meta;
+        const shellSnapshot = this.shellIndependenceService?.getLastSnapshot();
+        if (shellSnapshot) statusPayload.shellIndependence = shellSnapshot.scorecard;
         this.json(res, 200, statusPayload);
         break;
       }
@@ -267,6 +275,9 @@ export class LoopHttpServer {
         break;
       case "POST /api/metrics/query":
         this.handleMetricsQuery(req, res);
+        break;
+      case "GET /api/shell-independence":
+        this.handleShellIndependence(res);
         break;
       case "POST /api/agora/send":
         this.handleAgoraSend(req, res);
@@ -440,6 +451,17 @@ export class LoopHttpServer {
     this.usageMetrics.query({ sql, params, maxRows }).then(
       (rows) => this.json(res, 200, { success: true, rows }),
       (error) => this.json(res, 400, { success: false, error: error instanceof Error ? error.message : String(error) }),
+    );
+  }
+
+  private handleShellIndependence(res: http.ServerResponse): void {
+    if (!this.shellIndependenceService) {
+      this.json(res, 503, { error: "Shell independence service not configured" });
+      return;
+    }
+    this.shellIndependenceService.refresh().then(
+      (snapshot) => this.json(res, 200, { success: true, snapshot }),
+      (error) => this.json(res, 500, { success: false, error: error instanceof Error ? error.message : String(error) }),
     );
   }
 

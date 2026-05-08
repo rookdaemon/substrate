@@ -74,6 +74,23 @@ describe("PiSessionLauncher", () => {
     expect(call.options?.stdin).toBe("SYSTEM INSTRUCTIONS:\nSystem rules\n\n---\n\nTask");
   });
 
+  it("applies bounded Pi process defaults and allows per-launch override", async () => {
+    runner.enqueue({ stdout: "", stderr: "", exitCode: 0 });
+    runner.enqueue({ stdout: "", stderr: "", exitCode: 0 });
+    const launcher = new PiSessionLauncher(runner, clock, {
+      defaultTimeoutMs: 120_000,
+      defaultIdleTimeoutMs: 30_000,
+    });
+
+    await launcher.launch(makeRequest());
+    await launcher.launch(makeRequest(), { timeoutMs: 10_000, idleTimeoutMs: 2_000 });
+
+    expect(runner.getCalls()[0].options?.timeoutMs).toBe(120_000);
+    expect(runner.getCalls()[0].options?.idleTimeoutMs).toBe(30_000);
+    expect(runner.getCalls()[1].options?.timeoutMs).toBe(10_000);
+    expect(runner.getCalls()[1].options?.idleTimeoutMs).toBe(2_000);
+  });
+
   it("supports print mode and ephemeral sessions", async () => {
     runner.enqueue({ stdout: "plain response", stderr: "", exitCode: 0 });
     const launcher = new PiSessionLauncher(runner, clock, { mode: "print" });
@@ -195,6 +212,59 @@ describe("PiSessionLauncher", () => {
 
     expect(result.rawOutput).toBe("plain answer");
     expect(entries).toEqual([{ type: "text", content: "plain answer" }]);
+  });
+
+  it("suppresses low-value single-token assistant text without changing raw output", async () => {
+    const launcher = new PiSessionLauncher(runner, clock);
+    runner.enqueue({
+      stdout: [
+        JSON.stringify({
+          type: "message",
+          message: {
+            role: "assistant",
+            content: [{ type: "text", text: "analysis" }],
+          },
+        }),
+        JSON.stringify({
+          type: "message",
+          message: {
+            role: "assistant",
+            content: [{ type: "text", text: "material update is ready" }],
+          },
+        }),
+      ].join("\n") + "\n",
+      stderr: "",
+      exitCode: 0,
+    });
+    const entries: Array<{ type: string; content: string }> = [];
+
+    const result = await launcher.launch(makeRequest(), { onLogEntry: (entry) => entries.push(entry) });
+
+    expect(result.rawOutput).toBe("material update is ready");
+    expect(entries).toEqual([{ type: "text", content: "material update is ready" }]);
+  });
+
+  it("caps long process-log text entries while keeping raw output complete", async () => {
+    const launcher = new PiSessionLauncher(runner, clock, { maxLoggedTextChars: 12 });
+    const longText = "this assistant message should be clipped in process log";
+    runner.enqueue({
+      stdout: JSON.stringify({
+        type: "message",
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: longText }],
+        },
+      }) + "\n",
+      stderr: "",
+      exitCode: 0,
+    });
+    const entries: Array<{ type: string; content: string }> = [];
+
+    const result = await launcher.launch(makeRequest(), { onLogEntry: (entry) => entries.push(entry) });
+
+    expect(result.rawOutput).toBe(longText);
+    expect(entries[0].content).toContain("this assista");
+    expect(entries[0].content).toContain("[truncated");
   });
 
   it("maps usage-like JSON fields when Pi includes them", async () => {

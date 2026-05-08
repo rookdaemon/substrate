@@ -42,6 +42,7 @@ import { SqliteMetricsService } from "../metrics/SqliteMetricsService";
 import { MeteredSessionLauncher } from "../metrics/MeteredSessionLauncher";
 import { BudgetGuard } from "../budget/BudgetGuard";
 import { FlashGate } from "../gates/FlashGate";
+import { ShellIndependenceService } from "../shell/ShellIndependenceService";
 import type { IFlashGate } from "../gates/IFlashGate";
 import type { ApplicationConfig } from "./applicationTypes";
 import type { SubstrateLayerResult } from "./createSubstrateLayer";
@@ -60,6 +61,7 @@ export interface AgentLayerResult {
   conversationManager: ConversationManager;
   driveQualityTracker: DriveQualityTracker;
   metricsService: SqliteMetricsService;
+  shellIndependenceService: ShellIndependenceService;
   flashGate: IFlashGate | null;
   ego: Ego;
   subconscious: Subconscious;
@@ -126,6 +128,7 @@ export async function createAgentLayer(
   const piConfig = providerConfig(config, "pi");
   const piProvider = inferPiProvider(activeModel, piConfig?.provider);
   const DEFAULT_HTTP_PORT = 3000;
+  const shellIndependenceService = new ShellIndependenceService(fs, clock, config);
 
   const checker = new PermissionChecker();
   const promptBuilder = new PromptBuilder(reader, checker, {
@@ -282,6 +285,10 @@ export async function createAgentLayer(
       sessionDir: piConfig?.sessionDir,
       apiToken: config.apiToken,
       providerEnv: piProviderEnv,
+      defaultTimeoutMs: piConfig?.defaultTimeoutMs,
+      defaultIdleTimeoutMs: piConfig?.defaultIdleTimeoutMs,
+      maxLoggedTextChars: piConfig?.maxLoggedTextChars,
+      minLoggedTextChars: piConfig?.minLoggedTextChars,
     }, logger);
     gatedLauncher = new SemaphoreSessionLauncher(piLauncher, apiSemaphore);
   } else if (config.sessionLauncher === "ollama") {
@@ -520,7 +527,7 @@ export async function createAgentLayer(
   return {
     checker, promptBuilder, launcher, gatedLauncher, apiSemaphore, processTracker,
     taskMetrics, sizeTracker, delegationTracker, taskClassifier,
-    conversationManager, driveQualityTracker, metricsService, flashGate,
+    conversationManager, driveQualityTracker, metricsService, shellIndependenceService, flashGate,
     ego, subconscious, superego, id,
     vertexSubprocessLauncher,
   };

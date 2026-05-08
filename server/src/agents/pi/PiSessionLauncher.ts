@@ -28,9 +28,20 @@ export interface PiSessionLauncherConfig {
   apiToken?: string;
   /** Provider API key environment for Pi, e.g. OPENAI_API_KEY or GEMINI_API_KEY. */
   providerEnv?: Record<string, string | undefined>;
+  /** Default process wall-clock cap for Pi sessions. LaunchOptions.timeoutMs overrides this. */
+  defaultTimeoutMs?: number;
+  /** Default no-output cap for Pi sessions. LaunchOptions.idleTimeoutMs overrides this. */
+  defaultIdleTimeoutMs?: number;
+  /** Maximum characters stored for each process-log entry. */
+  maxLoggedTextChars?: number;
+  /** Minimum assistant text length before it is worth logging as a text entry. */
+  minLoggedTextChars?: number;
 }
 
 const MAX_PROCESS_LOG_CONTENT_CHARS = 2_000;
+const MIN_PROCESS_LOG_TEXT_CHARS = 8;
+const DEFAULT_PI_TIMEOUT_MS = 15 * 60 * 1000;
+const DEFAULT_PI_IDLE_TIMEOUT_MS = 3 * 60 * 1000;
 
 /**
  * ISessionLauncher implementation that invokes Pi Coding Agent as an external
@@ -43,6 +54,10 @@ const MAX_PROCESS_LOG_CONTENT_CHARS = 2_000;
  */
 export class PiSessionLauncher implements ISessionLauncher {
   private readonly mode: PiShellMode;
+  private readonly maxProcessLogContentChars: number;
+  private readonly minProcessLogTextChars: number;
+  private readonly defaultTimeoutMs: number;
+  private readonly defaultIdleTimeoutMs: number;
 
   constructor(
     private readonly processRunner: IProcessRunner,
@@ -51,6 +66,10 @@ export class PiSessionLauncher implements ISessionLauncher {
     private readonly logger?: ILogger,
   ) {
     this.mode = config.mode ?? "json";
+    this.maxProcessLogContentChars = Math.max(1, config.maxLoggedTextChars ?? MAX_PROCESS_LOG_CONTENT_CHARS);
+    this.minProcessLogTextChars = Math.max(1, config.minLoggedTextChars ?? MIN_PROCESS_LOG_TEXT_CHARS);
+    this.defaultTimeoutMs = Math.max(1, config.defaultTimeoutMs ?? DEFAULT_PI_TIMEOUT_MS);
+    this.defaultIdleTimeoutMs = Math.max(1, config.defaultIdleTimeoutMs ?? DEFAULT_PI_IDLE_TIMEOUT_MS);
   }
 
   async launch(
@@ -69,8 +88,8 @@ export class PiSessionLauncher implements ISessionLauncher {
     try {
       const result = await this.processRunner.run("pi", args, {
         cwd: options?.cwd,
-        timeoutMs: options?.timeoutMs,
-        idleTimeoutMs: options?.idleTimeoutMs,
+        timeoutMs: options?.timeoutMs ?? this.defaultTimeoutMs,
+        idleTimeoutMs: options?.idleTimeoutMs ?? this.defaultIdleTimeoutMs,
         stdin,
         onStdout: options?.onLogEntry && this.mode === "json"
           ? this.createJsonLogAdapter(options.onLogEntry)
@@ -217,7 +236,7 @@ export class PiSessionLauncher implements ISessionLauncher {
     }
     const finalText = this.finalTextFromEvent(event);
     if (finalText && !this.looksLikeJsonObject(finalText)) {
-      return [{ type: "text", content: this.toProcessLogContent(finalText) }];
+      return this.textLogEntries(finalText);
     }
     if (type === "tool_execution_start") {
       return [{
@@ -260,7 +279,7 @@ export class PiSessionLauncher implements ISessionLauncher {
 
     const text = this.cleanAssistantText(this.messageText(message));
     if (!text || this.looksLikeJsonObject(text)) return [];
-    return [{ type: "text", content: this.toProcessLogContent(text) }];
+    return this.textLogEntries(text);
   }
 
   private finalTextFromEvent(event: Record<string, unknown>): string {
@@ -351,8 +370,24 @@ export class PiSessionLauncher implements ISessionLauncher {
   }
 
   private toProcessLogContent(content: string): string {
-    if (content.length <= MAX_PROCESS_LOG_CONTENT_CHARS) return content;
-    return `${content.slice(0, MAX_PROCESS_LOG_CONTENT_CHARS)}\n...[truncated ${content.length - MAX_PROCESS_LOG_CONTENT_CHARS} chars]`;
+    if (content.length <= this.maxProcessLogContentChars) return content;
+    return `${content.slice(0, this.maxProcessLogContentChars)}\n...[truncated ${content.length - this.maxProcessLogContentChars} chars]`;
+  }
+
+  private textLogEntries(text: string): ProcessLogEntry[] {
+    const cleaned = this.cleanAssistantText(text);
+    return this.shouldLogAssistantText(cleaned)
+      ? [{ type: "text", content: this.toProcessLogContent(cleaned) }]
+      : [];
+  }
+
+  private shouldLogAssistantText(text: string): boolean {
+    const trimmed = text.trim();
+    if (trimmed.length < this.minProcessLogTextChars) return false;
+    const words = trimmed.split(/\s+/).filter(Boolean);
+    const hasSentenceSignal = /[.!?:;]/.test(trimmed);
+    const compactSingleToken = words.length <= 1 && /^[A-Za-z0-9_-]+$/.test(trimmed);
+    return !compactSingleToken || hasSentenceSignal || trimmed.length > 40;
   }
 
   private findUsageCandidate(event: Record<string, unknown>): Record<string, unknown> | undefined {

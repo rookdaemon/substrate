@@ -25,6 +25,10 @@ export interface ProviderConfig {
   mode?: "json" | "print";
   thinking?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
   sessionDir?: string;
+  defaultTimeoutMs?: number;
+  defaultIdleTimeoutMs?: number;
+  maxLoggedTextChars?: number;
+  minLoggedTextChars?: number;
 }
 
 const ProviderConfigSchema = z.object({
@@ -38,6 +42,10 @@ const ProviderConfigSchema = z.object({
   mode: z.enum(["json", "print"]).optional(),
   thinking: z.enum(["off", "minimal", "low", "medium", "high", "xhigh"]).optional(),
   sessionDir: z.string().optional(),
+  defaultTimeoutMs: z.number().int().min(1).optional(),
+  defaultIdleTimeoutMs: z.number().int().min(1).optional(),
+  maxLoggedTextChars: z.number().int().min(1).optional(),
+  minLoggedTextChars: z.number().int().min(1).optional(),
 });
 
 const AppConfigSchema = z
