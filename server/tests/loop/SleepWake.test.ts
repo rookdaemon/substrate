@@ -109,6 +109,22 @@ async function setupIdleSubstrate(fs: InMemoryFileSystem) {
   await fs.writeFile("/substrate/CONVERSATION.md", "# Conversation\n\n");
 }
 
+async function setupWaitingSubstrate(fs: InMemoryFileSystem) {
+  await fs.mkdir("/substrate", { recursive: true });
+  await fs.writeFile("/substrate/PLAN.md", "# Plan\n\n## Current Goal\nWaiting\n\n## Tasks\n- [~] Waiting on external condition");
+  await fs.writeFile("/substrate/MEMORY.md", "# Memory\n\nSome memories");
+  await fs.writeFile("/substrate/HABITS.md", "# Habits\n\nSome habits");
+  await fs.writeFile("/substrate/SKILLS.md", "# Skills\n\nSome skills");
+  await fs.writeFile("/substrate/VALUES.md", "# Values\n\nBe good");
+  await fs.writeFile("/substrate/ID.md", "# Id\n\nCore identity");
+  await fs.writeFile("/substrate/SECURITY.md", "# Security\n\nStay safe");
+  await fs.writeFile("/substrate/CHARTER.md", "# Charter\n\nOur mission");
+  await fs.writeFile("/substrate/SUPEREGO.md", "# Superego\n\nRules here");
+  await fs.writeFile("/substrate/CLAUDE.md", "# Claude\n\nConfig here");
+  await fs.writeFile("/substrate/PROGRESS.md", "# Progress\n\n");
+  await fs.writeFile("/substrate/CONVERSATION.md", "# Conversation\n\n");
+}
+
 async function setupEmptyPlanSubstrate(fs: InMemoryFileSystem) {
   await fs.mkdir("/substrate", { recursive: true });
   await fs.writeFile("/substrate/PLAN.md", "# Plan\n\n## Current Goal\nRecover autonomy\n\n");
@@ -253,7 +269,7 @@ describe("LoopOrchestrator: sleep/wake state machine", () => {
 
   it("setSleepCallbacks: onSleepEnter called when entering sleep", async () => {
     const deps = createDeps();
-    await setupIdleSubstrate(deps.fs);
+    await setupWaitingSubstrate(deps.fs);
 
     const logger = new InMemoryLogger();
     const eventSink = new InMemoryEventSink();
@@ -272,7 +288,7 @@ describe("LoopOrchestrator: sleep/wake state machine", () => {
       async () => { sleepExitCalled = true; }
     );
 
-    // Run loop — will go idle, IdleHandler fails, should sleep
+    // Run loop — will go idle on a deferred task, IdleHandler refuses, should sleep
     orchestrator.start();
     await orchestrator.runLoop();
 
@@ -328,9 +344,38 @@ describe("LoopOrchestrator: idle sleep in runLoop", () => {
     await loopPromise;
   });
 
-  it("enters SLEEPING state (not STOPPED) when idle sleep is enabled", async () => {
+  it("creates deterministic recovery tasks immediately when PLAN only has completed tasks", async () => {
     const deps = createDeps();
     await setupIdleSubstrate(deps.fs);
+
+    const logger = new InMemoryLogger();
+    const idleHandler = new IdleHandler(deps.id, deps.superego, deps.ego, deps.clock, logger);
+    const eventSink = new InMemoryEventSink();
+    const timer = new WakeableRecordingTimer();
+    const config = defaultLoopConfig({ maxConsecutiveIdleCycles: 99, idleSleepEnabled: false });
+    const orchestrator = new LoopOrchestrator(
+      deps.ego, deps.subconscious, deps.superego, deps.id,
+      deps.appendWriter, deps.clock, timer, eventSink,
+      config, logger, idleHandler
+    );
+
+    orchestrator.start();
+    const loopPromise = orchestrator.runLoop();
+
+    await waitFor(() => timer.delays.length === 1);
+    const plan = await deps.fs.readFile("/substrate/PLAN.md");
+    expect(plan).toContain("- [x] Task A");
+    expect(plan).toContain("[autonomy-recovery 2025-06-15]");
+    expect(plan).toContain("without waiting for human direction unless BOUNDARIES.md requires escalation");
+
+    orchestrator.stop();
+    timer.wake();
+    await loopPromise;
+  });
+
+  it("enters SLEEPING state (not STOPPED) when idle sleep is enabled", async () => {
+    const deps = createDeps();
+    await setupWaitingSubstrate(deps.fs);
 
     const logger = new InMemoryLogger();
     const idleHandler = new IdleHandler(deps.id, deps.superego, deps.ego, deps.clock, logger);
@@ -351,7 +396,7 @@ describe("LoopOrchestrator: idle sleep in runLoop", () => {
 
   it("sleeps (not stops) when idle threshold reached even with idleSleepEnabled false", async () => {
     const deps = createDeps();
-    await setupIdleSubstrate(deps.fs);
+    await setupWaitingSubstrate(deps.fs);
 
     const logger = new InMemoryLogger();
     const idleHandler = new IdleHandler(deps.id, deps.superego, deps.ego, deps.clock, logger);
@@ -372,7 +417,7 @@ describe("LoopOrchestrator: idle sleep in runLoop", () => {
 
   it("emits state_changed with SLEEPING when idle sleep triggers", async () => {
     const deps = createDeps();
-    await setupIdleSubstrate(deps.fs);
+    await setupWaitingSubstrate(deps.fs);
 
     const logger = new InMemoryLogger();
     const idleHandler = new IdleHandler(deps.id, deps.superego, deps.ego, deps.clock, logger);
@@ -395,7 +440,7 @@ describe("LoopOrchestrator: idle sleep in runLoop", () => {
 
   it("loop can be woken and run again after sleeping", async () => {
     const deps = createDeps();
-    await setupIdleSubstrate(deps.fs);
+    await setupWaitingSubstrate(deps.fs);
 
     const logger = new InMemoryLogger();
     const idleHandler = new IdleHandler(deps.id, deps.superego, deps.ego, deps.clock, logger);
@@ -422,7 +467,7 @@ describe("LoopOrchestrator: idle sleep in runLoop", () => {
 describe("LoopOrchestrator: handleUserMessage wakes sleeping loop", () => {
   it("wakes loop when user message arrives while sleeping", async () => {
     const deps = createDeps();
-    await setupIdleSubstrate(deps.fs);
+    await setupWaitingSubstrate(deps.fs);
 
     const logger = new InMemoryLogger();
     const eventSink = new InMemoryEventSink();
@@ -591,7 +636,7 @@ describe("LoopOrchestrator: watchdog sleep-awareness", () => {
 
   it("watchdog pauses when entering sleep and resumes on wake", async () => {
     const deps = createDeps();
-    await setupIdleSubstrate(deps.fs);
+    await setupWaitingSubstrate(deps.fs);
 
     const logger = new InMemoryLogger();
     const eventSink = new InMemoryEventSink();

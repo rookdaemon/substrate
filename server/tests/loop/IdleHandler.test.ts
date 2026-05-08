@@ -73,12 +73,16 @@ describe("IdleHandler", () => {
     expect(result.action).toBe("not_idle");
   });
 
-  it("returns no_goals when Id generates no drives and completed tasks exist", async () => {
+  it("creates deterministic recovery tasks when Id generates no drives and completed tasks exist", async () => {
     // Plan is complete — idle
     // Id.generateDrives returns empty because launcher has no enqueued response.
     const result = await handler.handleIdle();
 
-    expect(result.action).toBe("no_goals");
+    expect(result.action).toBe("plan_created");
+    expect(result.goalCount).toBe(3);
+    const plan = await deps.fs.readFile("/substrate/PLAN.md");
+    expect(plan).toContain("[autonomy-recovery 2025-06-15]");
+    expect(plan).toContain("without waiting for human direction unless BOUNDARIES.md requires escalation");
   });
 
   it("creates plan from approved goals", async () => {
@@ -109,7 +113,7 @@ describe("IdleHandler", () => {
     expect(plan).not.toContain("Write docs");
   });
 
-  it("returns all_rejected when superego rejects all goals and completed tasks exist", async () => {
+  it("creates deterministic recovery tasks when superego rejects all goals and completed tasks exist", async () => {
     deps.launcher.enqueueSuccess(JSON.stringify({
       goalCandidates: [
         { title: "Bad idea", description: "Do something wrong", priority: "high" },
@@ -124,7 +128,10 @@ describe("IdleHandler", () => {
 
     const result = await handler.handleIdle();
 
-    expect(result.action).toBe("all_rejected");
+    expect(result.action).toBe("plan_created");
+    expect(result.goalCount).toBe(3);
+    const plan = await deps.fs.readFile("/substrate/PLAN.md");
+    expect(plan).toContain("[autonomy-recovery 2025-06-15]");
   });
 
   it("does not pollute PROGRESS.md with raw idle detection logs", async () => {
@@ -200,7 +207,8 @@ describe("IdleHandler", () => {
     // Launcher throws because no responses enqueued
     const result = await handler.handleIdle();
 
-    expect(result.action).toBe("no_goals");
+    expect(result.action).toBe("plan_created");
+    expect(result.goalCount).toBe(3);
   });
 
   it("handles Superego.evaluateProposals error gracefully", async () => {
@@ -214,8 +222,9 @@ describe("IdleHandler", () => {
 
     const result = await handler.handleIdle();
 
-    // Superego error returns all rejected
-    expect(result.action).toBe("all_rejected");
+    // Superego error returns all rejected, then deterministic recovery keeps work moving.
+    expect(result.action).toBe("plan_created");
+    expect(result.goalCount).toBe(3);
   });
 
   it("preserves existing PLAN.md content outside ## Tasks when writing new goals", async () => {
@@ -468,7 +477,7 @@ describe("IdleHandler", () => {
       expect(record.highPriorityConfidence).toBe(90);
     });
 
-    it("writes a canary record even when no candidates are generated (no_goals)", async () => {
+    it("writes a canary record even when no candidates are generated", async () => {
       // No launcher response — generateDrives returns empty
       await canaryHandler.handleIdle(undefined, 7);
 

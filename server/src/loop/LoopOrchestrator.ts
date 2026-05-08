@@ -504,7 +504,7 @@ export class LoopOrchestrator implements IMessageInjector {
     const r2Halt = this.checkR2Ceiling();
     if (r2Halt) return r2Halt;
 
-    const { dispatch: rawDispatch, blockedTaskIds, timeBlockedTasks, taskCount, snapshot } = await this.ego.dispatchNext();
+    const { dispatch: rawDispatch, blockedTaskIds, timeBlockedTasks, taskCount, planComplete, snapshot } = await this.ego.dispatchNext();
     const nextTimeBlockedUntil = this.nextTimeBlockedUntil(timeBlockedTasks);
 
     for (const { taskId, blockedUntil } of timeBlockedTasks) {
@@ -582,6 +582,7 @@ export class LoopOrchestrator implements IMessageInjector {
           ? `No actionable tasks until ${blockedUntilForIdle.toISOString()}`
           : "No tasks available — idle",
         planEmpty: taskCount === 0,
+        planComplete,
         ...(blockedUntilForIdle ? { blocked: true, blockedUntil: blockedUntilForIdle.toISOString() } : {}),
       };
 
@@ -856,12 +857,15 @@ export class LoopOrchestrator implements IMessageInjector {
         const currentTaskId = cycleResult.action === "dispatch" ? cycleResult.taskId : undefined;
         await this.applyRateLimitBackoff(resetDate, currentTaskId);
       } else {
-        const shouldRecoverEmptyPlan = cycleResult.action === "idle" && !cycleResult.blocked && cycleResult.planEmpty === true;
-        if (shouldRecoverEmptyPlan || this.metrics.consecutiveIdleCycles >= this.config.maxConsecutiveIdleCycles) {
+        const shouldRecoverExhaustedPlan =
+          cycleResult.action === "idle" &&
+          !cycleResult.blocked &&
+          (cycleResult.planEmpty === true || cycleResult.planComplete === true);
+        if (shouldRecoverExhaustedPlan || this.metrics.consecutiveIdleCycles >= this.config.maxConsecutiveIdleCycles) {
           if (this.idleHandler) {
             this.logger.debug(
-              shouldRecoverEmptyPlan
-                ? "runLoop: no actionable tasks — invoking IdleHandler immediately"
+              shouldRecoverExhaustedPlan
+                ? "runLoop: PLAN has no remaining executable work — invoking IdleHandler immediately"
                 : `runLoop: idle threshold reached (${this.metrics.consecutiveIdleCycles}), invoking IdleHandler`,
             );
             const result = await this.idleHandler.handleIdle((role) => this.createLogCallback(role), this.cycleNumber);

@@ -52,6 +52,8 @@ export interface CycleResult {
   summary: string;
   /** True when PLAN.md has no parseable task entries under ## Tasks. */
   planEmpty?: boolean;
+  /** True when PLAN.md has task entries and every task is complete. */
+  planComplete?: boolean;
   /** True when a dispatch was blocked without implying a whole-loop rate-limit backoff. */
   blocked?: boolean;
   /** ISO 8601 UTC timestamp when a task-local time block lifts. Unlike retryAfter, this is not a rate-limit signal. */

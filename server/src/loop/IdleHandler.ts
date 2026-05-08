@@ -113,14 +113,14 @@ export class IdleHandler {
   private async writeDeterministicRecoveryPlan(): Promise<boolean> {
     const existingPlan = await this.ego.readPlan();
     const tasks = PlanParser.parseTasks(existingPlan);
-    if (!PlanParser.isEmpty(tasks)) {
+    if (!PlanParser.isEmpty(tasks) && !PlanParser.isComplete(tasks)) {
       return false;
     }
 
     const currentGoal = PlanParser.parseCurrentGoal(existingPlan) || "advance the current charter and long-term operability";
     const dateTag = `[autonomy-recovery ${this.clock.now().toISOString().split("T")[0]}]`;
     const newTaskLines = [
-      `- [ ] ${dateTag} Rebuild the executable task queue for the current goal: ${currentGoal}`,
+      `- [ ] ${dateTag} Rebuild the executable task queue for the current goal without waiting for human direction unless BOUNDARIES.md requires escalation: ${currentGoal}`,
       `- [ ] ${dateTag} Execute the smallest reversible action that advances the current goal; use a separate git worktree for nontrivial source changes`,
       `- [ ] ${dateTag} Validate the result, update PROGRESS.md and OPERATING_CONTEXT.md, and leave at least one concrete next task if work remains`,
     ];

@@ -72,6 +72,8 @@ export interface DispatchNextResult {
   blockedTaskIds: string[];
   timeBlockedTasks: Array<{ taskId: string; blockedUntil: Date }>;
   taskCount: number;
+  /** True when PLAN.md contains tasks and every task is complete. */
+  planComplete: boolean;
   /** Per-cycle snapshot of substrate files read by Ego. Passed to Subconscious to avoid duplicate disk reads. */
   snapshot: SubstrateSnapshot;
 }
@@ -229,9 +231,10 @@ export class Ego {
       taskId: t.id,
       blockedUntil: t.blockedUntil!,
     }));
+    const planComplete = tasks.length > 0 && PlanParser.isComplete(tasks);
     const next = await PlanParser.findNextActionable(tasks, this.triggerEvaluator, now);
 
-    if (!next) return { dispatch: null, blockedTaskIds, timeBlockedTasks, taskCount: tasks.length, snapshot };
+    if (!next) return { dispatch: null, blockedTaskIds, timeBlockedTasks, taskCount: tasks.length, planComplete, snapshot };
 
     return {
       dispatch: {
@@ -243,6 +246,7 @@ export class Ego {
       blockedTaskIds,
       timeBlockedTasks,
       taskCount: tasks.length,
+      planComplete,
       snapshot,
     };
   }
