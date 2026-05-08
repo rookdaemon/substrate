@@ -55,6 +55,7 @@ import { ClaudeCliBackend } from "../code-dispatch/ClaudeCliBackend";
 import { CopilotBackend } from "../code-dispatch/CopilotBackend";
 import { CodexCliBackend } from "../code-dispatch/CodexCliBackend";
 import { GeminiCliBackend } from "../code-dispatch/GeminiCliBackend";
+import { PiCliBackend } from "../code-dispatch/PiCliBackend";
 import type { BackendType } from "../code-dispatch/types";
 import type { ICodeBackend } from "../code-dispatch/ICodeBackend";
 import type { SdkQueryFn } from "../agents/claude/AgentSdkLauncher";
@@ -71,7 +72,7 @@ export interface LoopLayerResult {
   mode: "cycle" | "tick";
 }
 
-type ProviderName = "claude" | "gemini" | "copilot" | "codex";
+type ProviderName = "claude" | "gemini" | "copilot" | "codex" | "pi";
 
 function backendModel(config: ApplicationConfig, provider: ProviderName): string | undefined {
   const providerConfig = config[provider] ?? config.models?.[provider];
@@ -428,6 +429,7 @@ export async function createLoopLayer(
     ["copilot", new CopilotBackend(codeDispatchRunner, clock, backendModel(config, "copilot"))],
     ["codex", new CodexCliBackend(codeDispatchRunner, clock, backendModel(config, "codex"))],
     ["gemini", new GeminiCliBackend(codeDispatchRunner, clock, backendModel(config, "gemini"))],
+    ["pi", new PiCliBackend(codeDispatchRunner, clock, backendModel(config, "codex"))],
   ]);
   const defaultBackend = (config.defaultCodeBackend ?? "auto") as BackendType;
   const codeDispatcher = new CodeDispatcher(fs, codeDispatchRunner, config.substratePath, codeBackends, clock, defaultBackend);

@@ -102,6 +102,7 @@ export interface IShellIndependenceService {
 }
 
 const COMMERCIAL_SHELLS = new Set(["claude", "codex", "copilot", "gemini"]);
+const PORTABLE_SHELLS = new Set(["pi"]);
 const REMOTE_API_PROVIDERS = new Set(["anthropic", "groq", "vertex", "openrouter", "openai", "google", "gemini", "xai"]);
 const SOURCE_SCAN_FILES = [
   "server/src/loop/createAgentLayer.ts",
@@ -420,7 +421,7 @@ export class ShellIndependenceService implements IShellIndependenceService {
 
   private kindForProvider(provider: string): ShellRouteKind {
     if (COMMERCIAL_SHELLS.has(provider)) return "commercial-shell";
-    if (provider === "pi") return "portable-shell";
+    if (PORTABLE_SHELLS.has(provider)) return "portable-shell";
     if (provider === "ollama") return "self-hosted";
     if (REMOTE_API_PROVIDERS.has(provider)) return "remote-api";
     return "unknown";
