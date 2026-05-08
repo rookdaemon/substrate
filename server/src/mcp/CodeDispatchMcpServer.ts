@@ -12,10 +12,10 @@ import type { BackendType } from "../code-dispatch/types";
 export function addCodeDispatchTools(server: McpServer, dispatcher: CodeDispatcher): void {
   server.tool(
     "invoke",
-    "Dispatch a coding task with scoped coding context. Auto/default dispatch is Codex-local-first; legacy shell backends require an explicit backend override.",
+    "Dispatch a coding task with scoped coding context. Auto/default dispatch is Pi-local-first; legacy shell backends require an explicit backend override.",
     {
       spec: z.string().describe("Task specification in natural language"),
-      backend: z.enum(["copilot", "claude", "codex", "gemini", "auto"]).default("auto").describe("Backend to use; auto routes to the local Codex tool path"),
+      backend: z.enum(["copilot", "claude", "codex", "gemini", "pi", "auto"]).default("auto").describe("Backend to use; auto routes to the local Pi tool path"),
       files: z.array(z.string()).describe("Source file paths to include as context"),
       testCommand: z.string().optional().describe("Test gate command (default: npm test)"),
       model: z.string().optional().describe("Model override for backends that support model selection"),

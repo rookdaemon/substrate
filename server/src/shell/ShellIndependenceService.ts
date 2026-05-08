@@ -178,7 +178,7 @@ export class ShellIndependenceService implements IShellIndependenceService {
       notes.push(`Pi shell provider is ${piProvider ?? "default"}; shell is portable, model API may still be remote.`);
     }
     if ((this.config.defaultCodeBackend ?? "auto") === "auto") {
-      notes.push("defaultCodeBackend=auto currently resolves to Codex in CodeDispatcher.");
+      notes.push("defaultCodeBackend=auto currently resolves to Pi in CodeDispatcher.");
     }
 
     return {
@@ -222,13 +222,13 @@ export class ShellIndependenceService implements IShellIndependenceService {
   }
 
   private routeForCodeBackend(defaultBackend: string): ShellRoute {
-    const provider = defaultBackend === "auto" ? "codex" : defaultBackend.toLowerCase();
+    const provider = defaultBackend === "auto" ? "pi" : defaultBackend.toLowerCase();
     const providerConfig = this.providerConfig(provider);
     const kind = this.kindForProvider(provider);
     const model = providerConfig?.tacticalModel ?? providerConfig?.model ?? this.config.tacticalModel;
     const evidence = [
       `defaultCodeBackend: ${defaultBackend}`,
-      defaultBackend === "auto" ? "auto dispatch resolves to Codex backend" : `code backend: ${provider}`,
+      defaultBackend === "auto" ? "auto dispatch resolves to Pi backend" : `code backend: ${provider}`,
     ];
     if (model) evidence.push(`model: ${model}`);
     return {

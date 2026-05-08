@@ -525,6 +525,12 @@ describe("resolveConfig", () => {
       const config = await resolveConfig(fs, opts);
       expect(config.defaultCodeBackend).toBe("codex");
     });
+
+    it("accepts defaultCodeBackend: 'pi'", async () => {
+      await writeConfig({ defaultCodeBackend: "pi" });
+      const config = await resolveConfig(fs, opts);
+      expect(config.defaultCodeBackend).toBe("pi");
+    });
   });
 
   describe("vertex config", () => {

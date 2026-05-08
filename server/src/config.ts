@@ -136,7 +136,7 @@ const AppConfigSchema = z
     ollamaBaseUrl: z.string().url().optional(),
     ollamaModel: z.string().optional(),
     ollamaKeyPath: z.string().optional(),
-    defaultCodeBackend: z.enum(["claude", "copilot", "codex", "gemini", "auto"]).optional(),
+    defaultCodeBackend: z.enum(["claude", "copilot", "codex", "gemini", "pi", "auto"]).optional(),
     ollamaOffload: z
       .object({
         enabled: z.boolean(),
@@ -331,8 +331,8 @@ export interface AppConfig {
   ollamaBaseUrl?: string;
   /** Model name for Ollama when sessionLauncher is "ollama" (default: "qwen3:14b"). Separate from `model` which is the Claude/Gemini model name. */
   ollamaModel?: string;
-  /** Default code backend to use for code dispatch tasks (default: "auto", which routes to Codex). */
-  defaultCodeBackend?: "claude" | "copilot" | "codex" | "gemini" | "auto";
+  /** Default code backend to use for code dispatch tasks (default: "auto", which routes to Pi). */
+  defaultCodeBackend?: "claude" | "copilot" | "codex" | "gemini" | "pi" | "auto";
   /** Configuration for Ollama offload — offloads maintenance tasks (compaction) to local Ollama.
    *  Uses ollamaBaseUrl/ollamaModel for endpoint config. Works regardless of sessionLauncher setting. */
   ollamaOffload?: {

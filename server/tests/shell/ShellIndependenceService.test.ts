@@ -10,7 +10,7 @@ describe("ShellIndependenceService", () => {
     await fs.mkdir("/repo/server/src/agents", { recursive: true });
     await fs.writeFile("/repo/server/src/loop/createAgentLayer.ts", "new PiSessionLauncher(); new CodexSessionLauncher(); new OllamaSessionLauncher();");
     await fs.writeFile("/repo/server/src/loop/createLoopLayer.ts", "new CodexCliBackend(); new GeminiCliBackend();");
-    await fs.writeFile("/repo/server/src/code-dispatch/CodeDispatcher.ts", "auto dispatch resolves to CodexCliBackend");
+    await fs.writeFile("/repo/server/src/code-dispatch/CodeDispatcher.ts", "auto dispatch resolves to PiCliBackend");
     await fs.writeFile("/repo/server/src/agents/ProviderFallbackLauncher.ts", "new GroqSessionLauncher();");
     await fs.writeFile("/repo/server/src/config.ts", "sessionLauncher");
     const clock = new FixedClock(new Date("2026-05-08T00:00:00.000Z"));
@@ -34,8 +34,8 @@ describe("ShellIndependenceService", () => {
       model: "moonshotai/kimi-k2.6:floor",
     });
     expect(snapshot.inventory.codeDispatchRoute).toMatchObject({
-      provider: "codex",
-      kind: "commercial-shell",
+      provider: "pi",
+      kind: "portable-shell",
     });
     expect(snapshot.inventory.staticShellReferences.map((ref) => ref.symbol)).toEqual(expect.arrayContaining([
       "PiSessionLauncher",
@@ -46,7 +46,8 @@ describe("ShellIndependenceService", () => {
       "GroqSessionLauncher",
     ]));
     expect(snapshot.scorecard.score).toBeLessThan(100);
-    expect(snapshot.scorecard.blockers).toContain("default code dispatch depends on commercial shell: codex");
+    expect(snapshot.scorecard.blockers).not.toContain("default code dispatch depends on commercial shell: codex");
+    expect(snapshot.scorecard.nextActions).toContain("Evaluate a self-hosted model/provider path for the portable Pi shell.");
     expect(snapshot.compactReport.join("\n")).toContain("Shell independence score:");
     expect(service.getLastSnapshot()).toBe(snapshot);
   });

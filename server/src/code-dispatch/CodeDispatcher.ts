@@ -153,7 +153,7 @@ export class CodeDispatcher {
           backend: this.defaultBackend,
           error:
             `Default code backend "${this.defaultBackend}" is a legacy commercial shell route. ` +
-            `Set defaultCodeBackend to "codex" or "auto", or pass backend="${this.defaultBackend}" on an individual dispatch for an explicit one-off override.`,
+            `Set defaultCodeBackend to "pi", "codex", or "auto", or pass backend="${this.defaultBackend}" on an individual dispatch for an explicit one-off override.`,
         };
       }
       return { backend: this.defaultBackend };
@@ -193,8 +193,4 @@ export class CodeDispatcher {
 
 function isLegacyCommercialShellBackend(backend: BackendType): boolean {
   return backend === "claude" || backend === "copilot" || backend === "gemini";
-}
-
-function isPortableShellBackend(backend: BackendType): boolean {
-  return backend === "pi";
 }
