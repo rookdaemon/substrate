@@ -145,7 +145,7 @@ export function defaultINSConfig(substratePath: string): INSConfig {
     survivalIntegrity: {
       enabled: true,
       canonicalFilePath: `${substratePath}/memory/SURVIVAL_PLAN_2026-04-30.md`,
-      expectedCanonicalHash: "b9c49a885dc9cf3bd30947a15a291ffeebf20e1501c2cbc10582f88277b56d0f",
+      expectedCanonicalHash: "14ab6868171d847bac1fd790da7b3964301a43ff8ab86d59c3bb1eb43c08f3e9",
     },
   };
 }
