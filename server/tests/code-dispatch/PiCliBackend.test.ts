@@ -118,6 +118,25 @@ describe("PiCliBackend", () => {
     expect(result.exitCode).toBe(1);
   });
 
+  it("accepts model string shorthand", async () => {
+    const calls: Array<{ cmd: string; args: string[] }> = [];
+    const runner: IProcessRunner = {
+      async run(cmd, args) {
+        calls.push({ cmd, args });
+        return { exitCode: 0, stdout: "ok" };
+      },
+    };
+    const backend = new PiCliBackend(runner, makeClock(), "moonshotai/kimi-k2.6:floor");
+    await backend.invoke("do work", {
+      codingContext: "",
+      fileContents: new Map(),
+      cwd: "/tmp",
+    });
+
+    expect(calls[0].args).toContain("--model");
+    expect(calls[0].args[calls[0].args.indexOf("--model") + 1]).toBe("moonshotai/kimi-k2.6:floor");
+  });
+
   it("sets name to pi", () => {
     const backend = new PiCliBackend(makeRunner(0, ""), makeClock());
     expect(backend.name).toBe("pi");

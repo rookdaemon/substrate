@@ -456,43 +456,12 @@ export async function createLoopLayer(
 
   // Set up Code Dispatch layer
   const codeDispatchRunner = new NodeProcessRunner();
-  const piConfig = providerConfig(config, "pi");
-  const piModel = backendModel(config, "pi");
-  const piProvider = inferPiProvider(piModel, piConfig?.provider);
-  let piProviderEnv: Record<string, string | undefined> | undefined;
-  const piKeyPath = piConfig?.keyPath;
-  const piKeyEnvVar = piProviderKeyEnvVar(piProvider);
-  if (piKeyPath && piKeyEnvVar) {
-    try {
-      const key = (await fs.readFile(piKeyPath)).trim();
-      if (key) {
-        piProviderEnv = { [piKeyEnvVar]: key };
-      } else {
-        logger.debug("code-dispatch: Pi key file is empty — relying on inherited provider environment");
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      const redacted = msg.replaceAll(piKeyPath, "[REDACTED]");
-      logger.debug(`code-dispatch: Cannot read Pi key file — relying on inherited provider environment (${redacted})`);
-    }
-  } else if (piKeyPath && !piKeyEnvVar) {
-    logger.warn(`code-dispatch: pi.keyPath configured but no provider env mapping exists for ${piProvider ?? "default"} — relying on inherited provider environment`);
-  }
   const codeBackends = new Map<BackendType, ICodeBackend>([
     ["claude", new ClaudeCliBackend(codeDispatchRunner, clock, backendModel(config, "claude"))],
     ["copilot", new CopilotBackend(codeDispatchRunner, clock, backendModel(config, "copilot"))],
     ["codex", new CodexCliBackend(codeDispatchRunner, clock, backendModel(config, "codex"))],
     ["gemini", new GeminiCliBackend(codeDispatchRunner, clock, backendModel(config, "gemini"))],
-    ["pi", new PiCliBackend(codeDispatchRunner, clock, {
-      provider: piProvider,
-      model: piModel,
-      thinking: piConfig?.thinking,
-      sessionDir: piConfig?.sessionDir,
-      apiToken: config.apiToken,
-      providerEnv: piProviderEnv,
-      defaultTimeoutMs: piConfig?.defaultTimeoutMs,
-      defaultIdleTimeoutMs: piConfig?.defaultIdleTimeoutMs,
-    })],
+    ["pi", new PiCliBackend(codeDispatchRunner, clock, backendModel(config, "pi"))],
   ]);
   const defaultBackend = (config.defaultCodeBackend ?? "auto") as BackendType;
   const codeDispatcher = new CodeDispatcher(fs, codeDispatchRunner, config.substratePath, codeBackends, clock, defaultBackend);

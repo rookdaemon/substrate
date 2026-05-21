@@ -34,8 +34,16 @@ export class PiCliBackend implements ICodeBackend {
   constructor(
     private readonly processRunner: IProcessRunner,
     private readonly clock: IClock,
-    private readonly config: PiCliBackendConfig = {},
-  ) {}
+    private readonly configOrModel: PiCliBackendConfig | string = {},
+  ) {
+    if (typeof configOrModel === "string") {
+      this.config = { model: configOrModel };
+    } else {
+      this.config = configOrModel;
+    }
+  }
+
+  private config: PiCliBackendConfig;
 
   async invoke(spec: string, context: SubstrateSlice): Promise<BackendResult> {
     const prompt = buildPrompt(spec, context);
