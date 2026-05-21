@@ -454,7 +454,7 @@ export async function resolveConfig(
     logLevel: "info",
     progressMaxBytes: 512 * 1024,
     conversationPromptWindowLines: 200,
-    sessionLauncher: "claude",
+    sessionLauncher: "pi",
     defaultCodeBackend: "auto",
   };
 
