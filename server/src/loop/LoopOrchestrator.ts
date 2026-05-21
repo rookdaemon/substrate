@@ -954,13 +954,31 @@ export class LoopOrchestrator implements IMessageInjector {
     if (!this.shellIndependenceService) return;
     try {
       const snapshot = await this.shellIndependenceService.refresh();
-      this.logger.debug(
-        `shell-independence: score=${snapshot.scorecard.score}/100 grade=${snapshot.scorecard.grade} ` +
+      const grade = snapshot.scorecard.grade;
+      const risk = snapshot.scorecard.riskLevel;
+      const score = snapshot.scorecard.score;
+      const line = `shell-independence: score=${score}/100 grade=${grade} risk=${risk} ` +
         `launcher=${snapshot.scorecard.activeLauncher}/${snapshot.scorecard.activeLauncherKind} ` +
-        `code=${snapshot.scorecard.codeDispatchDefault} commercial=${snapshot.scorecard.commercialShellCount} remote=${snapshot.scorecard.remoteApiCount}`,
-      );
+        `code=${snapshot.scorecard.codeDispatchDefault} commercial=${snapshot.scorecard.commercialShellCount} remote=${snapshot.scorecard.remoteApiCount}`;
+      this.logger.debug(line);
+      // Write a compact summary to OPERATING_CONTEXT.md so the score is
+      // visible across cycles without polling the endpoint.
+      await this.writeShellIndependenceLineToOperatingContext(line);
     } catch (err) {
       this.logger.debug(`shell-independence: refresh failed — ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  private async writeShellIndependenceLineToOperatingContext(line: string): Promise<void> {
+    try {
+      const fs = (this as unknown as Record<string, unknown>).fs as { appendFile(path: string, data: string): Promise<void> } | undefined;
+      if (!fs) return;
+      const ocPath = path.join(this.substratePath, "OPERATING_CONTEXT.md");
+      const timestamp = this.clock.now().toISOString();
+      const entry = `[${timestamp}] [SHELL-INDEPENDENCE] ${line}\n`;
+      await fs.appendFile(ocPath, entry);
+    } catch {
+      // Best-effort: do not let OC write failures block the cycle.
     }
   }
 
