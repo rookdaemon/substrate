@@ -259,24 +259,30 @@ export async function createAgentLayer(
   let gatedLauncher: ISessionLauncher;
   if (config.sessionLauncher === "gemini") {
     logger.debug("agent-layer: using GeminiSessionLauncher for cognitive roles");
+    const { GeminiSessionLauncher } = await import("../agents/gemini/GeminiSessionLauncher");
     const geminiLauncher = new GeminiSessionLauncher(new NodeProcessRunner(), clock, activeModel);
     // Register TinyBus in Gemini CLI's MCP config so mcp__tinybus__* tools are available
+    const { GeminiMcpSetup } = await import("../agents/gemini/GeminiMcpSetup");
     const geminiMcpSetup = new GeminiMcpSetup(new NodeProcessRunner(), logger);
     await geminiMcpSetup.register("tinybus", mcpUrl);
     gatedLauncher = new SemaphoreSessionLauncher(geminiLauncher, apiSemaphore);
   } else if (config.sessionLauncher === "copilot") {
     logger.debug("agent-layer: using CopilotSessionLauncher for cognitive roles");
+    const { CopilotSessionLauncher } = await import("../agents/copilot/CopilotSessionLauncher");
     const copilotLauncher = new CopilotSessionLauncher(new NodeProcessRunner(), clock, activeModel);
     gatedLauncher = new SemaphoreSessionLauncher(copilotLauncher, apiSemaphore);
   } else if (config.sessionLauncher === "codex") {
     logger.debug("agent-layer: using CodexSessionLauncher for cognitive roles");
+    const { CodexSessionLauncher } = await import("../agents/codex/CodexSessionLauncher");
     const codexLauncher = new CodexSessionLauncher(new NodeProcessRunner(), clock, activeModel, logger);
+    const { CodexMcpSetup } = await import("../agents/codex/CodexMcpSetup");
     const codexMcpSetup = new CodexMcpSetup(new NodeProcessRunner(), logger);
     await codexMcpSetup.register("tinybus", mcpUrl);
     await codexMcpSetup.register("code_dispatch", mcpUrl);
     gatedLauncher = new SemaphoreSessionLauncher(codexLauncher, apiSemaphore);
   } else if (config.sessionLauncher === "pi") {
     logger.debug("agent-layer: using PiSessionLauncher for cognitive roles");
+    const { PiSessionLauncher } = await import("../agents/pi/PiSessionLauncher");
     const piLauncher = new PiSessionLauncher(new NodeProcessRunner(), clock, {
       provider: piProvider,
       model: activeModel,
@@ -295,11 +301,13 @@ export async function createAgentLayer(
     const ollamaBaseUrl = ollamaConfig?.baseUrl ?? config.ollamaBaseUrl ?? "http://localhost:11434";
     const ollamaModel = ollamaConfig?.model ?? config.ollamaModel;
     logger.debug(`agent-layer: using OllamaSessionLauncher for cognitive roles (${ollamaBaseUrl}, model: ${ollamaModel ?? "default"})`);
+    const { OllamaSessionLauncher } = await import("../agents/ollama/OllamaSessionLauncher");
     const ollamaLauncher = new OllamaSessionLauncher(new FetchHttpClient(), clock, ollamaModel, ollamaBaseUrl, ollamaApiKey);
     gatedLauncher = new SemaphoreSessionLauncher(ollamaLauncher, apiSemaphore);
   } else if (config.sessionLauncher === "groq") {
     if (groqApiKey) {
       logger.debug(`agent-layer: using GroqSessionLauncher for cognitive roles (model: ${groqModel ?? "default"})`);
+      const { GroqSessionLauncher } = await import("../agents/groq/GroqSessionLauncher");
       const groqLauncher = new GroqSessionLauncher(new FetchHttpClient(), clock, groqApiKey, groqModel);
       gatedLauncher = new SemaphoreSessionLauncher(groqLauncher, apiSemaphore);
     } else {
@@ -309,6 +317,7 @@ export async function createAgentLayer(
   } else if (config.sessionLauncher === "anthropic") {
     if (anthropicAccessToken) {
       logger.debug(`agent-layer: using AnthropicSessionLauncher for cognitive roles (model: ${anthropicModel ?? "default"})`);
+      const { AnthropicSessionLauncher } = await import("../agents/anthropic/AnthropicSessionLauncher");
       const anthropicLauncher = new AnthropicSessionLauncher(new FetchHttpClient(), clock, anthropicAccessToken, anthropicModel);
       gatedLauncher = new SemaphoreSessionLauncher(anthropicLauncher, apiSemaphore);
     } else {
@@ -339,11 +348,12 @@ export async function createAgentLayer(
   const cwd = config.workingDirectory;
 
   // Ollama offload service — offloads compaction to local Ollama when configured
-  let ollamaOffloadService: OllamaOffloadService | undefined;
+  let ollamaOffloadService: import("../agents/ollama/OllamaOffloadService").OllamaOffloadService | undefined;
   if (config.ollamaOffload?.enabled) {
     const ollamaBaseUrl = ollamaConfig?.baseUrl ?? config.ollamaBaseUrl ?? "http://localhost:11434";
     const ollamaModel = ollamaConfig?.model ?? config.ollamaModel ?? "qwen3:14b";
     logger.debug(`agent-layer: Ollama offload enabled (${ollamaBaseUrl}, model: ${ollamaModel})`);
+    const { OllamaInferenceClient } = await import("../agents/ollama/OllamaInferenceClient");
     const inferenceClient = new OllamaInferenceClient(
       new FetchHttpClient(),
       ollamaBaseUrl,
@@ -351,15 +361,17 @@ export async function createAgentLayer(
       logger,
       ollamaApiKey,
     );
+    const { OllamaOffloadService } = await import("../agents/ollama/OllamaOffloadService");
     ollamaOffloadService = new OllamaOffloadService(inferenceClient, clock, logger);
   }
 
   // Vertex subprocess launcher — middle-tier fallback between Ollama and Claude
-  let vertexSubprocessLauncher: VertexSessionLauncher | undefined;
+  let vertexSubprocessLauncher: import("../agents/vertex/VertexSessionLauncher").VertexSessionLauncher | undefined;
   const vertexKeyPath = vertexConfig?.keyPath ?? config.vertexKeyPath;
   const vertexModel = vertexConfig?.model ?? config.vertexModel;
   if (vertexKeyPath) {
     try {
+      const { VertexSessionLauncher } = await import("../agents/vertex/VertexSessionLauncher");
       const apiKey = (await fs.readFile(vertexKeyPath)).trim();
       if (apiKey) {
         const vertexLauncher = new VertexSessionLauncher(
@@ -400,6 +412,7 @@ export async function createAgentLayer(
   if (sessionProvider !== "ollama") {
     const ollamaBaseUrl = ollamaConfig?.baseUrl ?? config.ollamaBaseUrl ?? "http://localhost:11434";
     const ollamaModel = ollamaConfig?.model ?? config.ollamaModel ?? "qwen3:14b";
+    const { OllamaSessionLauncher } = await import("../agents/ollama/OllamaSessionLauncher");
     const ollamaLauncher = new OllamaSessionLauncher(new FetchHttpClient(), clock, ollamaModel, ollamaBaseUrl, ollamaApiKey);
     fallbackRoutes.push({
       provider: "ollama",
@@ -416,6 +429,7 @@ export async function createAgentLayer(
   }
   if (groqApiKey && sessionProvider !== "groq") {
     const groqFallbackModel = "llama-3.1-8b-instant";
+    const { GroqSessionLauncher } = await import("../agents/groq/GroqSessionLauncher");
     const groqFallbackLauncher = new GroqSessionLauncher(new FetchHttpClient(), clock, groqApiKey, groqFallbackModel);
     fallbackRoutes.push({
       provider: "groq",
@@ -425,6 +439,7 @@ export async function createAgentLayer(
   }
   if (anthropicAccessToken && sessionProvider !== "anthropic") {
     const anthropicFallbackModel = "claude-haiku-4-20250514";
+    const { AnthropicSessionLauncher } = await import("../agents/anthropic/AnthropicSessionLauncher");
     const anthropicFallbackLauncher = new AnthropicSessionLauncher(new FetchHttpClient(), clock, anthropicAccessToken, anthropicFallbackModel);
     fallbackRoutes.push({
       provider: "anthropic",
@@ -489,12 +504,14 @@ export async function createAgentLayer(
   } else if (config.idLauncher === "ollama") {
     const ollamaBaseUrl = ollamaConfig?.baseUrl ?? config.ollamaBaseUrl ?? "http://localhost:11434";
     const ollamaModel = ollamaConfig?.idModel ?? config.idOllamaModel ?? ollamaConfig?.model ?? config.ollamaModel;
+    const { OllamaSessionLauncher } = await import("../agents/ollama/OllamaSessionLauncher");
     const ollamaLauncher = new OllamaSessionLauncher(new FetchHttpClient(), clock, ollamaModel, ollamaBaseUrl, ollamaApiKey);
     idGatedLauncher = withSurvivalPolicy(new SemaphoreSessionLauncher(ollamaLauncher, apiSemaphore), "ollama", ollamaModel);
     logger.debug(`agent-layer: Id using OllamaSessionLauncher (idLauncher: ollama, model: ${ollamaModel ?? "default"})`);
   } else if (config.idLauncher === "groq") {
     if (groqApiKey) {
       const model = idGroqModel ?? groqModel;
+      const { GroqSessionLauncher } = await import("../agents/groq/GroqSessionLauncher");
       const groqLauncher = new GroqSessionLauncher(new FetchHttpClient(), clock, groqApiKey, model);
       idGatedLauncher = withSurvivalPolicy(new SemaphoreSessionLauncher(groqLauncher, apiSemaphore), "groq", model);
       logger.debug(`agent-layer: Id using GroqSessionLauncher (idLauncher: groq, model: ${model ?? "default"})`);
@@ -509,6 +526,7 @@ export async function createAgentLayer(
   } else if (config.idLauncher === "anthropic") {
     if (anthropicAccessToken) {
       const model = idAnthropicModel ?? anthropicModel;
+      const { AnthropicSessionLauncher } = await import("../agents/anthropic/AnthropicSessionLauncher");
       const anthropicLauncher = new AnthropicSessionLauncher(new FetchHttpClient(), clock, anthropicAccessToken, model);
       idGatedLauncher = withSurvivalPolicy(new SemaphoreSessionLauncher(anthropicLauncher, apiSemaphore), "anthropic", model);
       logger.debug(`agent-layer: Id using AnthropicSessionLauncher (idLauncher: anthropic, model: ${model ?? "default"})`);
