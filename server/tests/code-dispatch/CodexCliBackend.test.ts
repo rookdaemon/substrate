@@ -42,6 +42,31 @@ describe("CodexCliBackend", () => {
     expect(args[args.indexOf("-m") + 1]).toBe("gpt-5.2");
   });
 
+  it("passes configured effort as Codex reasoning effort", async () => {
+    const customBackend = new CodexCliBackend(runner, clock, undefined, "high");
+    runner.enqueue({ stdout: "ok", stderr: "", exitCode: 0 });
+
+    await customBackend.invoke("Task", { codingContext: "", fileContents: new Map(), cwd: "/repo" });
+
+    const args = runner.getCalls()[0].args;
+    expect(args[args.indexOf("-c") + 1]).toBe('model_reasoning_effort="high"');
+  });
+
+  it("lets backend options override model and effort", async () => {
+    const customBackend = new CodexCliBackend(runner, clock, "gpt-5.4-mini", "low");
+    runner.enqueue({ stdout: "ok", stderr: "", exitCode: 0 });
+
+    await customBackend.invoke(
+      "Task",
+      { codingContext: "", fileContents: new Map(), cwd: "/repo" },
+      { model: "gpt-5.5", effort: "xhigh" },
+    );
+
+    const args = runner.getCalls()[0].args;
+    expect(args[args.indexOf("-m") + 1]).toBe("gpt-5.5");
+    expect(args[args.indexOf("-c") + 1]).toBe('model_reasoning_effort="xhigh"');
+  });
+
   it("omits default Claude model names", async () => {
     const customBackend = new CodexCliBackend(runner, clock, "claude-sonnet-4-6");
     runner.enqueue({ stdout: "ok", stderr: "", exitCode: 0 });

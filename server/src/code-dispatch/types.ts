@@ -1,3 +1,5 @@
+import type { ReasoningEffort } from "../agents/reasoningEffort";
+
 export type BackendType = "copilot" | "claude" | "codex" | "gemini" | "pi" | "auto";
 
 export interface CodeTask {
@@ -6,6 +8,7 @@ export interface CodeTask {
   files: string[];
   testCommand?: string;
   model?: string;
+  effort?: ReasoningEffort;
   cwd?: string;
 }
 

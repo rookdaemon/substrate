@@ -398,6 +398,41 @@ describe("resolveConfig", () => {
     expect(config.evaluateOutcome?.qualityThreshold).toBe(80);
   });
 
+  it("reads dualPrompt planner and model-class effort config", async () => {
+    await fs.mkdir("/project", { recursive: true });
+    await fs.writeFile("/project/config.json", JSON.stringify({
+      dualPrompt: {
+        enabled: true,
+        plannerModel: "claude-haiku",
+        plannerEffort: "minimal",
+        maxFanout: 4,
+        modelClasses: {
+          strategic: { model: "claude-opus", effort: "high" },
+          everyday: { model: "claude-sonnet", effort: "medium" },
+          menial: { model: "claude-haiku", effort: "minimal" },
+        },
+      },
+    }));
+
+    const config = await resolveConfig(fs, {
+      appPaths: TEST_PATHS,
+      cwd: "/project",
+      env: {},
+    });
+
+    expect(config.dualPrompt).toEqual({
+      enabled: true,
+      plannerModel: "claude-haiku",
+      plannerEffort: "minimal",
+      maxFanout: 4,
+      modelClasses: {
+        strategic: { model: "claude-opus", effort: "high" },
+        everyday: { model: "claude-sonnet", effort: "medium" },
+        menial: { model: "claude-haiku", effort: "minimal" },
+      },
+    });
+  });
+
   it("apiToken defaults to undefined", async () => {
     const config = await resolveConfig(fs, {
       appPaths: TEST_PATHS,
@@ -663,6 +698,45 @@ describe("resolveConfig", () => {
       expect(config.model).toBe("claude-sonnet-4-5");
       expect(config.strategicModel).toBe("claude-opus-4-5");
       expect(config.tacticalModel).toBe("claude-haiku-4-5");
+    });
+
+    it("accepts provider effort settings", async () => {
+      await fs.mkdir("/project", { recursive: true });
+      await fs.writeFile("/project/config.json", JSON.stringify({
+        sessionLauncher: "codex",
+        codex: {
+          model: "gpt-5.5",
+          effort: "xhigh",
+        },
+        claude: {
+          effort: "max",
+        },
+      }));
+
+      const config = await resolveConfig(fs, {
+        appPaths: TEST_PATHS,
+        cwd: "/project",
+        env: {},
+      });
+
+      expect(config.codex?.effort).toBe("xhigh");
+      expect(config.claude?.effort).toBe("max");
+    });
+
+    it("rejects invalid provider effort settings", async () => {
+      await fs.mkdir("/project", { recursive: true });
+      await fs.writeFile("/project/config.json", JSON.stringify({
+        sessionLauncher: "codex",
+        codex: {
+          effort: "extreme",
+        },
+      }));
+
+      await expect(resolveConfig(fs, {
+        appPaths: TEST_PATHS,
+        cwd: "/project",
+        env: {},
+      })).rejects.toThrow(ConfigValidationError);
     });
 
     it("resolves model for the active sessionLauncher, not other providers", async () => {

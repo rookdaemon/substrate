@@ -1,7 +1,8 @@
 import type { IProcessRunner } from "../agents/claude/IProcessRunner";
 import type { IClock } from "../substrate/abstractions/IClock";
+import type { ReasoningEffort } from "../agents/reasoningEffort";
 import type { BackendType } from "./types";
-import type { BackendResult, ICodeBackend, SubstrateSlice } from "./ICodeBackend";
+import type { BackendResult, CodeBackendOptions, ICodeBackend, SubstrateSlice } from "./ICodeBackend";
 import { buildPrompt } from "./prompt";
 
 export class CodexCliBackend implements ICodeBackend {
@@ -11,10 +12,13 @@ export class CodexCliBackend implements ICodeBackend {
     private readonly processRunner: IProcessRunner,
     private readonly clock: IClock,
     private readonly model?: string,
+    private readonly effort?: ReasoningEffort,
   ) {}
 
-  async invoke(spec: string, context: SubstrateSlice): Promise<BackendResult> {
+  async invoke(spec: string, context: SubstrateSlice, options?: CodeBackendOptions): Promise<BackendResult> {
     const prompt = buildPrompt(spec, context);
+    const model = this.resolveModel(options?.model ?? this.model);
+    const effort = options?.effort ?? this.effort;
     const startMs = this.clock.now().getTime();
     const args = [
       "exec",
@@ -24,8 +28,11 @@ export class CodexCliBackend implements ICodeBackend {
       "--skip-git-repo-check",
       "--ephemeral",
     ];
-    if (this.model && !this.model.startsWith("claude-")) {
-      args.push("-m", this.model);
+    if (model) {
+      args.push("-m", model);
+    }
+    if (effort) {
+      args.push("-c", `model_reasoning_effort="${effort}"`);
     }
     args.push("-C", context.cwd, "-");
 
@@ -45,5 +52,11 @@ export class CodexCliBackend implements ICodeBackend {
         durationMs: this.clock.now().getTime() - startMs,
       };
     }
+  }
+
+  private resolveModel(model: string | undefined): string | undefined {
+    if (!model) return undefined;
+    if (model.startsWith("claude-")) return undefined;
+    return model;
   }
 }

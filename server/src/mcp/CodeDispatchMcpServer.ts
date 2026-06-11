@@ -2,6 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { CodeDispatcher } from "../code-dispatch/CodeDispatcher";
 import type { BackendType } from "../code-dispatch/types";
+import { REASONING_EFFORT_VALUES } from "../agents/reasoningEffort";
 
 /**
  * Register the code-dispatch `invoke` tool on an existing MCP server.
@@ -19,9 +20,10 @@ export function addCodeDispatchTools(server: McpServer, dispatcher: CodeDispatch
       files: z.array(z.string()).describe("Source file paths to include as context"),
       testCommand: z.string().optional().describe("Test gate command (default: npm test)"),
       model: z.string().optional().describe("Model override for backends that support model selection"),
+      effort: z.enum(REASONING_EFFORT_VALUES).optional().describe("Reasoning effort override for backends that support effort selection"),
       cwd: z.string().optional().describe("Working directory for the task"),
     },
-    async ({ spec, backend, files, testCommand, model, cwd }) => {
+    async ({ spec, backend, files, testCommand, model, effort, cwd }) => {
       try {
         const result = await dispatcher.dispatch({
           spec,
@@ -29,6 +31,7 @@ export function addCodeDispatchTools(server: McpServer, dispatcher: CodeDispatch
           files: files ?? [],
           testCommand,
           model,
+          effort,
           cwd,
         });
 

@@ -64,6 +64,26 @@ describe("ClaudeCliBackend", () => {
     expect(args[modelIdx + 1]).toBe("claude-opus-4-5");
   });
 
+  it("passes configured effort to claude CLI", async () => {
+    const customBackend = new ClaudeCliBackend(runner, clock, undefined, "high");
+    runner.enqueue({ stdout: "", stderr: "", exitCode: 0 });
+    await customBackend.invoke("task", makeContext());
+
+    const args = runner.getCalls()[0].args;
+    const effortIdx = args.indexOf("--effort");
+    expect(args[effortIdx + 1]).toBe("high");
+  });
+
+  it("lets backend options override model and effort", async () => {
+    const customBackend = new ClaudeCliBackend(runner, clock, "claude-sonnet-4-5", "low");
+    runner.enqueue({ stdout: "", stderr: "", exitCode: 0 });
+    await customBackend.invoke("task", makeContext(), { model: "claude-opus-4-5", effort: "max" });
+
+    const args = runner.getCalls()[0].args;
+    expect(args[args.indexOf("--model") + 1]).toBe("claude-opus-4-5");
+    expect(args[args.indexOf("--effort") + 1]).toBe("max");
+  });
+
   it("returns success=true on exit code 0", async () => {
     runner.enqueue({ stdout: "great output", stderr: "", exitCode: 0 });
     const result = await backend.invoke("task", makeContext());

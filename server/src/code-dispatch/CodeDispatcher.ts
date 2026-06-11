@@ -70,13 +70,15 @@ export class CodeDispatcher {
       };
     }
 
-    // Build backend-specific model override if provided
     const context: SubstrateSlice = { codingContext, fileContents, cwd };
 
     // 4. Invoke backend
     let backendResult;
     try {
-      backendResult = await backend.invoke(task.spec, context);
+      backendResult = await backend.invoke(task.spec, context, {
+        model: task.model,
+        effort: task.effort,
+      });
     } catch (err) {
       return {
         success: false,

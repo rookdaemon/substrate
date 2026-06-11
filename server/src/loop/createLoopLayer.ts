@@ -59,6 +59,7 @@ import { PiCliBackend } from "../code-dispatch/PiCliBackend";
 import type { BackendType } from "../code-dispatch/types";
 import type { ICodeBackend } from "../code-dispatch/ICodeBackend";
 import type { SdkQueryFn } from "../agents/claude/AgentSdkLauncher";
+import type { ReasoningEffort } from "../agents/reasoningEffort";
 import type { ApplicationConfig } from "./applicationTypes";
 import type { SubstrateLayerResult } from "./createSubstrateLayer";
 import type { AgentLayerResult } from "./createAgentLayer";
@@ -79,36 +80,9 @@ function backendModel(config: ApplicationConfig, provider: ProviderName): string
   return providerConfig?.tacticalModel ?? providerConfig?.model ?? config.tacticalModel ?? config.model;
 }
 
-function providerConfig(config: ApplicationConfig, provider: ProviderName) {
-  return config[provider] ?? config.models?.[provider];
-}
-
-function inferPiProvider(model: string | undefined, configuredProvider: string | undefined): string | undefined {
-  if (configuredProvider) return configuredProvider;
-  if (model?.startsWith("openrouter/")) return "openrouter";
-  return undefined;
-}
-
-function piProviderKeyEnvVar(provider: string | undefined): string | undefined {
-  switch (provider?.toLowerCase()) {
-    case "openai":
-      return "OPENAI_API_KEY";
-    case "google":
-    case "gemini":
-      return "GEMINI_API_KEY";
-    case "groq":
-      return "GROQ_API_KEY";
-    case "anthropic":
-    case "claude":
-      return "ANTHROPIC_API_KEY";
-    case "xai":
-    case "grok":
-      return "XAI_API_KEY";
-    case "openrouter":
-      return "OPENROUTER_API_KEY";
-    default:
-      return undefined;
-  }
+function backendEffort(config: ApplicationConfig, provider: ProviderName): ReasoningEffort | undefined {
+  const providerConfig = config[provider] ?? config.models?.[provider];
+  return providerConfig?.effort;
 }
 
 /**
@@ -124,7 +98,7 @@ export async function createLoopLayer(
 ): Promise<LoopLayerResult> {
   const { fs, clock, substrateConfig, reader, appendWriter, lock, writer, logger, metaManager } = substrate;
   const { ego, subconscious, superego, id, conversationManager, launcher, gatedLauncher,
-    taskMetrics, sizeTracker, delegationTracker, driveQualityTracker, metricsService, shellIndependenceService, vertexSubprocessLauncher } = agents;
+    taskMetrics, sizeTracker, delegationTracker, driveQualityTracker, metricsService, shellIndependenceService, vertexSubprocessLauncher, iterationPlanner } = agents;
 
   // Loop layer — build httpServer first for the underlying http.Server,
   // then wsServer, then orchestrator, then wire orchestrator back into httpServer
@@ -225,6 +199,7 @@ export async function createLoopLayer(
     config.conversationSessionMaxDurationMs,
     config.substratePath,
     fs,
+    iterationPlanner,
   );
 
   // Wire up sleep/wake infrastructure
@@ -457,9 +432,9 @@ export async function createLoopLayer(
   // Set up Code Dispatch layer
   const codeDispatchRunner = new NodeProcessRunner();
   const codeBackends = new Map<BackendType, ICodeBackend>([
-    ["claude", new ClaudeCliBackend(codeDispatchRunner, clock, backendModel(config, "claude"))],
+    ["claude", new ClaudeCliBackend(codeDispatchRunner, clock, backendModel(config, "claude"), backendEffort(config, "claude"))],
     ["copilot", new CopilotBackend(codeDispatchRunner, clock, backendModel(config, "copilot"))],
-    ["codex", new CodexCliBackend(codeDispatchRunner, clock, backendModel(config, "codex"))],
+    ["codex", new CodexCliBackend(codeDispatchRunner, clock, backendModel(config, "codex"), backendEffort(config, "codex"))],
     ["gemini", new GeminiCliBackend(codeDispatchRunner, clock, backendModel(config, "gemini"))],
     ["pi", new PiCliBackend(codeDispatchRunner, clock, backendModel(config, "pi"))],
   ]);

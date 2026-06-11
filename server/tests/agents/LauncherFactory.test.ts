@@ -2,8 +2,9 @@ import { createLauncher, LauncherFactoryDeps } from "../../src/agents/LauncherFa
 import { NodeProcessRunner } from "../../src/agents/claude/NodeProcessRunner";
 import { FetchHttpClient } from "../../src/agents/ollama/FetchHttpClient";
 import { SystemClock } from "../../src/substrate/abstractions/SystemClock";
+import type { ILogger } from "../../src/logging";
 
-const noopLogger = { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} } as any;
+const noopLogger: ILogger = { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} };
 
 describe("LauncherFactory", () => {
   const deps: LauncherFactoryDeps = {

@@ -9,7 +9,7 @@ import { CodeDispatcher } from "../../src/code-dispatch/CodeDispatcher";
 import { InMemoryFileSystem } from "../../src/substrate/abstractions/InMemoryFileSystem";
 import { InMemoryProcessRunner } from "../../src/agents/claude/InMemoryProcessRunner";
 import { FixedClock } from "../../src/substrate/abstractions/FixedClock";
-import type { ICodeBackend, SubstrateSlice, BackendResult } from "../../src/code-dispatch/ICodeBackend";
+import type { ICodeBackend, SubstrateSlice, BackendResult, CodeBackendOptions } from "../../src/code-dispatch/ICodeBackend";
 import type { BackendType, CodeResult } from "../../src/code-dispatch/types";
 
 // ---------------------------------------------------------------------------
@@ -20,6 +20,7 @@ import type { BackendType, CodeResult } from "../../src/code-dispatch/types";
 class InMemoryCodeBackend implements ICodeBackend {
   readonly name: BackendType;
   private responses: BackendResult[] = [];
+  readonly calls: Array<{ spec: string; context: SubstrateSlice; options?: CodeBackendOptions }> = [];
 
   constructor(name: BackendType = "claude") {
     this.name = name;
@@ -29,7 +30,8 @@ class InMemoryCodeBackend implements ICodeBackend {
     this.responses.push(result);
   }
 
-  async invoke(_spec: string, _context: SubstrateSlice): Promise<BackendResult> {
+  async invoke(spec: string, context: SubstrateSlice, options?: CodeBackendOptions): Promise<BackendResult> {
+    this.calls.push({ spec, context, options });
     const response = this.responses.shift();
     if (!response) throw new Error("InMemoryCodeBackend: no responses enqueued");
     return response;
@@ -136,6 +138,22 @@ describe("CodeDispatchMcpServer", () => {
         arguments: { spec: "Add unit tests", backend: "claude", files: [] },
       });
       expect(captured[0]).toBe("Add unit tests");
+    });
+
+    it("passes model and effort overrides to the dispatcher backend", async () => {
+      const codex = successBackend("codex");
+      const dispatcher = makeDispatcher(new Map<BackendType, ICodeBackend>([["codex", codex]]));
+      ({ client, cleanup } = await buildClient(dispatcher));
+
+      await client.callTool({
+        name: "invoke",
+        arguments: { spec: "Tune reasoning", backend: "codex", files: [], model: "gpt-5.5", effort: "high" },
+      });
+
+      expect(codex.calls[0].options).toEqual({
+        model: "gpt-5.5",
+        effort: "high",
+      });
     });
 
     it("result includes output field", async () => {

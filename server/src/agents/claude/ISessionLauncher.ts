@@ -1,3 +1,5 @@
+import type { ReasoningEffort } from "../reasoningEffort";
+
 export interface ProcessLogEntry {
   type: "thinking" | "text" | "tool_use" | "tool_result" | "status";
   content: string;
@@ -40,6 +42,7 @@ export interface ClaudeSessionResult {
 
 export interface LaunchOptions {
   model?: string;
+  effort?: ReasoningEffort;
   /** Frontier/expensive model use must be opted into at the call site under Survival Mode. */
   allowFrontierModel?: boolean;
   maxRetries?: number;
