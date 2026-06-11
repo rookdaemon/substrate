@@ -1,4 +1,5 @@
 import type { BackendType } from "./types";
+import type { ReasoningEffort } from "../agents/reasoningEffort";
 
 export interface SubstrateSlice {
   codingContext: string;
@@ -13,7 +14,12 @@ export interface BackendResult {
   durationMs: number;
 }
 
+export interface CodeBackendOptions {
+  model?: string;
+  effort?: ReasoningEffort;
+}
+
 export interface ICodeBackend {
   readonly name: BackendType;
-  invoke(spec: string, context: SubstrateSlice): Promise<BackendResult>;
+  invoke(spec: string, context: SubstrateSlice, options?: CodeBackendOptions): Promise<BackendResult>;
 }

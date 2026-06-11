@@ -665,6 +665,45 @@ describe("resolveConfig", () => {
       expect(config.tacticalModel).toBe("claude-haiku-4-5");
     });
 
+    it("accepts provider effort settings", async () => {
+      await fs.mkdir("/project", { recursive: true });
+      await fs.writeFile("/project/config.json", JSON.stringify({
+        sessionLauncher: "codex",
+        codex: {
+          model: "gpt-5.5",
+          effort: "xhigh",
+        },
+        claude: {
+          effort: "max",
+        },
+      }));
+
+      const config = await resolveConfig(fs, {
+        appPaths: TEST_PATHS,
+        cwd: "/project",
+        env: {},
+      });
+
+      expect(config.codex?.effort).toBe("xhigh");
+      expect(config.claude?.effort).toBe("max");
+    });
+
+    it("rejects invalid provider effort settings", async () => {
+      await fs.mkdir("/project", { recursive: true });
+      await fs.writeFile("/project/config.json", JSON.stringify({
+        sessionLauncher: "codex",
+        codex: {
+          effort: "extreme",
+        },
+      }));
+
+      await expect(resolveConfig(fs, {
+        appPaths: TEST_PATHS,
+        cwd: "/project",
+        env: {},
+      })).rejects.toThrow(ConfigValidationError);
+    });
+
     it("resolves model for the active sessionLauncher, not other providers", async () => {
       await fs.mkdir("/project", { recursive: true });
       await fs.writeFile("/project/config.json", JSON.stringify({

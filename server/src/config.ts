@@ -4,6 +4,7 @@ import type { IEnvironment } from "./substrate/abstractions/IEnvironment";
 import type { IFileSystem } from "./substrate/abstractions/IFileSystem";
 import type { AppPaths } from "./paths";
 import { MIN_SURVIVAL_ROUTINE_CYCLE_DELAY_MS } from "./loop/types";
+import { REASONING_EFFORT_VALUES, type ReasoningEffort } from "./agents/reasoningEffort";
 
 export class ConfigValidationError extends Error {
   constructor(message: string) {
@@ -19,6 +20,7 @@ export interface ProviderConfig {
   baseUrl?: string;
   provider?: string;
   model?: string;
+  effort?: ReasoningEffort;
   strategicModel?: string;
   tacticalModel?: string;
   idModel?: string;
@@ -36,6 +38,7 @@ const ProviderConfigSchema = z.object({
   baseUrl: z.string().url().optional(),
   provider: z.string().optional(),
   model: z.string().optional(),
+  effort: z.enum(REASONING_EFFORT_VALUES).optional(),
   strategicModel: z.string().optional(),
   tacticalModel: z.string().optional(),
   idModel: z.string().optional(),

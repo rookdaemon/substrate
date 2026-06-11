@@ -2,18 +2,7 @@ import * as path from "path";
 import { PermissionChecker } from "../agents/permissions";
 import { PromptBuilder } from "../agents/prompts/PromptBuilder";
 import { AgentSdkLauncher, SdkQueryFn } from "../agents/claude/AgentSdkLauncher";
-import { GeminiSessionLauncher } from "../agents/gemini/GeminiSessionLauncher";
-import { GeminiMcpSetup } from "../agents/gemini/GeminiMcpSetup";
-import { CopilotSessionLauncher } from "../agents/copilot/CopilotSessionLauncher";
-import { CodexSessionLauncher } from "../agents/codex/CodexSessionLauncher";
-import { CodexMcpSetup } from "../agents/codex/CodexMcpSetup";
-import { PiSessionLauncher } from "../agents/pi/PiSessionLauncher";
-import { OllamaSessionLauncher } from "../agents/ollama/OllamaSessionLauncher";
-import { OllamaInferenceClient } from "../agents/ollama/OllamaInferenceClient";
-import { OllamaOffloadService } from "../agents/ollama/OllamaOffloadService";
 import { FetchHttpClient } from "../agents/ollama/FetchHttpClient";
-import { GroqSessionLauncher } from "../agents/groq/GroqSessionLauncher";
-import { AnthropicSessionLauncher } from "../agents/anthropic/AnthropicSessionLauncher";
 import { VertexSessionLauncher } from "../agents/vertex/VertexSessionLauncher";
 import { ProcessTracker, ProcessTrackerConfig } from "../agents/claude/ProcessTracker";
 import { NodeProcessKiller } from "../agents/claude/NodeProcessKiller";
@@ -119,6 +108,7 @@ export async function createAgentLayer(
   const sessionProvider = (config.sessionLauncher ?? "claude") as ProviderName;
   const activeProviderConfig = providerConfig(config, sessionProvider);
   const activeModel = activeProviderConfig?.model ?? config.model;
+  const activeEffort = activeProviderConfig?.effort;
   const activeStrategicModel = activeProviderConfig?.strategicModel ?? config.strategicModel;
   const activeTacticalModel = activeProviderConfig?.tacticalModel ?? config.tacticalModel;
   const ollamaConfig = providerConfig(config, "ollama");
@@ -152,7 +142,7 @@ export async function createAgentLayer(
     code_dispatch: { type: "http" as const, url: mcpUrl },
   };
   logger.debug(`agent-layer: MCP servers configured: tinybus → ${mcpUrl}, code_dispatch → ${mcpUrl}`);
-  const launcher = new AgentSdkLauncher(sdkQuery, clock, activeModel, logger, processTracker, mcpServers);
+  const launcher = new AgentSdkLauncher(sdkQuery, clock, activeModel, logger, processTracker, mcpServers, activeEffort);
 
   // API semaphore — caps concurrent Claude sessions for rate-limit safety
   const apiSemaphore = new ApiSemaphore(config.maxConcurrentSessions ?? 2);
@@ -274,7 +264,7 @@ export async function createAgentLayer(
   } else if (config.sessionLauncher === "codex") {
     logger.debug("agent-layer: using CodexSessionLauncher for cognitive roles");
     const { CodexSessionLauncher } = await import("../agents/codex/CodexSessionLauncher");
-    const codexLauncher = new CodexSessionLauncher(new NodeProcessRunner(), clock, activeModel, logger);
+    const codexLauncher = new CodexSessionLauncher(new NodeProcessRunner(), clock, activeModel, logger, activeEffort);
     const { CodexMcpSetup } = await import("../agents/codex/CodexMcpSetup");
     const codexMcpSetup = new CodexMcpSetup(new NodeProcessRunner(), logger);
     await codexMcpSetup.register("tinybus", mcpUrl);

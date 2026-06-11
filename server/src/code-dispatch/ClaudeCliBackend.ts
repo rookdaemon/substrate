@@ -1,7 +1,8 @@
 import type { IProcessRunner } from "../agents/claude/IProcessRunner";
 import type { IClock } from "../substrate/abstractions/IClock";
+import type { ReasoningEffort } from "../agents/reasoningEffort";
 import type { BackendType } from "./types";
-import type { BackendResult, ICodeBackend, SubstrateSlice } from "./ICodeBackend";
+import type { BackendResult, CodeBackendOptions, ICodeBackend, SubstrateSlice } from "./ICodeBackend";
 import { buildPrompt } from "./prompt";
 
 const DEFAULT_MODEL = "claude-sonnet-4-5";
@@ -13,17 +14,23 @@ export class ClaudeCliBackend implements ICodeBackend {
     private readonly processRunner: IProcessRunner,
     private readonly clock: IClock,
     private readonly model?: string,
+    private readonly effort?: ReasoningEffort,
   ) {}
 
-  async invoke(spec: string, context: SubstrateSlice): Promise<BackendResult> {
+  async invoke(spec: string, context: SubstrateSlice, options?: CodeBackendOptions): Promise<BackendResult> {
     const prompt = buildPrompt(spec, context);
-    const model = this.model ?? DEFAULT_MODEL;
+    const model = options?.model ?? this.model ?? DEFAULT_MODEL;
+    const effort = options?.effort ?? this.effort;
 
     const startMs = this.clock.now().getTime();
     try {
+      const args = ["--print", "-p", prompt, "--model", model];
+      if (effort) {
+        args.push("--effort", effort);
+      }
       const result = await this.processRunner.run(
         "claude",
-        ["--print", "-p", prompt, "--model", model],
+        args,
         { cwd: context.cwd },
       );
       return {

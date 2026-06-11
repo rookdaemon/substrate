@@ -61,6 +61,26 @@ describe("CodexSessionLauncher", () => {
     expect(args[modelIdx + 1]).toBe("gpt-5.2");
   });
 
+  it("passes configured effort as Codex reasoning effort", async () => {
+    const codexLauncher = new CodexSessionLauncher(runner, clock, undefined, undefined, "high");
+    runner.enqueue({ stdout: "", stderr: "", exitCode: 0 });
+    await codexLauncher.launch(makeRequest());
+
+    const args = runner.getCalls()[0].args;
+    const configIdx = args.indexOf("-c");
+    expect(args[configIdx + 1]).toBe('model_reasoning_effort="high"');
+  });
+
+  it("lets launch options override configured effort", async () => {
+    const codexLauncher = new CodexSessionLauncher(runner, clock, undefined, undefined, "low");
+    runner.enqueue({ stdout: "", stderr: "", exitCode: 0 });
+    await codexLauncher.launch(makeRequest(), { effort: "xhigh" });
+
+    const args = runner.getCalls()[0].args;
+    const configIdx = args.indexOf("-c");
+    expect(args[configIdx + 1]).toBe('model_reasoning_effort="xhigh"');
+  });
+
   it("prepends system prompt to the message when systemPrompt is provided", async () => {
     runner.enqueue({ stdout: "", stderr: "", exitCode: 0 });
     await launcher.launch(makeRequest({

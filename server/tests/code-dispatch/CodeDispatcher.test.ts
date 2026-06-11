@@ -2,14 +2,14 @@ import { CodeDispatcher } from "../../src/code-dispatch/CodeDispatcher";
 import { InMemoryFileSystem } from "../../src/substrate/abstractions/InMemoryFileSystem";
 import { InMemoryProcessRunner } from "../../src/agents/claude/InMemoryProcessRunner";
 import { FixedClock } from "../../src/substrate/abstractions/FixedClock";
-import type { ICodeBackend, SubstrateSlice, BackendResult } from "../../src/code-dispatch/ICodeBackend";
+import type { ICodeBackend, SubstrateSlice, BackendResult, CodeBackendOptions } from "../../src/code-dispatch/ICodeBackend";
 import type { BackendType, CodeTask } from "../../src/code-dispatch/types";
 
 /** Controllable in-memory backend for testing CodeDispatcher */
 class InMemoryCodeBackend implements ICodeBackend {
   readonly name: BackendType;
   private responses: BackendResult[] = [];
-  readonly calls: Array<{ spec: string; context: SubstrateSlice }> = [];
+  readonly calls: Array<{ spec: string; context: SubstrateSlice; options?: CodeBackendOptions }> = [];
 
   constructor(name: BackendType = "claude") {
     this.name = name;
@@ -19,8 +19,8 @@ class InMemoryCodeBackend implements ICodeBackend {
     this.responses.push(result);
   }
 
-  async invoke(spec: string, context: SubstrateSlice): Promise<BackendResult> {
-    this.calls.push({ spec, context });
+  async invoke(spec: string, context: SubstrateSlice, options?: CodeBackendOptions): Promise<BackendResult> {
+    this.calls.push({ spec, context, options });
     const response = this.responses.shift();
     if (!response) throw new Error("InMemoryCodeBackend: no responses enqueued");
     return response;
@@ -111,6 +111,24 @@ describe("CodeDispatcher", () => {
       const result = await dispatcher.dispatch(makeTask({ files: ["/nonexistent.ts"] }));
       expect(result.success).toBe(true);
       expect(claudeBackend.calls[0].context.fileContents.size).toBe(0);
+    });
+  });
+
+  describe("backend options", () => {
+    it("passes task model and effort overrides to the selected backend", async () => {
+      codexBackend.enqueue(successBackendResult());
+      processRunner.enqueue({ stdout: "", stderr: "", exitCode: 0 }); // git diff
+
+      await dispatcher.dispatch(makeTask({
+        backend: "codex",
+        model: "gpt-5.5",
+        effort: "xhigh",
+      }));
+
+      expect(codexBackend.calls[0].options).toEqual({
+        model: "gpt-5.5",
+        effort: "xhigh",
+      });
     });
   });
 

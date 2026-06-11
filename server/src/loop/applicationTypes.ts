@@ -4,12 +4,14 @@ import type { LoopHttpServer } from "./LoopHttpServer";
 import type { LoopWebSocketServer } from "./LoopWebSocketServer";
 import type { FileWatcher } from "../substrate/watcher/FileWatcher";
 import type { SubstrateLayerOverrides } from "./createSubstrateLayer";
+import type { ReasoningEffort } from "../agents/reasoningEffort";
 
 export interface ProviderConfig {
   keyPath?: string;
   baseUrl?: string;
   provider?: string;
   model?: string;
+  effort?: ReasoningEffort;
   strategicModel?: string;
   tacticalModel?: string;
   idModel?: string;

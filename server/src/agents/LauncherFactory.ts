@@ -18,6 +18,7 @@ import type { IProcessRunner } from "./claude/IProcessRunner";
 import type { IClock } from "../substrate/abstractions/IClock";
 import type { ILogger } from "../logging";
 import type { IHttpClient } from "./ollama/IHttpClient";
+import type { ReasoningEffort } from "./reasoningEffort";
 
 export type ProviderName =
   | "claude"
@@ -40,8 +41,8 @@ export interface LauncherFactoryDeps {
 export interface PiLauncherArgs {
   provider?: string;
   model?: string;
-  mode?: string;
-  thinking?: string;
+  mode?: "json" | "print";
+  thinking?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
   sessionDir?: string;
   apiToken?: string;
   providerEnv?: Record<string, string | undefined>;
@@ -72,6 +73,10 @@ export interface VertexLauncherArgs {
   model?: string;
 }
 
+export interface CliLauncherArgs {
+  effort?: ReasoningEffort;
+}
+
 /**
  * Construct the launcher for the requested provider.
  * Only the provider actually used is loaded via dynamic import.
@@ -93,7 +98,8 @@ export async function createLauncher(
     }
     case "codex": {
       const { CodexSessionLauncher } = await import("./codex/CodexSessionLauncher");
-      return new CodexSessionLauncher(deps.runner, deps.clock, model, deps.logger);
+      const cliArgs = args as unknown as CliLauncherArgs;
+      return new CodexSessionLauncher(deps.runner, deps.clock, model, deps.logger, cliArgs.effort);
     }
     case "pi": {
       const { PiSessionLauncher } = await import("./pi/PiSessionLauncher");
@@ -101,8 +107,8 @@ export async function createLauncher(
       return new PiSessionLauncher(deps.runner, deps.clock, {
         provider: piArgs.provider,
         model,
-        mode: piArgs.mode as any,
-        thinking: piArgs.thinking as any,
+        mode: piArgs.mode,
+        thinking: piArgs.thinking,
         sessionDir: piArgs.sessionDir,
         apiToken: piArgs.apiToken,
         providerEnv: piArgs.providerEnv,

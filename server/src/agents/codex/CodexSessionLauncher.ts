@@ -1,6 +1,7 @@
 import type { IProcessRunner } from "../claude/IProcessRunner";
 import type { IClock } from "../../substrate/abstractions/IClock";
 import type { ILogger } from "../../logging";
+import type { ReasoningEffort } from "../reasoningEffort";
 import type {
   ISessionLauncher,
   ClaudeSessionRequest,
@@ -18,6 +19,7 @@ import type {
  *   systemPrompt    -> prepended to the message as a "SYSTEM INSTRUCTIONS:" block
  *   message         -> codex exec "<message>"
  *   model           -> -m <model> when a non-Claude model is supplied
+ *   effort          -> -c model_reasoning_effort="<effort>"
  *   cwd             -> -C <cwd> and process cwd
  *   additionalDirs  -> --add-dir <dir>
  *   continueSession -> intentionally ignored; Substrate injects complete file context each turn
@@ -30,6 +32,7 @@ export class CodexSessionLauncher implements ISessionLauncher {
     private readonly clock: IClock,
     private readonly model?: string,
     private readonly logger?: ILogger,
+    private readonly effort?: ReasoningEffort,
   ) {}
 
   async launch(
@@ -38,14 +41,15 @@ export class CodexSessionLauncher implements ISessionLauncher {
   ): Promise<ClaudeSessionResult> {
     const startMs = this.clock.now().getTime();
     const modelToUse = this.resolveModel(options?.model ?? this.model);
+    const effortToUse = options?.effort ?? this.effort;
     const fullMessage = request.systemPrompt
       ? `SYSTEM INSTRUCTIONS:\n${request.systemPrompt}\n\n---\n\n${request.message}`
       : request.message;
 
     const cwd = options?.cwd;
-    const args = this.buildExecArgs(fullMessage, modelToUse, cwd, options?.additionalDirs);
+    const args = this.buildExecArgs(fullMessage, modelToUse, effortToUse, cwd, options?.additionalDirs);
 
-    this.logger?.debug(`codex-launch: exec model=${modelToUse ?? "default"} cwd=${cwd ?? process.cwd()}`);
+    this.logger?.debug(`codex-launch: exec model=${modelToUse ?? "default"} effort=${effortToUse ?? "default"} cwd=${cwd ?? process.cwd()}`);
 
     try {
       const result = await this.processRunner.run("codex", args, {
@@ -90,6 +94,7 @@ export class CodexSessionLauncher implements ISessionLauncher {
   private buildExecArgs(
     message: string,
     model: string | undefined,
+    effort: ReasoningEffort | undefined,
     cwd: string | undefined,
     additionalDirs: string[] | undefined,
   ): string[] {
@@ -104,6 +109,9 @@ export class CodexSessionLauncher implements ISessionLauncher {
     ];
     if (model) {
       args.push("-m", model);
+    }
+    if (effort) {
+      args.push("-c", `model_reasoning_effort="${effort}"`);
     }
     if (cwd) {
       args.push("-C", cwd);

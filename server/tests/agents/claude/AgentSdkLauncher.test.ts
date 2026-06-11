@@ -179,6 +179,23 @@ describe("AgentSdkLauncher", () => {
     expect(calls[0].options?.model).toBe("claude-opus-4-20250514");
   });
 
+  it("passes configured effort to query function and lets launch options override it", async () => {
+    const messages: SdkMessage[] = [
+      { type: "result", subtype: "success", result: "ok", total_cost_usd: 0.0, duration_ms: 0 },
+    ];
+    const queryFn = createMockQueryFn(messages);
+    const launcher = new AgentSdkLauncher(queryFn, clock, "claude-opus-4-20250514", undefined, undefined, undefined, "low");
+
+    await launcher.launch({ systemPrompt: "Be an expert", message: "Use default effort" });
+    await launcher.launch(
+      { systemPrompt: "Be an expert", message: "Override effort" },
+      { effort: "max" },
+    );
+
+    expect(queryFn.getCalls()[0].options?.effort).toBe("low");
+    expect(queryFn.getCalls()[1].options?.effort).toBe("max");
+  });
+
   it("passes additionalDirectories to query function when additionalDirs provided", async () => {
     const messages: SdkMessage[] = [
       { type: "result", subtype: "success", result: "ok", total_cost_usd: 0.0, duration_ms: 0 },

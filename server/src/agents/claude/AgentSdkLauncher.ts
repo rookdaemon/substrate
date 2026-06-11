@@ -7,6 +7,7 @@ import {
   LaunchOptions,
   ProcessLogEntry,
 } from "./ISessionLauncher";
+import type { ReasoningEffort } from "../reasoningEffort";
 import { MessageChannel } from "../../session/MessageChannel";
 import { SdkUserMessage } from "../../session/ISdkSession";
 import { ProcessTracker } from "./ProcessTracker";
@@ -90,6 +91,7 @@ export class AgentSdkLauncher implements ISessionLauncher {
     logger?: ILogger,
     processTracker?: ProcessTracker,
     mcpServers?: Record<string, { type: string; url: string }>,
+    private readonly effort?: ReasoningEffort,
   ) {
     this.model = model ?? "claude-sonnet-4-6";
     this.logger = logger ?? noopLogger;
@@ -158,7 +160,8 @@ export class AgentSdkLauncher implements ISessionLauncher {
     const startTime = this.clock.now();
 
     const modelToUse = options?.model ?? this.model;
-    this.logger.debug(`sdk-launch: model=${modelToUse} cwd=${options?.cwd ?? "(inherit)"}`);
+    const effortToUse = options?.effort ?? this.effort;
+    this.logger.debug(`sdk-launch: model=${modelToUse} effort=${effortToUse ?? "default"} cwd=${options?.cwd ?? "(inherit)"}`);
 
     const mcpEntries = Object.entries(this.mcpServers);
     if (mcpEntries.length > 0) {
@@ -172,6 +175,7 @@ export class AgentSdkLauncher implements ISessionLauncher {
       permissionMode: "bypassPermissions",
       allowDangerouslySkipPermissions: true,
       persistSession: options?.persistSession ?? false,
+      ...(effortToUse ? { effort: effortToUse } : {}),
       ...(options?.continueSession ? { continue: true } : {}),
       ...(Object.keys(this.mcpServers).length > 0 ? { mcpServers: this.mcpServers } : {}),
     };
