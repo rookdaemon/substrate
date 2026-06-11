@@ -5,6 +5,7 @@ import type { LoopWebSocketServer } from "./LoopWebSocketServer";
 import type { FileWatcher } from "../substrate/watcher/FileWatcher";
 import type { SubstrateLayerOverrides } from "./createSubstrateLayer";
 import type { ReasoningEffort } from "../agents/reasoningEffort";
+import type { IterationModelClass } from "../agents/IterationPlanner";
 
 export interface ProviderConfig {
   keyPath?: string;
@@ -22,6 +23,19 @@ export interface ProviderConfig {
   defaultIdleTimeoutMs?: number;
   maxLoggedTextChars?: number;
   minLoggedTextChars?: number;
+}
+
+export interface IterationModelClassConfig {
+  model?: string;
+  effort?: ReasoningEffort;
+}
+
+export interface DualPromptConfig {
+  enabled: boolean;
+  plannerModel?: string;
+  plannerEffort?: ReasoningEffort;
+  maxFanout?: number;
+  modelClasses?: Partial<Record<IterationModelClass, IterationModelClassConfig>>;
 }
 
 export interface ApplicationConfig {
@@ -51,6 +65,8 @@ export interface ApplicationConfig {
     idleIntervalCycles?: number;
     maxIntervalMs?: number;
   };
+  /** Optional two-stage dispatch: a cheap planner can choose direct execution or bounded fanout. */
+  dualPrompt?: DualPromptConfig;
   maxConsecutiveIdleCycles?: number;
   mode?: "cycle" | "tick";
   sdkQueryFn?: SdkQueryFn;

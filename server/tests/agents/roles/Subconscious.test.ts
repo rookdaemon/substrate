@@ -111,6 +111,26 @@ describe("Subconscious agent", () => {
       expect(launches[0].options?.cwd).toBe("/workspace");
     });
 
+    it("uses launch model and effort overrides when supplied", async () => {
+      launcher.enqueueSuccess(JSON.stringify({
+        result: "success", summary: "Done", progressEntry: "", skillUpdates: null, memoryUpdates: null, proposals: [], agoraReplies: [],
+      }));
+
+      await subconscious.execute(
+        { taskId: "task-1", description: "Do it cheaply" },
+        undefined,
+        undefined,
+        undefined,
+        { model: "claude-haiku", effort: "minimal", continueSession: false, persistSession: false },
+      );
+
+      const launches = launcher.getLaunches();
+      expect(launches[0].options?.model).toBe("claude-haiku");
+      expect(launches[0].options?.effort).toBe("minimal");
+      expect(launches[0].options?.continueSession).toBe(false);
+      expect(launches[0].options?.persistSession).toBe(false);
+    });
+
     it("returns failure result with stderr when Claude fails", async () => {
       launcher.enqueueFailure("claude: model not found");
 

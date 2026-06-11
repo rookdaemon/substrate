@@ -5,7 +5,7 @@ import { SubstrateFileWriter } from "../../substrate/io/FileWriter";
 import { AppendOnlyWriter } from "../../substrate/io/AppendOnlyWriter";
 import { PermissionChecker } from "../permissions";
 import { PromptBuilder, SubstrateSnapshot } from "../prompts/PromptBuilder";
-import { ISessionLauncher, ProcessLogEntry } from "../claude/ISessionLauncher";
+import { ISessionLauncher, ProcessLogEntry, type LaunchOptions } from "../claude/ISessionLauncher";
 import { PlanParser } from "../parsers/PlanParser";
 import { extractJson } from "../parsers/extractJson";
 import { parseRejections, buildRejectionConstraints } from "../parsers/ProgressRejectionReader";
@@ -192,7 +192,8 @@ export class Subconscious {
     task: TaskAssignment,
     onLogEntry?: (entry: ProcessLogEntry) => void,
     pendingMessages?: string[],
-    snapshot?: SubstrateSnapshot
+    snapshot?: SubstrateSnapshot,
+    launchOverrides?: Pick<LaunchOptions, "model" | "effort" | "continueSession" | "persistSession">
   ): Promise<TaskResult> {
     try {
       const systemPrompt = this.promptBuilder.buildSystemPrompt(AgentRole.SUBCONSCIOUS);
@@ -212,16 +213,18 @@ export class Subconscious {
       }
       message += `Execute this task:\nID: ${task.taskId}\nDescription: ${task.description}`;
       
-      const model = this.taskClassifier.getModel({ role: AgentRole.SUBCONSCIOUS, operation: "execute" });
+      const model = launchOverrides?.model
+        ?? this.taskClassifier.getModel({ role: AgentRole.SUBCONSCIOUS, operation: "execute" });
       const result = await this.sessionLauncher.launch({
         systemPrompt,
         message,
       }, {
         model,
+        effort: launchOverrides?.effort,
         onLogEntry,
         cwd: this.workingDirectory,
-        continueSession: true,
-        persistSession: true,
+        continueSession: launchOverrides?.continueSession ?? true,
+        persistSession: launchOverrides?.persistSession ?? true,
         usageContext: { role: AgentRole.SUBCONSCIOUS, operation: "execute" },
       });
 

@@ -398,6 +398,41 @@ describe("resolveConfig", () => {
     expect(config.evaluateOutcome?.qualityThreshold).toBe(80);
   });
 
+  it("reads dualPrompt planner and model-class effort config", async () => {
+    await fs.mkdir("/project", { recursive: true });
+    await fs.writeFile("/project/config.json", JSON.stringify({
+      dualPrompt: {
+        enabled: true,
+        plannerModel: "claude-haiku",
+        plannerEffort: "minimal",
+        maxFanout: 4,
+        modelClasses: {
+          strategic: { model: "claude-opus", effort: "high" },
+          everyday: { model: "claude-sonnet", effort: "medium" },
+          menial: { model: "claude-haiku", effort: "minimal" },
+        },
+      },
+    }));
+
+    const config = await resolveConfig(fs, {
+      appPaths: TEST_PATHS,
+      cwd: "/project",
+      env: {},
+    });
+
+    expect(config.dualPrompt).toEqual({
+      enabled: true,
+      plannerModel: "claude-haiku",
+      plannerEffort: "minimal",
+      maxFanout: 4,
+      modelClasses: {
+        strategic: { model: "claude-opus", effort: "high" },
+        everyday: { model: "claude-sonnet", effort: "medium" },
+        menial: { model: "claude-haiku", effort: "minimal" },
+      },
+    });
+  });
+
   it("apiToken defaults to undefined", async () => {
     const config = await resolveConfig(fs, {
       appPaths: TEST_PATHS,

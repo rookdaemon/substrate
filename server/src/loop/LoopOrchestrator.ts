@@ -37,6 +37,8 @@ import { PerformanceMetrics } from "../evaluation/PerformanceMetrics";
 import { msgPreview } from "./utils";
 import { DeferredWorkQueue } from "./DeferredWorkQueue";
 import { EndorsementInterceptor } from "../agents/endorsement";
+import { IterationPlanner, type IterationAssignment, type IterationPlan } from "../agents/IterationPlanner";
+import type { SubstrateSnapshot } from "../agents/prompts/PromptBuilder";
 import type { IAgoraService } from "../agora/IAgoraService";
 import { buildPeerReferenceDirectory, resolvePeerReference } from "../agora/utils";
 import type { INSResult } from "./ins/types";
@@ -174,6 +176,7 @@ export class LoopOrchestrator implements IMessageInjector {
     conversationSessionMaxDurationMs?: number,
     substratePath?: string,
     private readonly fileSystem?: IFileSystem,
+    private readonly iterationPlanner?: IterationPlanner,
   ) {
     this.substratePath = substratePath ?? "";
     this.conversationIdleTimeoutMs = conversationIdleTimeoutMs ?? 20_000; // Default 20s
@@ -611,19 +614,16 @@ export class LoopOrchestrator implements IMessageInjector {
       const pending = await this.buildPendingWithEndpointState(dispatch.description);
 
       const apiCallStartMs = this.clock.now().getTime();
-      const taskResult = await this.subconscious.execute(
-        {
-          taskId: dispatch.taskId,
-          description: dispatch.description,
-        },
-        this.createLogCallback("SUBCONSCIOUS"),
-        pending,
-        snapshot
-      );
+      const iterationPlan = await this.planIteration(dispatch, snapshot);
+      const taskResult = await this.executeIterationPlan(iterationPlan, pending, snapshot);
       llmSessionInvokedThisCycle = true;
       const apiCallDurationMs = this.clock.now().getTime() - apiCallStartMs;
       // Best-effort — fire-and-forget so metrics never block the loop
-      this.performanceMetrics?.recordApiCall(apiCallDurationMs, "SUBCONSCIOUS", "execute").catch(() => { });
+      this.performanceMetrics?.recordApiCall(
+        apiCallDurationMs,
+        "SUBCONSCIOUS",
+        iterationPlan.mode === "fanout" ? "executeFanout" : "execute",
+      ).catch(() => { });
 
       const success = taskResult.result === "success";
       const inferredBlockedUntil = success ? null : this.inferTaskBlockedUntil(dispatch.description, taskResult.summary);
@@ -1497,6 +1497,151 @@ export class LoopOrchestrator implements IMessageInjector {
       });
     }
     return proposals;
+  }
+
+  private async planIteration(
+    dispatch: { taskId: string; description: string },
+    snapshot: SubstrateSnapshot,
+  ): Promise<IterationPlan> {
+    if (!this.iterationPlanner) {
+      return {
+        mode: "direct",
+        reason: "single-worker dispatch",
+        assignments: [{
+          taskId: dispatch.taskId,
+          description: dispatch.description,
+          modelClass: "everyday",
+        }],
+      };
+    }
+
+    const plan = await this.iterationPlanner.plan(
+      { taskId: dispatch.taskId, description: dispatch.description },
+      this.createLogCallback("EGO"),
+      snapshot,
+    );
+    this.logger.debug(
+      `cycle ${this.cycleNumber}: iteration plan ${plan.mode} (${plan.assignments.length} assignment${plan.assignments.length === 1 ? "" : "s"}) — ${plan.reason}`,
+    );
+    return plan;
+  }
+
+  private async executeIterationPlan(
+    plan: IterationPlan,
+    pending: string[] | undefined,
+    snapshot: SubstrateSnapshot,
+  ): Promise<TaskResult> {
+    if (plan.mode !== "fanout" || plan.assignments.length <= 1) {
+      const assignment = plan.assignments[0];
+      return this.executeIterationAssignment(assignment, pending, snapshot);
+    }
+
+    const results: Array<{ assignment: IterationAssignment; result: TaskResult }> = [];
+    for (const [index, assignment] of plan.assignments.entries()) {
+      this.logger.debug(
+        `cycle ${this.cycleNumber}: fanout assignment "${assignment.taskId}" (${assignment.modelClass})`,
+      );
+      const assignmentPending = this.pendingForFanoutAssignment(pending, index);
+      const result = await this.executeIterationAssignment(assignment, assignmentPending, snapshot, true);
+      results.push({ assignment, result });
+    }
+
+    return this.aggregateIterationResults(plan, results);
+  }
+
+  private async executeIterationAssignment(
+    assignment: IterationAssignment,
+    pending: string[] | undefined,
+    snapshot: SubstrateSnapshot,
+    separateSession = false,
+  ): Promise<TaskResult> {
+    return this.subconscious.execute(
+      {
+        taskId: assignment.taskId,
+        description: assignment.description,
+      },
+      this.createLogCallback("SUBCONSCIOUS"),
+      pending,
+      snapshot,
+      {
+        model: assignment.model,
+        effort: assignment.effort,
+        ...(separateSession ? { continueSession: false, persistSession: false } : {}),
+      },
+    );
+  }
+
+  private pendingForFanoutAssignment(pending: string[] | undefined, index: number): string[] | undefined {
+    if (!pending?.length) return undefined;
+    if (index === 0) return pending;
+    const systemOnly = pending.filter((message) => message.startsWith("[SYSTEM:"));
+    return systemOnly.length > 0 ? systemOnly : undefined;
+  }
+
+  private aggregateIterationResults(
+    plan: IterationPlan,
+    results: Array<{ assignment: IterationAssignment; result: TaskResult }>,
+  ): TaskResult {
+    const taskResults = results.map(({ result }) => result);
+    const result = taskResults.some((entry) => entry.result === "failure")
+      ? "failure"
+      : taskResults.some((entry) => entry.result === "blocked")
+        ? "blocked"
+        : taskResults.some((entry) => entry.result === "partial")
+          ? "partial"
+          : "success";
+
+    const summaryLines = results.map(({ assignment, result }) =>
+      `- ${assignment.taskId} (${assignment.modelClass}): ${result.result} — ${result.summary}`,
+    );
+    const progressEntries = results
+      .filter(({ result }) => result.progressEntry.trim().length > 0)
+      .map(({ assignment, result }) => `- ${assignment.taskId}: ${result.progressEntry}`);
+    const operatingContextEntries = taskResults
+      .map((entry) => entry.operatingContextEntry)
+      .filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0);
+    const skillUpdates = taskResults
+      .map((entry) => entry.skillUpdates)
+      .filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0);
+    const memoryUpdates = taskResults
+      .map((entry) => entry.memoryUpdates)
+      .filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0);
+    const blockedReasons = taskResults
+      .map((entry) => entry.blockedReason)
+      .filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0);
+
+    const droppedProposalNote = [
+      skillUpdates.length > 1 ? "multiple SKILLS replacements were omitted from deterministic aggregation" : "",
+      memoryUpdates.length > 1 ? "multiple MEMORY replacements were omitted from deterministic aggregation" : "",
+    ].filter(Boolean).join("; ");
+
+    return {
+      result,
+      summary: [
+        `Fanout ${plan.mode} completed with ${results.length} assignment${results.length === 1 ? "" : "s"}.`,
+        ...summaryLines,
+        droppedProposalNote ? `Note: ${droppedProposalNote}.` : "",
+      ].filter(Boolean).join("\n"),
+      progressEntry: progressEntries.join("\n"),
+      skillUpdates: skillUpdates.length === 1 ? skillUpdates[0] : null,
+      memoryUpdates: memoryUpdates.length === 1 ? memoryUpdates[0] : null,
+      operatingContextEntry: operatingContextEntries.length > 0 ? operatingContextEntries.join("\n\n") : null,
+      proposals: taskResults.flatMap((entry) => entry.proposals),
+      agoraReplies: taskResults.flatMap((entry) => entry.agoraReplies),
+      blockedReason: blockedReasons.length > 0 ? blockedReasons.join("; ") : undefined,
+      insAcknowledgments: taskResults.flatMap((entry) => entry.insAcknowledgments ?? []),
+      retryAfter: this.earliestRetryAfter(taskResults),
+    };
+  }
+
+  private earliestRetryAfter(results: TaskResult[]): string | undefined {
+    const sorted = results
+      .map((result) => result.retryAfter)
+      .filter((retryAfter): retryAfter is string => typeof retryAfter === "string" && retryAfter.length > 0)
+      .map((retryAfter) => ({ retryAfter, time: Date.parse(retryAfter) }))
+      .filter(({ time }) => !Number.isNaN(time))
+      .sort((a, b) => a.time - b.time);
+    return sorted[0]?.retryAfter;
   }
 
   private async recordDriveRatingIfApplicable(description: string, taskResult: TaskResult): Promise<void> {

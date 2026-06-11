@@ -98,7 +98,7 @@ export async function createLoopLayer(
 ): Promise<LoopLayerResult> {
   const { fs, clock, substrateConfig, reader, appendWriter, lock, writer, logger, metaManager } = substrate;
   const { ego, subconscious, superego, id, conversationManager, launcher, gatedLauncher,
-    taskMetrics, sizeTracker, delegationTracker, driveQualityTracker, metricsService, shellIndependenceService, vertexSubprocessLauncher } = agents;
+    taskMetrics, sizeTracker, delegationTracker, driveQualityTracker, metricsService, shellIndependenceService, vertexSubprocessLauncher, iterationPlanner } = agents;
 
   // Loop layer — build httpServer first for the underlying http.Server,
   // then wsServer, then orchestrator, then wire orchestrator back into httpServer
@@ -199,6 +199,7 @@ export async function createLoopLayer(
     config.conversationSessionMaxDurationMs,
     config.substratePath,
     fs,
+    iterationPlanner,
   );
 
   // Wire up sleep/wake infrastructure

@@ -14,6 +14,8 @@ export class ConfigValidationError extends Error {
 }
 
 const DEFAULT_SESSION_LAUNCHER = "claude" as const;
+const ITERATION_MODEL_CLASSES = ["strategic", "everyday", "menial"] as const;
+type IterationModelClass = typeof ITERATION_MODEL_CLASSES[number];
 
 export interface ProviderConfig {
   keyPath?: string;
@@ -49,6 +51,32 @@ const ProviderConfigSchema = z.object({
   defaultIdleTimeoutMs: z.number().int().min(1).optional(),
   maxLoggedTextChars: z.number().int().min(1).optional(),
   minLoggedTextChars: z.number().int().min(1).optional(),
+});
+
+export interface IterationModelClassConfig {
+  model?: string;
+  effort?: ReasoningEffort;
+}
+
+export interface DualPromptConfig {
+  enabled: boolean;
+  plannerModel?: string;
+  plannerEffort?: ReasoningEffort;
+  maxFanout?: number;
+  modelClasses?: Partial<Record<IterationModelClass, IterationModelClassConfig>>;
+}
+
+const IterationModelClassConfigSchema = z.object({
+  model: z.string().optional(),
+  effort: z.enum(REASONING_EFFORT_VALUES).optional(),
+});
+
+const DualPromptConfigSchema = z.object({
+  enabled: z.boolean(),
+  plannerModel: z.string().optional(),
+  plannerEffort: z.enum(REASONING_EFFORT_VALUES).optional(),
+  maxFanout: z.number().int().min(1).max(8).optional(),
+  modelClasses: z.record(z.enum(ITERATION_MODEL_CLASSES), IterationModelClassConfigSchema).optional(),
 });
 
 const AppConfigSchema = z
@@ -90,6 +118,7 @@ const AppConfigSchema = z
         qualityThreshold: z.number().min(0).max(100).optional(),
       })
       .optional(),
+    dualPrompt: DualPromptConfigSchema.optional(),
     cycleDelayMs: z.number().min(0).optional(),
     conversationIdleTimeoutMs: z.number().min(0).optional(),
     conversationArchive: z
@@ -275,6 +304,8 @@ export interface AppConfig {
     /** Minimum heuristic quality score (0-100) required to skip LLM evaluation (default: 70) */
     qualityThreshold?: number;
   };
+  /** Optional two-stage dispatch: a cheap planner can choose direct execution or bounded fanout. */
+  dualPrompt?: DualPromptConfig;
   /** Delay between loop cycles in ms (default: 30000). For primarily reactive agents, consider 60000 or more. */
   cycleDelayMs?: number;
   /** How long (ms) a conversation session stays open after the last message before being closed (default: 20000). */
@@ -430,6 +461,7 @@ export async function resolveConfig(
       enabled: false,
       qualityThreshold: 85,
     },
+    dualPrompt: undefined,
     conversationIdleTimeoutMs: 20000,
     conversationSessionMaxDurationMs: 300_000,
     conversationArchive: {
@@ -522,6 +554,15 @@ export async function resolveConfig(
         qualityThreshold: fileConfig.evaluateOutcome.qualityThreshold ?? defaults.evaluateOutcome!.qualityThreshold,
       }
       : defaults.evaluateOutcome,
+    dualPrompt: fileConfig.dualPrompt
+      ? {
+        enabled: fileConfig.dualPrompt.enabled ?? false,
+        plannerModel: fileConfig.dualPrompt.plannerModel,
+        plannerEffort: fileConfig.dualPrompt.plannerEffort,
+        maxFanout: fileConfig.dualPrompt.maxFanout,
+        modelClasses: fileConfig.dualPrompt.modelClasses,
+      }
+      : defaults.dualPrompt,
     conversationIdleTimeoutMs: fileConfig.conversationIdleTimeoutMs ?? defaults.conversationIdleTimeoutMs,
     conversationSessionMaxDurationMs: fileConfig.conversationSessionMaxDurationMs ?? defaults.conversationSessionMaxDurationMs,
     conversationArchive: fileConfig.conversationArchive

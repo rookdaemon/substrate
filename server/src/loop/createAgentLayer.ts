@@ -21,6 +21,7 @@ import { Subconscious } from "../agents/roles/Subconscious";
 import { Superego } from "../agents/roles/Superego";
 import { Id } from "../agents/roles/Id";
 import { AgentRole } from "../agents/types";
+import { IterationPlanner, type IterationModelClassConfig } from "../agents/IterationPlanner";
 import { CycleLogWriter } from "../substrate/io/CycleLogWriter";
 import { WorkspaceManager } from "../agents/workspace/WorkspaceManager";
 import { TaskClassificationMetrics } from "../evaluation/TaskClassificationMetrics";
@@ -56,6 +57,7 @@ export interface AgentLayerResult {
   subconscious: Subconscious;
   superego: Superego;
   id: Id;
+  iterationPlanner?: IterationPlanner;
   /** VertexSessionLauncher for subprocess tasks (compaction, gates). Undefined if not configured. */
   vertexSubprocessLauncher: VertexSessionLauncher | undefined;
 }
@@ -92,6 +94,16 @@ function piProviderKeyEnvVar(provider: string | undefined): string | undefined {
     default:
       return undefined;
   }
+}
+
+function mergeModelClassConfig(
+  defaults: IterationModelClassConfig,
+  override?: IterationModelClassConfig,
+): IterationModelClassConfig {
+  return {
+    ...defaults,
+    ...override,
+  };
 }
 
 /**
@@ -476,6 +488,36 @@ export async function createAgentLayer(
   const ego = new Ego(reader, writer, conversationManager, checker, promptBuilder, gatedLauncher, clock, taskClassifier, workspaceManager.workspacePath(AgentRole.EGO), config.sourceCodePath, cycleLogWriter);
   const subconscious = new Subconscious(reader, writer, appendWriter, conversationManager, checker, promptBuilder, gatedLauncher, clock, taskClassifier, workspaceManager.workspacePath(AgentRole.SUBCONSCIOUS), cycleLogWriter);
   const superego = new Superego(reader, appendWriter, checker, promptBuilder, gatedLauncher, clock, taskClassifier, writer, workspaceManager.workspacePath(AgentRole.SUPEREGO), logger);
+  const configuredModelClasses = config.dualPrompt?.modelClasses ?? {};
+  const iterationPlanner = config.dualPrompt?.enabled
+    ? new IterationPlanner(
+      promptBuilder,
+      gatedLauncher,
+      {
+        enabled: true,
+        plannerModel: config.dualPrompt.plannerModel ?? activeModel,
+        plannerEffort: config.dualPrompt.plannerEffort ?? "minimal",
+        maxFanout: config.dualPrompt.maxFanout,
+        modelClasses: {
+          strategic: mergeModelClassConfig(
+            { model: activeStrategicModel ?? activeTacticalModel ?? activeModel, effort: "high" },
+            configuredModelClasses.strategic,
+          ),
+          everyday: mergeModelClassConfig(
+            { model: activeTacticalModel ?? activeModel, effort: "medium" },
+            configuredModelClasses.everyday,
+          ),
+          menial: mergeModelClassConfig(
+            { model: activeModel ?? activeTacticalModel, effort: "minimal" },
+            configuredModelClasses.menial,
+          ),
+        },
+      },
+      logger,
+      workspaceManager.workspacePath(AgentRole.EGO),
+      config.sourceCodePath,
+    )
+    : undefined;
 
   // Id launcher — defaults to gatedLauncher; routes to VertexSessionLauncher when idLauncher === "vertex".
   // VertexSessionLauncher silently ignores continueSession/persistSession flags (reads only model and timeoutMs).
@@ -536,7 +578,7 @@ export async function createAgentLayer(
     checker, promptBuilder, launcher, gatedLauncher, apiSemaphore, processTracker,
     taskMetrics, sizeTracker, delegationTracker, taskClassifier,
     conversationManager, driveQualityTracker, metricsService, shellIndependenceService, flashGate,
-    ego, subconscious, superego, id,
+    ego, subconscious, superego, id, iterationPlanner,
     vertexSubprocessLauncher,
   };
 }
