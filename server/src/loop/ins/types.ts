@@ -143,7 +143,12 @@ export function defaultINSConfig(substratePath: string): INSConfig {
     statePath: `${substratePath}/../.ins/state`,
     memoryPath: `${substratePath}/memory`,
     survivalIntegrity: {
-      enabled: true,
+      // Disabled 2026-06-11: Stefan rescinded survival governance (Agora c635a1d3).
+      // PLAN.md no longer contains the survival anchors this checker expects — disabling
+      // prevents false-positive survival_integrity_failure actions each cycle.
+      // The archive of survival-era governance is preserved at memory/SURVIVAL_PLAN_2026-04-30.md.
+      // Re-enable only if Stefan reopens a formal survival governance arc.
+      enabled: false,
       canonicalFilePath: `${substratePath}/memory/SURVIVAL_PLAN_2026-04-30.md`,
       expectedCanonicalHash: "14ab6868171d847bac1fd790da7b3964301a43ff8ab86d59c3bb1eb43c08f3e9",
     },
