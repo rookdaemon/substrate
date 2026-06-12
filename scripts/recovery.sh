@@ -27,12 +27,31 @@ log_error() {
     logger -t "$LOG_TAG" -p user.err "$1"
 }
 
+# Function to send Agora alert to Stefan
+# Uses the Agora CLI to send a DM via the relay — works even when `mail` is unavailable.
+send_agora_alert() {
+    local message="$1"
+    local agora_cli="$SUBSTRATE_HOME/node_modules/.bin/agora"
+
+    if [ ! -f "$agora_cli" ]; then
+        log_error "Agora CLI not found at $agora_cli — cannot send Agora alert"
+        return 1
+    fi
+
+    if timeout 30 "$agora_cli" send stefan "$message" 2>/dev/null; then
+        log_info "Agora alert sent to Stefan: $message"
+    else
+        log_error "Failed to send Agora alert to Stefan (CLI exited non-zero or timed out)"
+        return 1
+    fi
+}
+
 # Function to send email
 send_email() {
     local subject="$1"
     local body="$2"
     local attachment="${3:-}"
-    
+
     if command -v mail >/dev/null 2>&1; then
         if [ -n "$attachment" ] && [ -f "$attachment" ]; then
             echo "$body" | mail -s "$subject" -a "$attachment" "$RECIPIENT_EMAIL"
@@ -96,18 +115,24 @@ fi
 # Main recovery logic
 main() {
     log_info "Substrate recovery service triggered"
-    
+
+    # Send immediate Agora alert to Stefan — relay is independent of substrate so this
+    # works even when substrate itself is down.
+    send_agora_alert "♜ substrate.service failed at $(date -R) on $(hostname). Recovery service triggered. Will attempt rebuild + restart." || true
+
     # Check attempt count
     local attempt_count
     attempt_count=$(get_attempt_count)
-    
+
     if [ "$attempt_count" -ge "$MAX_ATTEMPTS" ]; then
         log_error "Maximum recovery attempts ($MAX_ATTEMPTS) reached. Manual intervention required."
-        
+
+        send_agora_alert "♜ URGENT: substrate.service recovery exhausted ($MAX_ATTEMPTS attempts). Manual intervention required on $(hostname)." || true
+
         # Collect logs for final email
         local log_file="/tmp/substrate-recovery-final-logs.txt"
         journalctl -u substrate --no-pager -n 100 > "$log_file" 2>&1 || true
-        
+
         send_email \
             "Substrate Recovery Failed - Manual Intervention Required" \
             "The substrate service has failed $MAX_ATTEMPTS times and automatic recovery has been exhausted.
@@ -173,6 +198,8 @@ Time: $(date -R)
         # Rebuild worked, try restarting the service
         if restart_substrate; then
             log_info "Substrate service restarted successfully after rebuild"
+
+            send_agora_alert "♜ substrate.service recovered via rebuild (attempt $attempt_count/$MAX_ATTEMPTS) at $(date -R). Back online." || true
 
             send_email \
                 "Substrate Recovery Successful via Rebuild (Attempt $attempt_count)" \
