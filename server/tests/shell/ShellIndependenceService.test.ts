@@ -52,6 +52,30 @@ describe("ShellIndependenceService", () => {
     expect(service.getLastSnapshot()).toBe(snapshot);
   });
 
+  it("caches static shell references so repeated refresh calls avoid redundant file I/O", async () => {
+    let readCount = 0;
+    const fs = new InMemoryFileSystem();
+    await fs.mkdir("/repo/server/src/loop", { recursive: true });
+    await fs.writeFile("/repo/server/src/loop/createAgentLayer.ts", "new PiSessionLauncher();");
+    const originalReadFile = fs.readFile.bind(fs);
+    fs.readFile = async (path: string) => {
+      readCount++;
+      return originalReadFile(path);
+    };
+    const clock = new FixedClock(new Date("2026-05-08T00:00:00.000Z"));
+    const service = new ShellIndependenceService(fs, clock, {
+      sourceCodePath: "/repo",
+      sessionLauncher: "pi",
+    });
+
+    await service.refresh();
+    const readsAfterFirst = readCount;
+    await service.refresh();
+
+    // Second call must not re-read any source files
+    expect(readCount).toBe(readsAfterFirst);
+  });
+
   it("scores a local Ollama route higher than commercial shell defaults", async () => {
     const fs = new InMemoryFileSystem();
     const clock = new FixedClock(new Date("2026-05-08T00:00:00.000Z"));

@@ -1,6 +1,7 @@
 import * as path from "node:path";
 import type { IClock } from "../substrate/abstractions/IClock";
 import type { IFileSystem } from "../substrate/abstractions/IFileSystem";
+import { inferPiProvider } from "./piProviderUtils";
 
 export type ShellRouteKind = "commercial-shell" | "portable-shell" | "remote-api" | "self-hosted" | "deterministic-local" | "unknown";
 export type ShellRiskLevel = "low" | "medium" | "high";
@@ -130,6 +131,12 @@ const STATIC_SYMBOLS: Array<{ symbol: string; provider: string; kind: ShellRoute
 
 export class ShellIndependenceService implements IShellIndependenceService {
   private lastSnapshot: ShellIndependenceSnapshot | null = null;
+  /**
+   * Static source references only change when the source files change, which
+   * does not happen during a running server process. Cache the result after the
+   * first scan so that per-cycle refresh() calls avoid redundant file I/O.
+   */
+  private cachedStaticRefs: StaticShellReference[] | null = null;
 
   constructor(
     private readonly fs: IFileSystem,
@@ -280,6 +287,7 @@ export class ShellIndependenceService implements IShellIndependenceService {
   }
 
   private async scanStaticShellReferences(): Promise<StaticShellReference[]> {
+    if (this.cachedStaticRefs !== null) return this.cachedStaticRefs;
     const sourceRoot = this.config.sourceCodePath;
     if (!sourceRoot) return [];
     const references: StaticShellReference[] = [];
@@ -297,6 +305,7 @@ export class ShellIndependenceService implements IShellIndependenceService {
         });
       }
     }
+    this.cachedStaticRefs = references;
     return references;
   }
 
@@ -428,11 +437,8 @@ export class ShellIndependenceService implements IShellIndependenceService {
   }
 
   private piProvider(): string | undefined {
-    const configured = this.config.pi?.provider;
-    if (configured) return configured;
     const model = this.config.pi?.model ?? this.config.model;
-    const prefix = model?.split("/", 1)[0];
-    return prefix && prefix !== model ? prefix : undefined;
+    return inferPiProvider(model, this.config.pi?.provider);
   }
 
   private piUsesRemoteProvider(): boolean {

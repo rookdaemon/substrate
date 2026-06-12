@@ -61,6 +61,7 @@ export class PiCliBackend implements ICodeBackend {
       return {
         success: result.exitCode === 0,
         output: result.stdout,
+        ...(result.stderr ? { stderr: result.stderr } : {}),
         exitCode: result.exitCode,
         durationMs: this.clock.now().getTime() - startMs,
       };
@@ -76,18 +77,10 @@ export class PiCliBackend implements ICodeBackend {
 
   private buildArgs(): string[] {
     const args = ["-p"];
-    if (this.config.provider) {
-      args.push("--provider", this.config.provider);
-    }
-    if (this.config.model) {
-      args.push("--model", this.config.model);
-    }
-    if (this.config.thinking) {
-      args.push("--thinking", this.config.thinking);
-    }
-    if (this.config.sessionDir) {
-      args.push("--session-dir", this.config.sessionDir);
-    }
+    pushOpt(args, "--provider", this.config.provider);
+    pushOpt(args, "--model", this.config.model);
+    pushOpt(args, "--thinking", this.config.thinking);
+    pushOpt(args, "--session-dir", this.config.sessionDir);
     args.push("--no-session");
     return args;
   }
@@ -99,4 +92,9 @@ export class PiCliBackend implements ICodeBackend {
     };
     return Object.keys(env).length > 0 ? env : undefined;
   }
+}
+
+/** Push a CLI flag and its value only when value is defined (avoids repeated if-blocks). */
+function pushOpt(args: string[], flag: string, value: string | undefined): void {
+  if (value) args.push(flag, value);
 }

@@ -33,6 +33,7 @@ import { MeteredSessionLauncher } from "../metrics/MeteredSessionLauncher";
 import { BudgetGuard } from "../budget/BudgetGuard";
 import { FlashGate } from "../gates/FlashGate";
 import { ShellIndependenceService } from "../shell/ShellIndependenceService";
+import { inferPiProvider } from "../shell/piProviderUtils";
 import type { IFlashGate } from "../gates/IFlashGate";
 import type { ApplicationConfig } from "./applicationTypes";
 import type { SubstrateLayerResult } from "./createSubstrateLayer";
@@ -68,11 +69,6 @@ function providerConfig(config: ApplicationConfig, provider: ProviderName) {
   return config[provider] ?? config.models?.[provider];
 }
 
-function inferPiProvider(model: string | undefined, configuredProvider: string | undefined): string | undefined {
-  if (configuredProvider) return configuredProvider;
-  const providerPrefix = model?.split("/", 1)[0];
-  return providerPrefix && providerPrefix !== model ? providerPrefix : undefined;
-}
 
 function piProviderKeyEnvVar(provider: string | undefined): string | undefined {
   switch (provider?.toLowerCase()) {
