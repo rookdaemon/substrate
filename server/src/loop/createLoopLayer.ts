@@ -448,7 +448,7 @@ export async function createLoopLayer(
 
   // Create metrics store for quantitative drift monitoring
   const metricsStore = new MetricsStore(fs, clock, config.substratePath);
-  httpServer.setHealthCheck(new HealthCheck(reader, metricsStore, fs, config.substratePath));
+  httpServer.setHealthCheck(new HealthCheck(reader, metricsStore, fs, config.substratePath, agents.livenessTracker));
   httpServer.setMetricsComponents(taskMetrics, sizeTracker, delegationTracker);
 
   // Create governance report store and wire into both httpServer and orchestrator
@@ -695,7 +695,7 @@ export async function createLoopLayer(
 
   // Health check scheduler setup
   if (config.enableHealthChecks !== false) { // Default enabled
-    const healthCheck = new HealthCheck(reader, metricsStore);
+    const healthCheck = new HealthCheck(reader, metricsStore, undefined, undefined, agents.livenessTracker);
     const healthCheckScheduler = new HealthCheckScheduler(
       healthCheck,
       clock,

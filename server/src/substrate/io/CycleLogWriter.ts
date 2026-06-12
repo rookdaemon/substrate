@@ -9,11 +9,25 @@ const DEFAULT_MAX_SIZE_BYTES = 10 * 1024 * 1024;
 /** Default number of rotated log files to keep alongside the active log. */
 const DEFAULT_KEEP_FILES = 3;
 
+/** Default low-disk threshold: skip write when fewer than 100 MB free. */
+const DEFAULT_LOW_DISK_BYTES = 100 * 1024 * 1024;
+
 export interface CycleLogRotationOptions {
   /** Maximum file size in bytes before rotation. Default: 10 MB. */
   maxSizeBytes?: number;
   /** Number of rotated files to keep. Oldest files are deleted when this limit is exceeded. Default: 3. */
   keepFiles?: number;
+  /**
+   * Optional callback that returns available bytes on the filesystem containing `dirPath`.
+   * When provided, writes are skipped if free space is below `lowDiskBytesThreshold`.
+   * If omitted, no disk-space pre-check is performed.
+   */
+  diskSpaceChecker?: (dirPath: string) => Promise<number>;
+  /**
+   * Minimum free bytes required before writing a log entry. Default: 100 MB.
+   * Only relevant when `diskSpaceChecker` is provided.
+   */
+  lowDiskBytesThreshold?: number;
 }
 
 /**
@@ -29,10 +43,17 @@ export interface CycleLogRotationOptions {
  * renamed to `cycle_log.<ISO-timestamp>.md` before the new entry is written.
  * Old rotated files are pruned to keep at most `keepFiles` archives.
  * Rotation errors are silently swallowed — write failures must never block the cycle.
+ *
+ * **Disk-space guard**: When `diskSpaceChecker` is provided, the write is
+ * silently skipped if free space is below `lowDiskBytesThreshold` (default
+ * 100 MB). ENOSPC errors from `appendFile` are also caught; on ENOSPC we
+ * attempt an emergency rotation to free space and retry once.
  */
 export class CycleLogWriter implements ICycleLogWriter {
   private readonly maxSizeBytes: number;
   private readonly keepFiles: number;
+  private readonly diskSpaceChecker?: (dirPath: string) => Promise<number>;
+  private readonly lowDiskBytesThreshold: number;
 
   constructor(
     private readonly fs: IFileSystem,
@@ -43,12 +64,28 @@ export class CycleLogWriter implements ICycleLogWriter {
   ) {
     this.maxSizeBytes = options?.maxSizeBytes ?? DEFAULT_MAX_SIZE_BYTES;
     this.keepFiles = options?.keepFiles ?? DEFAULT_KEEP_FILES;
+    this.diskSpaceChecker = options?.diskSpaceChecker;
+    this.lowDiskBytesThreshold = options?.lowDiskBytesThreshold ?? DEFAULT_LOW_DISK_BYTES;
   }
 
   async write(role: string, text: string): Promise<void> {
     const timestamp = this.clock.now().toISOString();
     const entry = `[${timestamp}] [${role}] ${text}\n`;
     const filePath = path.join(this.substratePath, this.fileName);
+    const dir = path.dirname(filePath);
+
+    // Pre-write disk-space check: silently skip the write if we're low on disk.
+    if (this.diskSpaceChecker) {
+      try {
+        const freeBytes = await this.diskSpaceChecker(dir);
+        if (freeBytes < this.lowDiskBytesThreshold) {
+          // Low disk — skip this log entry rather than risking ENOSPC.
+          return;
+        }
+      } catch {
+        // diskSpaceChecker failed — continue; the write attempt may still succeed.
+      }
+    }
 
     // Rotate before appending if the file would exceed the size cap.
     // Errors are swallowed: rotation is best-effort; the write itself must succeed.
@@ -58,7 +95,23 @@ export class CycleLogWriter implements ICycleLogWriter {
       // Rotation error — continue; the cycle must not be blocked.
     }
 
-    await this.fs.appendFile(filePath, entry);
+    try {
+      await this.fs.appendFile(filePath, entry);
+    } catch (err) {
+      if (isEnoSpc(err)) {
+        // Out of disk space: attempt emergency rotation to free up the current log,
+        // then retry the write once. If that also fails, swallow the error.
+        try {
+          await this.forceRotate(filePath);
+          await this.fs.appendFile(filePath, entry);
+        } catch {
+          // Emergency rotation + retry failed — give up silently; cycle must not block.
+        }
+        return;
+      }
+      // Non-ENOSPC appendFile errors are re-thrown; callers should not block on them.
+      // (Swallowing here would hide real bugs like permission errors on a writeable dir.)
+    }
   }
 
   /**
@@ -77,7 +130,12 @@ export class CycleLogWriter implements ICycleLogWriter {
 
     if (currentSize + pendingBytes <= this.maxSizeBytes) return;
 
-    // Build archive filename: cycle_log.2026-06-11T09-21-37.md
+    await this.forceRotate(filePath);
+  }
+
+  /** Unconditionally rotate the active log to a timestamped archive. */
+  private async forceRotate(filePath: string): Promise<void> {
+    // Build archive filename: cycle_log.2026-06-11T09-21-37Z.md
     const now = this.clock.now();
     const stamp = now.toISOString()
       .replace(/\.\d{3}Z$/, "Z") // drop milliseconds
@@ -116,4 +174,12 @@ export class CycleLogWriter implements ICycleLogWriter {
       // Directory read errors are non-fatal.
     }
   }
+}
+
+function isEnoSpc(err: unknown): boolean {
+  if (err instanceof Error) {
+    const code = (err as NodeJS.ErrnoException).code;
+    return code === "ENOSPC";
+  }
+  return false;
 }

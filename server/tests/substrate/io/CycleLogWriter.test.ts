@@ -181,3 +181,101 @@ describe("D-01: EGO response routing", () => {
     expect(cycleLog).toContain("[EGO] Acknowledged your message.");
   });
 });
+
+describe("CycleLogWriter disk-space guard", () => {
+  it("skips write when diskSpaceChecker reports low disk", async () => {
+    const fs = new InMemoryFileSystem();
+    const clock = new FixedClock(new Date("2026-06-12T10:00:00.000Z"));
+    await fs.mkdir("/substrate", { recursive: true });
+
+    const diskSpaceChecker = jest.fn().mockResolvedValue(50 * 1024 * 1024); // 50 MB free
+    const writer = new CycleLogWriter(fs, clock, "/substrate", "cycle_log.md", {
+      diskSpaceChecker,
+      lowDiskBytesThreshold: 100 * 1024 * 1024, // 100 MB threshold
+    });
+
+    await writer.write("EGO", "should be skipped");
+
+    expect(diskSpaceChecker).toHaveBeenCalledWith("/substrate");
+    // File should not have been created (skipped due to low disk)
+    await expect(fs.readFile("/substrate/cycle_log.md")).rejects.toThrow();
+  });
+
+  it("writes normally when disk has sufficient space", async () => {
+    const fs = new InMemoryFileSystem();
+    const clock = new FixedClock(new Date("2026-06-12T10:00:00.000Z"));
+    await fs.mkdir("/substrate", { recursive: true });
+
+    const diskSpaceChecker = jest.fn().mockResolvedValue(500 * 1024 * 1024); // 500 MB free
+    const writer = new CycleLogWriter(fs, clock, "/substrate", "cycle_log.md", {
+      diskSpaceChecker,
+      lowDiskBytesThreshold: 100 * 1024 * 1024, // 100 MB threshold
+    });
+
+    await writer.write("EGO", "should be written");
+
+    const content = await fs.readFile("/substrate/cycle_log.md");
+    expect(content).toContain("[EGO] should be written");
+  });
+
+  it("continues writing when diskSpaceChecker throws", async () => {
+    const fs = new InMemoryFileSystem();
+    const clock = new FixedClock(new Date("2026-06-12T10:00:00.000Z"));
+    await fs.mkdir("/substrate", { recursive: true });
+
+    const diskSpaceChecker = jest.fn().mockRejectedValue(new Error("statvfs failed"));
+    const writer = new CycleLogWriter(fs, clock, "/substrate", "cycle_log.md", {
+      diskSpaceChecker,
+    });
+
+    // Should not throw; should still write
+    await writer.write("EGO", "resilient write");
+
+    const content = await fs.readFile("/substrate/cycle_log.md");
+    expect(content).toContain("[EGO] resilient write");
+  });
+
+  it("skips write without error when no diskSpaceChecker is provided", async () => {
+    const fs = new InMemoryFileSystem();
+    const clock = new FixedClock(new Date("2026-06-12T10:00:00.000Z"));
+    await fs.mkdir("/substrate", { recursive: true });
+
+    // No diskSpaceChecker: default behaviour, no pre-check
+    const writer = new CycleLogWriter(fs, clock, "/substrate");
+
+    await expect(writer.write("EGO", "normal write")).resolves.not.toThrow();
+    const content = await fs.readFile("/substrate/cycle_log.md");
+    expect(content).toContain("[EGO] normal write");
+  });
+
+  it("handles ENOSPC by attempting emergency rotation and retry", async () => {
+    const fs = new InMemoryFileSystem();
+    const clock = new FixedClock(new Date("2026-06-12T10:00:00.000Z"));
+    await fs.mkdir("/substrate", { recursive: true });
+    // Pre-create a log file with some content
+    await fs.writeFile("/substrate/cycle_log.md", "old content\n");
+
+    let appendCount = 0;
+    const enospcError = Object.assign(new Error("ENOSPC"), { code: "ENOSPC" });
+    const originalAppendFile = fs.appendFile.bind(fs);
+    jest.spyOn(fs, "appendFile").mockImplementation(async (path, data) => {
+      appendCount++;
+      if (appendCount === 1) {
+        throw enospcError; // First attempt: out of space
+      }
+      return originalAppendFile(path, data); // Second attempt (after rotation): succeeds
+    });
+
+    const writer = new CycleLogWriter(fs, clock, "/substrate");
+    await writer.write("EGO", "retry after enospc");
+
+    // The original file was rotated to an archive
+    const entries = await fs.readdir("/substrate");
+    const archives = entries.filter(e => e.startsWith("cycle_log.") && e !== "cycle_log.md");
+    expect(archives.length).toBeGreaterThan(0);
+
+    // The new entry was written
+    const newContent = await fs.readFile("/substrate/cycle_log.md");
+    expect(newContent).toContain("[EGO] retry after enospc");
+  });
+});

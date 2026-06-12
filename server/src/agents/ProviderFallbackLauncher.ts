@@ -7,6 +7,7 @@ import type {
   SessionUsage,
 } from "./claude/ISessionLauncher";
 import { isFrontierModel } from "./SurvivalModelPolicyLauncher";
+import type { InferenceLivenessTracker } from "../evaluation/InferenceLivenessTracker";
 
 export type ProviderFailureKind = "auth" | "rate_limit" | "provider" | "model" | "tool" | "unknown";
 
@@ -35,15 +36,20 @@ export class ProviderFallbackLauncher implements ISessionLauncher {
     private readonly primary: ISessionLauncher,
     private readonly fallbackRoutes: ProviderFallbackRoute[],
     private readonly logger?: ILogger,
+    private readonly livenessTracker?: InferenceLivenessTracker,
   ) {}
 
   async launch(request: ClaudeSessionRequest, options?: LaunchOptions): Promise<ClaudeSessionResult> {
     const primary = await this.primary.launch(request, options);
-    if (primary.success) return primary;
+    if (primary.success) {
+      this.livenessTracker?.recordSuccess();
+      return primary;
+    }
 
     const classification = classifyProviderFailure(primary);
     if (!classification.degradedRouteAllowed) {
       this.logger?.warn(`provider-fallback: no degraded route for ${classification.kind}: ${classification.reason}`);
+      this.livenessTracker?.recordFailure(classification.reason);
       return primary;
     }
 
@@ -61,12 +67,17 @@ export class ProviderFallbackLauncher implements ISessionLauncher {
         model: route.model,
         allowFrontierModel: false,
       });
-      if (fallback.success) return fallback;
+      if (fallback.success) {
+        this.livenessTracker?.recordSuccess();
+        return fallback;
+      }
     }
 
+    const errorReason = primary.error ?? "primary provider failed";
+    this.livenessTracker?.recordFailure(errorReason);
     return {
       ...primary,
-      error: `${primary.error ?? "primary provider failed"}; no approved degraded provider fallback succeeded`,
+      error: `${errorReason}; no approved degraded provider fallback succeeded`,
     };
   }
 }

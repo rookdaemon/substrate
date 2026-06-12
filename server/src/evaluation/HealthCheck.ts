@@ -6,6 +6,7 @@ import { PlanQualityEvaluator, PlanQualityResult } from "./PlanQualityEvaluator"
 import { ReasoningValidator, ReasoningResult } from "./ReasoningValidator";
 import { MetricsStore, TrendAnalysis } from "./MetricsStore";
 import { IFileSystem } from "../substrate/abstractions/IFileSystem";
+import { InferenceLivenessTracker } from "./InferenceLivenessTracker";
 
 export interface HealthCheckResult {
   overall: "healthy" | "degraded" | "unhealthy";
@@ -15,12 +16,28 @@ export interface HealthCheckResult {
   planQuality: PlanQualityResult;
   reasoning: ReasoningResult;
   trends?: TrendAnalysis; // Optional trend analysis (only available after baseline is established)
+  /** Inference path liveness. Omitted if no InferenceLivenessTracker was provided. */
+  inference?: {
+    alive: boolean;
+    consecutiveFailures: number;
+    lastError?: string;
+  };
 }
 
 export interface CriticalChecksResult {
   healthy: boolean;
   substrateFsWritable: "healthy" | "unhealthy";
+  /**
+   * Inference liveness status.
+   * - "healthy": tracker present and fewer than MAX_INFERENCE_FAILURES consecutive failures.
+   * - "degraded": tracker present and ≥ MAX_INFERENCE_FAILURES consecutive failures.
+   * - "unknown": no InferenceLivenessTracker was provided (legacy / no probe).
+   */
+  inferenceAlive: "healthy" | "degraded" | "unknown";
 }
+
+/** Inference is considered degraded after this many consecutive failures. */
+const MAX_INFERENCE_FAILURES = 3;
 
 export class HealthCheck {
   private readonly driftAnalyzer: DriftAnalyzer;
@@ -31,12 +48,14 @@ export class HealthCheck {
   private readonly metricsStore: MetricsStore | null;
   private readonly fs: IFileSystem | null;
   private readonly substratePath: string | null;
+  private readonly livenessTracker: InferenceLivenessTracker | null;
 
   constructor(
     reader: SubstrateFileReader,
     metricsStore: MetricsStore | null = null,
     fs: IFileSystem | null = null,
     substratePath: string | null = null,
+    livenessTracker?: InferenceLivenessTracker,
   ) {
     this.driftAnalyzer = new DriftAnalyzer(reader);
     this.consistencyChecker = new ConsistencyChecker(reader);
@@ -46,11 +65,12 @@ export class HealthCheck {
     this.metricsStore = metricsStore;
     this.fs = fs;
     this.substratePath = substratePath;
+    this.livenessTracker = livenessTracker ?? null;
   }
 
   /**
    * Lightweight critical health check for the supervisor's post-restart validation.
-   * Returns structured result including substrate file writability.
+   * Returns structured result including substrate file writability and inference liveness.
    */
   async runCriticalChecks(): Promise<CriticalChecksResult> {
     let readsOk = false;
@@ -79,7 +99,15 @@ export class HealthCheck {
       substrateFsWritable = readsOk ? "healthy" : "unhealthy";
     }
 
-    return { healthy: readsOk && substrateFsWritable === "healthy", substrateFsWritable };
+    // Inference liveness — only available when a tracker was wired in.
+    const inferenceAlive = this.evaluateInferenceLiveness();
+
+    const healthy =
+      readsOk &&
+      substrateFsWritable === "healthy" &&
+      inferenceAlive !== "degraded";
+
+    return { healthy, substrateFsWritable, inferenceAlive };
   }
 
   async run(): Promise<HealthCheckResult> {
@@ -105,7 +133,25 @@ export class HealthCheck {
       trends = await this.metricsStore.analyzeTrends();
     }
 
-    return { overall, drift, consistency, security, planQuality, reasoning, trends };
+    // Attach inference liveness state when a tracker is present.
+    let inference: HealthCheckResult["inference"];
+    if (this.livenessTracker) {
+      const state = this.livenessTracker.getState();
+      inference = {
+        alive: state.alive,
+        consecutiveFailures: state.consecutiveFailures,
+        lastError: state.lastError,
+      };
+    }
+
+    return { overall, drift, consistency, security, planQuality, reasoning, trends, inference };
+  }
+
+  // ── private helpers ────────────────────────────────────────────────────────
+
+  private evaluateInferenceLiveness(): "healthy" | "degraded" | "unknown" {
+    if (!this.livenessTracker) return "unknown";
+    return this.livenessTracker.isHealthy(MAX_INFERENCE_FAILURES) ? "healthy" : "degraded";
   }
 
   private determineOverall(

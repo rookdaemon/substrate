@@ -5,6 +5,7 @@ import {
   UnsafeProviderFallbackError,
 } from "../../src/agents/ProviderFallbackLauncher";
 import { InMemorySessionLauncher } from "../../src/agents/claude/InMemorySessionLauncher";
+import { InferenceLivenessTracker } from "../../src/evaluation/InferenceLivenessTracker";
 
 describe("ProviderFallbackLauncher", () => {
   it.each([
@@ -90,5 +91,77 @@ describe("ProviderFallbackLauncher", () => {
       .toThrow(UnsafeProviderFallbackError);
     expect(() => assertApprovedProviderFallback("anthropic", "claude-haiku-4-20250514"))
       .not.toThrow();
+  });
+
+  describe("InferenceLivenessTracker integration", () => {
+    it("calls recordSuccess on primary success", async () => {
+      const primary = new InMemorySessionLauncher();
+      const tracker = new InferenceLivenessTracker();
+      primary.enqueueSuccess("ok");
+      const launcher = new ProviderFallbackLauncher(primary, [], undefined, tracker);
+
+      await launcher.launch({ systemPrompt: "", message: "run" });
+
+      expect(tracker.getState().consecutiveFailures).toBe(0);
+      expect(tracker.getState().lastSuccessAt).not.toBeNull();
+    });
+
+    it("calls recordSuccess when fallback succeeds", async () => {
+      const primary = new InMemorySessionLauncher();
+      const fallback = new InMemorySessionLauncher();
+      const tracker = new InferenceLivenessTracker();
+      primary.enqueueFailure("fetch failed");
+      fallback.enqueueSuccess("fallback ok");
+      const launcher = new ProviderFallbackLauncher(primary, [{
+        provider: "ollama",
+        model: "qwen3:14b",
+        launcher: fallback,
+      }], undefined, tracker);
+
+      await launcher.launch({ systemPrompt: "", message: "run" });
+
+      expect(tracker.getState().consecutiveFailures).toBe(0);
+      expect(tracker.getState().lastSuccessAt).not.toBeNull();
+    });
+
+    it("calls recordFailure when all routes fail", async () => {
+      const primary = new InMemorySessionLauncher();
+      const tracker = new InferenceLivenessTracker();
+      primary.enqueueFailure("HTTP 401: unauthorized");
+      const launcher = new ProviderFallbackLauncher(primary, [], undefined, tracker);
+
+      await launcher.launch({ systemPrompt: "", message: "run" });
+
+      expect(tracker.getState().consecutiveFailures).toBe(1);
+      expect(tracker.getState().lastFailureAt).not.toBeNull();
+    });
+
+    it("records failure for unknown failures that skip routing", async () => {
+      const primary = new InMemorySessionLauncher();
+      const tracker = new InferenceLivenessTracker();
+      primary.enqueueFailure("malformed response");
+      const launcher = new ProviderFallbackLauncher(primary, [], undefined, tracker);
+
+      await launcher.launch({ systemPrompt: "", message: "run" });
+
+      // unknown failures: degradedRouteAllowed=false, recordFailure called
+      expect(tracker.getState().consecutiveFailures).toBe(1);
+    });
+
+    it("marks unhealthy after 3 consecutive failures", async () => {
+      const primary = new InMemorySessionLauncher();
+      const tracker = new InferenceLivenessTracker();
+      const launcher = new ProviderFallbackLauncher(primary, [], undefined, tracker);
+
+      primary.enqueueFailure("HTTP 401");
+      await launcher.launch({ systemPrompt: "", message: "run" });
+      primary.enqueueFailure("HTTP 401");
+      await launcher.launch({ systemPrompt: "", message: "run" });
+      expect(tracker.isHealthy()).toBe(true); // 2 failures < threshold
+
+      primary.enqueueFailure("HTTP 401");
+      await launcher.launch({ systemPrompt: "", message: "run" });
+      expect(tracker.isHealthy()).toBe(false); // 3 failures >= threshold
+    });
   });
 });

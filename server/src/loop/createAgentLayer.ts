@@ -13,6 +13,7 @@ import { ISessionLauncher } from "../agents/claude/ISessionLauncher";
 import { TaskClassifier } from "../agents/TaskClassifier";
 import { SurvivalModelPolicyLauncher } from "../agents/SurvivalModelPolicyLauncher";
 import { ProviderFallbackLauncher, ProviderFallbackRoute, UnavailableProviderLauncher } from "../agents/ProviderFallbackLauncher";
+import { InferenceLivenessTracker } from "../evaluation/InferenceLivenessTracker";
 import { ConversationCompactor } from "../conversation/ConversationCompactor";
 import { ConversationArchiver } from "../conversation/ConversationArchiver";
 import { ConversationManager, ConversationArchiveConfig } from "../conversation/ConversationManager";
@@ -61,6 +62,8 @@ export interface AgentLayerResult {
   iterationPlanner?: IterationPlanner;
   /** VertexSessionLauncher for subprocess tasks (compaction, gates). Undefined if not configured. */
   vertexSubprocessLauncher: VertexSessionLauncher | undefined;
+  /** Tracks consecutive inference failures; wire into HealthCheck for liveness probe. */
+  livenessTracker: InferenceLivenessTracker;
 }
 
 type ProviderName = "claude" | "gemini" | "copilot" | "codex" | "pi" | "ollama" | "vertex" | "groq" | "anthropic" | "openrouter";
@@ -469,10 +472,12 @@ export async function createAgentLayer(
       launcher: withSurvivalPolicy(new SemaphoreSessionLauncher(anthropicFallbackLauncher, apiSemaphore), "anthropic", anthropicFallbackModel),
     });
   }
+  const livenessTracker = new InferenceLivenessTracker(clock);
   gatedLauncher = new ProviderFallbackLauncher(
     withSurvivalPolicy(gatedLauncher, sessionProvider, activeModel),
     fallbackRoutes,
     logger,
+    livenessTracker,
   );
 
   // Conversation manager with compaction and optional archiving
@@ -599,6 +604,6 @@ export async function createAgentLayer(
     taskMetrics, sizeTracker, delegationTracker, taskClassifier,
     conversationManager, driveQualityTracker, metricsService, shellIndependenceService, flashGate,
     ego, subconscious, superego, id, iterationPlanner,
-    vertexSubprocessLauncher,
+    vertexSubprocessLauncher, livenessTracker,
   };
 }
