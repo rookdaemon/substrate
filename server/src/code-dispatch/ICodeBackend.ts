@@ -10,6 +10,8 @@ export interface SubstrateSlice {
 export interface BackendResult {
   success: boolean;
   output: string;
+  /** Stderr captured from the backend process, if any. Useful for diagnosing provider errors (e.g. 401s). */
+  stderr?: string;
   exitCode: number;
   durationMs: number;
 }

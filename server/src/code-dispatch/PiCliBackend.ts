@@ -61,6 +61,7 @@ export class PiCliBackend implements ICodeBackend {
       return {
         success: result.exitCode === 0,
         output: result.stdout,
+        ...(result.stderr ? { stderr: result.stderr } : {}),
         exitCode: result.exitCode,
         durationMs: this.clock.now().getTime() - startMs,
       };

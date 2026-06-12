@@ -101,6 +101,32 @@ describe("PiCliBackend", () => {
     expect(result.exitCode).toBe(1);
   });
 
+  it("captures stderr in BackendResult for provider error diagnosis", async () => {
+    const runner = makeRunner(1, "", "401 User not found — account revoked");
+    const backend = new PiCliBackend(runner, makeClock());
+    const result = await backend.invoke("do work", {
+      codingContext: "",
+      fileContents: new Map(),
+      cwd: "/tmp",
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.stderr).toBe("401 User not found — account revoked");
+  });
+
+  it("omits stderr field when process produces no stderr", async () => {
+    const runner = makeRunner(0, "output");
+    const backend = new PiCliBackend(runner, makeClock());
+    const result = await backend.invoke("do work", {
+      codingContext: "",
+      fileContents: new Map(),
+      cwd: "/tmp",
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.stderr).toBeUndefined();
+  });
+
   it("reports failure on exception", async () => {
     const runner: IProcessRunner = {
       async run() {
