@@ -508,7 +508,16 @@ export async function createAgentLayer(
   const driveQualityTracker = new DriveQualityTracker(fs, driveRatingsPath, logger);
 
   // Cycle log writer — routes EGO narration and task summaries to cycle_log.md (D-01 fix)
-  const cycleLogWriter = new CycleLogWriter(fs, clock, config.substratePath);
+  // diskSpaceChecker uses Node ≥19.6 statfs to pre-check free space before each write,
+  // preventing a recurrence of the 2.1G ENOSPC event (2026-05-30 post-mortem).
+  const nodeDiskSpaceChecker = async (dirPath: string): Promise<number> => {
+    const { statfs } = await import("fs/promises");
+    const stats = await statfs(dirPath);
+    return stats.bfree * stats.bsize;
+  };
+  const cycleLogWriter = new CycleLogWriter(fs, clock, config.substratePath, "cycle_log.md", {
+    diskSpaceChecker: nodeDiskSpaceChecker,
+  });
 
   const ego = new Ego(reader, writer, conversationManager, checker, promptBuilder, gatedLauncher, clock, taskClassifier, workspaceManager.workspacePath(AgentRole.EGO), config.sourceCodePath, cycleLogWriter);
   const subconscious = new Subconscious(reader, writer, appendWriter, conversationManager, checker, promptBuilder, gatedLauncher, clock, taskClassifier, workspaceManager.workspacePath(AgentRole.SUBCONSCIOUS), cycleLogWriter);
