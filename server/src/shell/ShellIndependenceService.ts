@@ -1,6 +1,7 @@
 import * as path from "node:path";
 import type { IClock } from "../substrate/abstractions/IClock";
 import type { IFileSystem } from "../substrate/abstractions/IFileSystem";
+import { inferPiProvider } from "./piProviderUtils";
 
 export type ShellRouteKind = "commercial-shell" | "portable-shell" | "remote-api" | "self-hosted" | "deterministic-local" | "unknown";
 export type ShellRiskLevel = "low" | "medium" | "high";
@@ -428,11 +429,8 @@ export class ShellIndependenceService implements IShellIndependenceService {
   }
 
   private piProvider(): string | undefined {
-    const configured = this.config.pi?.provider;
-    if (configured) return configured;
     const model = this.config.pi?.model ?? this.config.model;
-    const prefix = model?.split("/", 1)[0];
-    return prefix && prefix !== model ? prefix : undefined;
+    return inferPiProvider(model, this.config.pi?.provider);
   }
 
   private piUsesRemoteProvider(): boolean {
