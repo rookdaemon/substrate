@@ -212,6 +212,11 @@ export interface ApplicationConfig {
    * and injects active entries as rateLimitedUntil[peerId].
    */
   peers?: Array<{ name: string; port: number }>;
+  /** Configuration for the spend budget guard. */
+  budgetGuard?: {
+    /** When false, disables the BudgetGuard entirely. Default: true. */
+    enabled?: boolean;
+  };
 }
 
 export interface Application {

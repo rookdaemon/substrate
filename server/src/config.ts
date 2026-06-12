@@ -188,6 +188,11 @@ const AppConfigSchema = z
       .array(z.object({ name: z.string(), port: z.number().int().min(1).max(65535) }))
       .optional(),
     schedulerCoalesceEnabled: z.boolean().optional(),
+    budgetGuard: z
+      .object({
+        enabled: z.boolean().optional(),
+      })
+      .optional(),
   })
   .refine(
     (data) =>
@@ -421,6 +426,11 @@ export interface AppConfig {
    * Set to false to disable the constraint and allow multiple LLM sessions per cycle.
    */
   schedulerCoalesceEnabled?: boolean;
+  /** Configuration for the spend budget guard. */
+  budgetGuard?: {
+    /** When false, disables the BudgetGuard entirely — no preflight checks, no kill threshold. Default: true. */
+    enabled?: boolean;
+  };
 }
 
 export interface ResolveConfigOptions {
@@ -638,6 +648,8 @@ export async function resolveConfig(
       }
       : undefined,
     peers: fileConfig.peers,
+    schedulerCoalesceEnabled: fileConfig.schedulerCoalesceEnabled,
+    budgetGuard: fileConfig.budgetGuard,
   };
 
   // Env vars override everything

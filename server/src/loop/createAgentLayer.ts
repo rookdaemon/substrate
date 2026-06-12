@@ -159,7 +159,9 @@ export async function createAgentLayer(
   // API semaphore — caps concurrent Claude sessions for rate-limit safety
   const apiSemaphore = new ApiSemaphore(config.maxConcurrentSessions ?? 2);
   const metricsService = SqliteMetricsService.forSubstratePath(config.substratePath, logger);
-  const budgetGuard = BudgetGuard.forSubstratePath(config.substratePath, fs, clock, logger);
+  const budgetGuard = config.budgetGuard?.enabled === false
+    ? undefined
+    : BudgetGuard.forSubstratePath(config.substratePath, fs, clock, logger);
   const withSurvivalPolicy = (
     inner: ISessionLauncher,
     provider: ProviderName,

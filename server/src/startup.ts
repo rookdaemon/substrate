@@ -170,6 +170,7 @@ export async function startServer(config: AppConfig, options?: StartServerOption
     anthropicModel: config.anthropicModel,
     idAnthropicModel: config.idAnthropicModel,
     peers: config.peers,
+    budgetGuard: config.budgetGuard,
   });
   appForCleanup = app;
 
