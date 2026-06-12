@@ -42,6 +42,7 @@ export class TaskClassifier {
 
     // Strategic operations that require deep reasoning
     const strategicOperations = [
+      "execute",          // Subconscious task execution — real work deserves the strategic model
       "decide",           // Ego's executive decision-making
       "respondToMessage", // Ego's context-aware conversation
       "generateDrives",   // Id's novel goal generation
@@ -51,7 +52,6 @@ export class TaskClassifier {
 
     // Tactical operations that are more routine
     const tacticalOperations = [
-      "execute",           // Subconscious task execution
       "evaluateProposals", // Superego's binary accept/reject
       "detectIdle",        // Id's deterministic status check
       "dispatchNext",      // Ego's task extraction

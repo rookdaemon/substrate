@@ -52,12 +52,12 @@ describe("TaskClassifier", () => {
       expect(result).toBe("strategic");
     });
 
-    it("classifies Subconscious.execute as tactical", () => {
+    it("classifies Subconscious.execute as strategic (real work deserves the strategic model)", () => {
       const result = classifier.classify({
         role: AgentRole.SUBCONSCIOUS,
         operation: "execute",
       });
-      expect(result).toBe("tactical");
+      expect(result).toBe("strategic");
     });
 
     it("classifies Superego.evaluateProposals as tactical", () => {
@@ -96,27 +96,35 @@ describe("TaskClassifier", () => {
 
     it("returns sonnet for tactical operations", () => {
       const model = classifier.getModel({
-        role: AgentRole.SUBCONSCIOUS,
-        operation: "execute",
+        role: AgentRole.SUPEREGO,
+        operation: "evaluateProposals",
       });
       expect(model).toBe("sonnet");
     });
 
+    it("returns opus for Subconscious.execute (moved to strategic)", () => {
+      const model = classifier.getModel({
+        role: AgentRole.SUBCONSCIOUS,
+        operation: "execute",
+      });
+      expect(model).toBe("opus");
+    });
+
     it("uses custom model names from config", () => {
       const customClassifier = new TaskClassifier({
-        strategicModel: "claude-opus-4",
-        tacticalModel: "claude-sonnet-3.5",
+        strategicModel: "claude-fable-5",
+        tacticalModel: "claude-sonnet-4-6",
       });
 
       expect(customClassifier.getModel({
         role: AgentRole.EGO,
         operation: "decide",
-      })).toBe("claude-opus-4");
+      })).toBe("claude-fable-5");
 
       expect(customClassifier.getModel({
         role: AgentRole.SUBCONSCIOUS,
         operation: "execute",
-      })).toBe("claude-sonnet-3.5");
+      })).toBe("claude-fable-5");
     });
   });
 
@@ -135,20 +143,21 @@ describe("TaskClassifier", () => {
 
     it("provides explanation for tactical classification", () => {
       const reason = classifier.getClassificationReason({
-        role: AgentRole.SUBCONSCIOUS,
-        operation: "execute",
+        role: AgentRole.SUPEREGO,
+        operation: "evaluateProposals",
       });
       expect(reason).toContain("sonnet");
       expect(reason).toContain("tactical");
-      expect(reason).toContain("execute");
-      expect(reason).toContain("SUBCONSCIOUS");
+      expect(reason).toContain("evaluateProposals");
+      expect(reason).toContain("SUPEREGO");
       expect(reason).toContain("routine");
     });
   });
 
   describe("operation coverage", () => {
-    it("handles all strategic operations", () => {
+    it("handles all strategic operations including Subconscious.execute", () => {
       const strategicOps = [
+        { role: AgentRole.SUBCONSCIOUS, operation: "execute" },
         { role: AgentRole.EGO, operation: "decide" },
         { role: AgentRole.EGO, operation: "respondToMessage" },
         { role: AgentRole.ID, operation: "generateDrives" },
@@ -164,7 +173,6 @@ describe("TaskClassifier", () => {
 
     it("handles all tactical operations", () => {
       const tacticalOps = [
-        { role: AgentRole.SUBCONSCIOUS, operation: "execute" },
         { role: AgentRole.SUPEREGO, operation: "evaluateProposals" },
         { role: AgentRole.ID, operation: "detectIdle" },
         { role: AgentRole.EGO, operation: "dispatchNext" },
