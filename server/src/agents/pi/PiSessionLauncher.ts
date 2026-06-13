@@ -77,7 +77,11 @@ export class PiSessionLauncher implements ISessionLauncher {
     options?: LaunchOptions,
   ): Promise<ClaudeSessionResult> {
     const startMs = this.clock.now().getTime();
-    const modelToUse = options?.model ?? this.config.model;
+    // Only use options.model if it looks like a Pi/OpenRouter model ID (contains "/").
+    // The task dispatcher passes the global config.model (e.g. "claude-sonnet-4-6") which
+    // is not a valid model string for Pi's non-Claude providers.
+    const optionsModel = options?.model?.includes("/") ? options.model : undefined;
+    const modelToUse = optionsModel ?? this.config.model;
     const stdin = this.buildPrompt(request);
     const args = this.buildArgs(options, modelToUse);
 
@@ -166,11 +170,10 @@ export class PiSessionLauncher implements ISessionLauncher {
     if (this.config.sessionDir) {
       args.push("--session-dir", this.config.sessionDir);
     }
-    if (options?.continueSession && options.persistSession !== false) {
-      args.push("--continue");
-    } else if (options?.persistSession === false) {
-      args.push("--no-session");
-    }
+    // Pi sessions are not preserved across substrate cycles — each task dispatch
+    // is independent. --continue would load stale session state from prior (possibly
+    // failed) cycles, causing Pi to exit immediately without running the model.
+    args.push("--no-session");
     return args;
   }
 
@@ -209,8 +212,9 @@ export class PiSessionLauncher implements ISessionLauncher {
     }
 
     const usage = usageCandidate ? this.toSessionUsage(usageCandidate, model) : undefined;
+    const rawOutput = finalText || stdout;
     return {
-      rawOutput: finalText || stdout,
+      rawOutput,
       usage,
     };
   }
@@ -251,8 +255,30 @@ export class PiSessionLauncher implements ISessionLauncher {
       const result = event.partialResult ?? event.result;
       return [{ type: "tool_result", content: this.toProcessLogContent(this.toolResultText(result)) }];
     }
-    if (type === "agent_start" || type === "agent_end" || type === "turn_start" || type === "turn_end") {
-      return [{ type: "status", content: String(type) }];
+    if (type === "auto_retry_start") {
+      const err = this.stringField(event, "errorMessage") ?? "";
+      const attempt = event.attempt ?? "?";
+      const max = event.maxAttempts ?? "?";
+      const short = err.split("\n")[0].slice(0, 120);
+      return [{ type: "status", content: `retry ${attempt}/${max}: ${short}` }];
+    }
+    if (type === "auto_retry_end") {
+      const success = event.success;
+      return [{ type: "status", content: success ? "retry succeeded" : "all retries exhausted" }];
+    }
+    if (type === "turn_end") {
+      const msg = event.message;
+      if (msg && typeof msg === "object") {
+        const m = msg as Record<string, unknown>;
+        const errMsg = this.stringField(m, "errorMessage");
+        if (errMsg) {
+          return [{ type: "status", content: `error: ${errMsg.split("\n")[0].slice(0, 150)}` }];
+        }
+      }
+      return [];
+    }
+    if (type === "agent_start" || type === "agent_end" || type === "turn_start") {
+      return [];
     }
     return [];
   }

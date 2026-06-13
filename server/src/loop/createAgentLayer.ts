@@ -442,17 +442,6 @@ export async function createAgentLayer(
   }
 
   const fallbackRoutes: ProviderFallbackRoute[] = [];
-  if (sessionProvider !== "ollama") {
-    const ollamaBaseUrl = ollamaConfig?.baseUrl ?? config.ollamaBaseUrl ?? "http://localhost:11434";
-    const ollamaModel = ollamaConfig?.model ?? config.ollamaModel ?? "qwen3:14b";
-    const { OllamaSessionLauncher } = await import("../agents/ollama/OllamaSessionLauncher");
-    const ollamaLauncher = new OllamaSessionLauncher(new FetchHttpClient(), clock, ollamaModel, ollamaBaseUrl, ollamaApiKey);
-    fallbackRoutes.push({
-      provider: "ollama",
-      model: ollamaModel,
-      launcher: withSurvivalPolicy(new SemaphoreSessionLauncher(ollamaLauncher, apiSemaphore), "ollama", ollamaModel),
-    });
-  }
   if (vertexSubprocessLauncher && sessionProvider !== "vertex") {
     fallbackRoutes.push({
       provider: "vertex",
