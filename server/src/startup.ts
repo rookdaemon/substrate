@@ -141,6 +141,7 @@ export async function startServer(config: AppConfig, options?: StartServerOption
     vertex: config.vertex,
     groq: config.groq,
     anthropic: config.anthropic,
+    openrouter: config.openrouter,
     httpPort: config.port,
     mode: config.mode,
     backupRetentionCount: config.backupRetentionCount,
