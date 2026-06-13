@@ -66,7 +66,10 @@ export class OpenRouterSessionLauncher implements ISessionLauncher {
       };
     }
 
-    const model = options?.model ?? this.pinnedModel ?? (await this.resolveModel());
+    // Only honour options.model if it looks like an OpenRouter model ID (contains "/").
+    // Claude/Gemini model strings like "claude-sonnet-4-6" are not valid here.
+    const optionsModel = options?.model?.includes("/") ? options.model : undefined;
+    const model = optionsModel ?? this.pinnedModel ?? (await this.resolveModel());
     if (!model) {
       return {
         rawOutput: "",
