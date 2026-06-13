@@ -29,7 +29,8 @@ export type ProviderName =
   | "ollama"
   | "vertex"
   | "groq"
-  | "anthropic";
+  | "anthropic"
+  | "openrouter";
 
 export interface LauncherFactoryDeps {
   runner: IProcessRunner;
@@ -71,6 +72,12 @@ export interface AnthropicLauncherArgs {
 export interface VertexLauncherArgs {
   apiKey: string;
   model?: string;
+}
+
+export interface OpenRouterLauncherArgs {
+  apiKey: string;
+  pinnedModel?: string;
+  priorityModels?: string[];
 }
 
 export interface CliLauncherArgs {
@@ -137,6 +144,13 @@ export async function createLauncher(
       const { VertexSessionLauncher } = await import("./vertex/VertexSessionLauncher");
       const vertexArgs = args as unknown as VertexLauncherArgs;
       return new VertexSessionLauncher(deps.httpClient, deps.clock, vertexArgs.apiKey, vertexArgs.model);
+    }
+    case "openrouter": {
+      const { OpenRouterModelRegistry } = await import("./openrouter/OpenRouterModelRegistry");
+      const { OpenRouterSessionLauncher } = await import("./openrouter/OpenRouterSessionLauncher");
+      const orArgs = args as unknown as OpenRouterLauncherArgs;
+      const registry = new OpenRouterModelRegistry(deps.httpClient, deps.clock, orArgs.apiKey, orArgs.priorityModels);
+      return new OpenRouterSessionLauncher(deps.httpClient, deps.clock, orArgs.apiKey, registry, orArgs.pinnedModel);
     }
     case "claude":
     default:

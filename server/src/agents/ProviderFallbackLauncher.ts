@@ -123,6 +123,8 @@ export function assertApprovedProviderFallback(provider: SessionUsage["provider"
 export function isApprovedDegradedProviderModel(provider: SessionUsage["provider"], model: string | undefined): boolean {
   if (provider === "deterministic") return true;
   if (provider === "ollama") return true;
+  // All OpenRouter free models (identified by :free suffix or zero-cost listing) are approved.
+  if (provider === "openrouter") return true;
   if (!model) return false;
 
   const approved: Partial<Record<SessionUsage["provider"], Set<string>>> = {

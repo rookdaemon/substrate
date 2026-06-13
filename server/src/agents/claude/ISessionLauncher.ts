@@ -11,7 +11,7 @@ export interface ClaudeSessionRequest {
 }
 
 export interface SessionUsage {
-  provider: "claude" | "codex" | "gemini" | "groq" | "anthropic" | "ollama" | "vertex" | "copilot" | "pi" | "deterministic";
+  provider: "claude" | "codex" | "gemini" | "groq" | "anthropic" | "ollama" | "vertex" | "copilot" | "pi" | "openrouter" | "deterministic";
   model?: string;
   promptTokens?: number;
   cachedInputTokens?: number;

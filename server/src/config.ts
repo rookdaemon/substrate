@@ -22,6 +22,8 @@ export interface ProviderConfig {
   baseUrl?: string;
   provider?: string;
   model?: string;
+  /** Ordered list of models to try first (highest priority first). Used by OpenRouter to cycle preferred models before falling back to auto-discovered free models. */
+  priorityModels?: string[];
   effort?: ReasoningEffort;
   strategicModel?: string;
   tacticalModel?: string;
@@ -40,6 +42,7 @@ const ProviderConfigSchema = z.object({
   baseUrl: z.string().url().optional(),
   provider: z.string().optional(),
   model: z.string().optional(),
+  priorityModels: z.array(z.string()).optional(),
   effort: z.enum(REASONING_EFFORT_VALUES).optional(),
   strategicModel: z.string().optional(),
   tacticalModel: z.string().optional(),
@@ -99,6 +102,7 @@ const AppConfigSchema = z
     vertex: ProviderConfigSchema.optional(),
     groq: ProviderConfigSchema.optional(),
     anthropic: ProviderConfigSchema.optional(),
+    openrouter: ProviderConfigSchema.optional(),
     mode: z.enum(["cycle", "tick"]),
     autoStartOnFirstRun: z.boolean(),
     autoStartAfterRestart: z.boolean(),
@@ -164,7 +168,7 @@ const AppConfigSchema = z
     enableFileReadCache: z.boolean().optional(),
     progressMaxBytes: z.number().int().min(1).optional(),
     conversationPromptWindowLines: z.number().int().min(1).optional(),
-    sessionLauncher: z.enum(["claude", "gemini", "copilot", "codex", "pi", "ollama", "vertex", "groq", "anthropic"]).optional(),
+    sessionLauncher: z.enum(["claude", "gemini", "copilot", "codex", "pi", "ollama", "vertex", "groq", "anthropic", "openrouter"]).optional(),
     ollamaBaseUrl: z.string().url().optional(),
     ollamaModel: z.string().optional(),
     ollamaKeyPath: z.string().optional(),
@@ -233,7 +237,7 @@ function pathJoin(base: string, ...segments: string[]): string {
   return path.join(base, ...segments);
 }
 
-type ProviderName = "claude" | "gemini" | "copilot" | "codex" | "pi" | "ollama" | "vertex" | "groq" | "anthropic";
+type ProviderName = "claude" | "gemini" | "copilot" | "codex" | "pi" | "ollama" | "vertex" | "groq" | "anthropic" | "openrouter";
 
 function providerConfig(config: Partial<AppConfig>, provider: ProviderName): ProviderConfig | undefined {
   return config[provider];
@@ -286,6 +290,7 @@ export interface AppConfig {
   vertex?: ProviderConfig;
   groq?: ProviderConfig;
   anthropic?: ProviderConfig;
+  openrouter?: ProviderConfig;
   mode: "cycle" | "tick";
   /** If true, the agent loop auto-starts on first/cold start (default: false — you often want to be there). */
   autoStartOnFirstRun: boolean;
@@ -365,7 +370,7 @@ export interface AppConfig {
   conversationPromptWindowLines?: number;
   /** Which session launcher to use for agent reasoning sessions (default: "claude").
    *  "vertex" is NOT allowed here — Vertex is for subprocess tasks only. Use vertexKeyPath instead. */
-  sessionLauncher?: "claude" | "gemini" | "copilot" | "codex" | "pi" | "ollama" | "groq" | "anthropic";
+  sessionLauncher?: "claude" | "gemini" | "copilot" | "codex" | "pi" | "ollama" | "groq" | "anthropic" | "openrouter";
   /** Base URL for the Ollama server when sessionLauncher is "ollama" (default: "http://localhost:11434"). */
   ollamaBaseUrl?: string;
   /** Model name for Ollama when sessionLauncher is "ollama" (default: "qwen3:14b"). Separate from `model` which is the Claude/Gemini model name. */
@@ -544,6 +549,7 @@ export async function resolveConfig(
     vertex: fileConfig.vertex,
     groq: fileConfig.groq,
     anthropic: fileConfig.anthropic,
+    openrouter: fileConfig.openrouter,
     mode: (fileConfig as Partial<AppConfig>).mode ?? defaults.mode,
     autoStartOnFirstRun: fileConfig.autoStartOnFirstRun ?? defaults.autoStartOnFirstRun,
     autoStartAfterRestart: fileConfig.autoStartAfterRestart ?? defaults.autoStartAfterRestart,

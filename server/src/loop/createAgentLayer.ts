@@ -63,7 +63,7 @@ export interface AgentLayerResult {
   vertexSubprocessLauncher: VertexSessionLauncher | undefined;
 }
 
-type ProviderName = "claude" | "gemini" | "copilot" | "codex" | "pi" | "ollama" | "vertex" | "groq" | "anthropic";
+type ProviderName = "claude" | "gemini" | "copilot" | "codex" | "pi" | "ollama" | "vertex" | "groq" | "anthropic" | "openrouter";
 
 function providerConfig(config: ApplicationConfig, provider: ProviderName) {
   return config[provider] ?? config.models?.[provider];
@@ -234,6 +234,25 @@ export async function createAgentLayer(
     }
   }
 
+  // OpenRouter API key — read from key file if configured
+  let openrouterApiKey: string | undefined;
+  const openrouterConfig = providerConfig(config, "openrouter");
+  const openrouterKeyPath = openrouterConfig?.keyPath;
+  if (openrouterKeyPath) {
+    try {
+      const key = (await fs.readFile(openrouterKeyPath)).trim();
+      if (key) {
+        openrouterApiKey = key;
+      } else {
+        logger.debug("agent-layer: OpenRouter key file is empty — OpenRouter launcher disabled");
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const redacted = msg.replaceAll(openrouterKeyPath, "[REDACTED]");
+      logger.debug(`agent-layer: Cannot read OpenRouter key file — OpenRouter launcher disabled (${redacted})`);
+    }
+  }
+
   // Pi provider API key — read from key file if configured and expose only to the Pi child process.
   let piProviderEnv: Record<string, string | undefined> | undefined;
   const piKeyPath = piConfig?.keyPath;
@@ -323,6 +342,20 @@ export async function createAgentLayer(
     } else {
       logger.warn("agent-layer: sessionLauncher is \"anthropic\" but token unavailable — blocking silent fallback to default provider");
       gatedLauncher = new UnavailableProviderLauncher("anthropic", "claudeOAuthKeyPath unset or token unreadable");
+    }
+  } else if (config.sessionLauncher === "openrouter") {
+    if (openrouterApiKey) {
+      const pinnedModel = openrouterConfig?.model;
+      const priorityModels = openrouterConfig?.priorityModels ?? [];
+      logger.debug(`agent-layer: using OpenRouterSessionLauncher for cognitive roles (priority models: ${priorityModels.length > 0 ? priorityModels.join(", ") : "auto-discover free models"})`);
+      const { OpenRouterModelRegistry } = await import("../agents/openrouter/OpenRouterModelRegistry");
+      const { OpenRouterSessionLauncher } = await import("../agents/openrouter/OpenRouterSessionLauncher");
+      const registry = new OpenRouterModelRegistry(new FetchHttpClient(), clock, openrouterApiKey, priorityModels);
+      const openrouterLauncher = new OpenRouterSessionLauncher(new FetchHttpClient(), clock, openrouterApiKey, registry, pinnedModel);
+      gatedLauncher = new SemaphoreSessionLauncher(openrouterLauncher, apiSemaphore);
+    } else {
+      logger.warn("agent-layer: sessionLauncher is \"openrouter\" but openrouter.keyPath is not set or key file unreadable — blocking silent fallback to default provider");
+      gatedLauncher = new UnavailableProviderLauncher("openrouter", "openrouter.keyPath unset or key file unreadable");
     }
   } else {
     gatedLauncher = new SemaphoreSessionLauncher(launcher, apiSemaphore);
