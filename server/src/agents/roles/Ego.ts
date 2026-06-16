@@ -15,6 +15,7 @@ import { AgoraReply } from "./Subconscious";
 import { RateLimitError } from "../../loop/RateLimitError";
 import { isRateLimitText } from "../../loop/rateLimitParser";
 import { ICycleLogWriter } from "../../substrate/io/ICycleLogWriter";
+import { EgoSessionCache } from "../EgoSessionCache";
 
 export interface EgoDecision {
   action: "dispatch" | "update_plan" | "converse" | "idle";
@@ -25,6 +26,12 @@ export interface EgoDecision {
   reason?: string;       // present when action === "idle"
   agoraReplies: AgoraReply[];
   operatingContextEntry?: string | null;
+  /**
+   * Optional handoff note from this Ego session for the next session.
+   * Written to ego_session_cache.md when non-null/non-empty.
+   * ~500-word limit enforced by EgoSessionCache.write().
+   */
+  sessionNotes?: string;
 }
 
 /**
@@ -44,6 +51,7 @@ export const EGO_DECISION_SCHEMA = {
     entry: { type: "string" },
     reason: { type: "string" },
     operatingContextEntry: { type: ["string", "null"] },
+    sessionNotes: { type: "string" },
     agoraReplies: {
       type: "array",
       items: {
@@ -93,21 +101,38 @@ export class Ego {
     private readonly workingDirectory?: string,
     private readonly sourceCodePath?: string,
     private readonly cycleLogWriter?: ICycleLogWriter,
+    private readonly sessionCache?: EgoSessionCache,
   ) {}
 
   async decide(onLogEntry?: (entry: ProcessLogEntry) => void, runtimeContext?: string): Promise<EgoDecision> {
+    // Read session cache before launch (fail-closed: renames cache to .prev)
+    let sessionNotesContext: string | undefined;
+    if (this.sessionCache) {
+      try {
+        const cached = await this.sessionCache.read();
+        if (cached) {
+          sessionNotesContext = formatSessionNotesBlock(cached.writtenAt, cached.notes);
+        }
+      } catch {
+        // Session cache read failure is non-fatal — start fresh
+      }
+    }
+
     try {
       const systemPrompt = this.promptBuilder.buildSystemPrompt(AgentRole.EGO);
       const eagerRefs = await this.promptBuilder.getEagerReferences(AgentRole.EGO);
       const lazyRefs = this.promptBuilder.getLazyReferences(AgentRole.EGO);
-      
+
+      // Combine runtimeContext with session notes (session notes are low-priority, appended last)
+      const combinedContext = [runtimeContext, sessionNotesContext].filter(Boolean).join("\n\n") || undefined;
+
       const message = this.promptBuilder.buildAgentMessage(
         eagerRefs,
         lazyRefs,
         `Analyze the current context. What should we do next?`,
-        runtimeContext
+        combinedContext
       );
-      
+
       const model = this.taskClassifier.getModel({ role: AgentRole.EGO, operation: "decide" });
       const result = await this.sessionLauncher.launch({
         systemPrompt,
@@ -134,6 +159,19 @@ export class Ego {
       if (parsed.operatingContextEntry) {
         await this.appendOperatingContext(parsed.operatingContextEntry);
       }
+
+      // Write session notes to cache if provided (best-effort; never blocks)
+      if (this.sessionCache && parsed.sessionNotes) {
+        try {
+          const scope = parsed.action === "dispatch" && parsed.taskId
+            ? `dispatched task ${parsed.taskId}`
+            : `action=${parsed.action}`;
+          await this.sessionCache.write(parsed.sessionNotes, scope);
+        } catch {
+          // Cache write failure is non-fatal
+        }
+      }
+
       return parsed;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -250,4 +288,17 @@ export class Ego {
       snapshot,
     };
   }
+}
+
+/**
+ * Formats session cache notes as a context block for injection into the agent message.
+ */
+function formatSessionNotesBlock(writtenAt: Date, notes: string): string {
+  return `[EGO SESSION NOTES — last session, ${writtenAt.toISOString()}]
+Advisory only. These are notes your previous session left for you.
+Resume posture: verify-before-continuing. Check current substrate before acting on the below.
+
+${notes}
+
+[END SESSION NOTES — verify against current substrate before acting on the above]`;
 }
