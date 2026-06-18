@@ -17,6 +17,7 @@ import {
   LoopState,
   LoopConfig,
   CycleResult,
+  IdleReason,
   TickResult,
   LoopMetrics,
   createInitialMetrics,
@@ -479,6 +480,7 @@ export class LoopOrchestrator implements IMessageInjector {
         action: "idle",
         success: true,
         summary: "Skipped — cycle already in progress",
+        idleReason: "already_running" satisfies IdleReason,
       };
     }
 
@@ -584,7 +586,22 @@ export class LoopOrchestrator implements IMessageInjector {
         }
       }
 
-      this.logger.debug(`cycle ${this.cycleNumber}: idle (consecutive: ${this.metrics.consecutiveIdleCycles})`);
+      // Compute typed idle reason for diagnostic logging
+      const idleReason: IdleReason = heldUntil !== null
+        ? "hold_until"
+        : taskCount === 0
+          ? "plan_empty"
+          : planComplete
+            ? "plan_complete"
+            : (blockedTaskIds.length > 0 || timeBlockedTasks.length > 0)
+              ? "all_blocked"
+              : "no_actionable"; // tasks exist, none blocked, but no dispatch — warrants investigation
+
+      if (idleReason === "no_actionable") {
+        this.logger.debug(`cycle ${this.cycleNumber}: idle [no_actionable] — tasks exist (${taskCount}) but findNextActionable returned null; check for unmet shell triggers or plan parse issues`);
+      } else {
+        this.logger.debug(`cycle ${this.cycleNumber}: idle [${idleReason}] (consecutive: ${this.metrics.consecutiveIdleCycles})`);
+      }
 
       result = {
         cycleNumber: this.cycleNumber,
@@ -595,13 +612,14 @@ export class LoopOrchestrator implements IMessageInjector {
           : "No tasks available — idle",
         planEmpty: taskCount === 0,
         planComplete,
+        idleReason,
         ...(blockedUntilForIdle ? { blocked: true, blockedUntil: blockedUntilForIdle.toISOString() } : {}),
       };
 
       this.eventSink.emit({
         type: "idle",
         timestamp: this.clock.now().toISOString(),
-        data: { consecutiveIdleCycles: this.metrics.consecutiveIdleCycles },
+        data: { consecutiveIdleCycles: this.metrics.consecutiveIdleCycles, idleReason },
       });
     } else {
       if (this.lastBlockedTaskId === dispatch.taskId) {
