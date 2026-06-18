@@ -38,6 +38,7 @@ import { PerformanceMetrics } from "../evaluation/PerformanceMetrics";
 import { msgPreview } from "./utils";
 import { DeferredWorkQueue } from "./DeferredWorkQueue";
 import { EndorsementInterceptor } from "../agents/endorsement";
+import { OutputQualityMonitor } from "../evaluation/OutputQualityMonitor";
 import { IterationPlanner, type IterationAssignment, type IterationPlan } from "../agents/IterationPlanner";
 import type { SubstrateSnapshot } from "../agents/prompts/PromptBuilder";
 import type { IAgoraService } from "../agora/IAgoraService";
@@ -119,6 +120,9 @@ export class LoopOrchestrator implements IMessageInjector {
 
   // Endorsement interceptor — compliance circuit-breaker
   private endorsementInterceptor: EndorsementInterceptor | null = null;
+
+  // Output quality monitor — detects semantic garbage / parse-error storm patterns
+  private outputQualityMonitor: OutputQualityMonitor | null = null;
 
   // Agora service — sends agoraReplies from Subconscious/Ego structured JSON output
   private agoraService: IAgoraService | null = null;
@@ -407,6 +411,10 @@ export class LoopOrchestrator implements IMessageInjector {
 
   setEndorsementInterceptor(interceptor: EndorsementInterceptor): void {
     this.endorsementInterceptor = interceptor;
+  }
+
+  setOutputQualityMonitor(monitor: OutputQualityMonitor): void {
+    this.outputQualityMonitor = monitor;
   }
 
   /**
@@ -1406,6 +1414,16 @@ export class LoopOrchestrator implements IMessageInjector {
       }
       this.logger.debug(`endorsement: check failed (fail-open) — ${err instanceof Error ? err.message : String(err)}`);
     } finally {
+      // Collect session stats before reset — feeds output quality canary.
+      const stats = this.endorsementInterceptor.getSessionStats();
+      if (stats.totalChecks > 0 && this.outputQualityMonitor) {
+        this.outputQualityMonitor.recordCycleStats(stats);
+        if (stats.parseErrors > 0 || stats.placeholderActions > 0) {
+          this.logger.warn(
+            `output-canary: degraded cycle detected — parseErrors=${stats.parseErrors} placeholderActions=${stats.placeholderActions} totalChecks=${stats.totalChecks}`
+          );
+        }
+      }
       this.endorsementInterceptor.reset();
     }
     if (!result) return;

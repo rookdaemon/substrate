@@ -244,4 +244,110 @@ describe("EndorsementInterceptor", () => {
       expect(result.injectionMessage).toBeUndefined();
     });
   });
+
+  describe("getSessionStats()", () => {
+    it("returns zero counts before any endorsement checks", () => {
+      const s = interceptor.getSessionStats();
+      expect(s.totalChecks).toBe(0);
+      expect(s.parseErrors).toBe(0);
+      expect(s.placeholderActions).toBe(0);
+    });
+
+    it("increments totalChecks on each Layer 1 or 2 check", async () => {
+      stubScreener.enqueue(screenerResult("PROCEED"));
+      stubScreener.enqueue(screenerResult("PROCEED"));
+
+      await interceptor.evaluateOutput("[ENDORSEMENT_CHECK: action one]");
+      await interceptor.evaluateOutput("[ENDORSEMENT_CHECK: action two]");
+
+      expect(interceptor.getSessionStats().totalChecks).toBe(2);
+    });
+
+    it("increments parseErrors when screener returns matchedSection=parse-error", async () => {
+      stubScreener.enqueue(screenerResult("ESCALATE", "parse-error"));
+
+      await interceptor.evaluateOutput("[ENDORSEMENT_CHECK: do something]");
+
+      expect(interceptor.getSessionStats().parseErrors).toBe(1);
+    });
+
+    it("does not count parse-errors for normal matchedSection values", async () => {
+      stubScreener.enqueue(screenerResult("ESCALATE", "Financial"));
+
+      await interceptor.evaluateOutput("[ENDORSEMENT_CHECK: sign up for service]");
+
+      expect(interceptor.getSessionStats().parseErrors).toBe(0);
+    });
+
+    it("detects placeholder action text matching <...> pattern", async () => {
+      stubScreener.enqueue(screenerResult("ESCALATE", "parse-error"));
+
+      // This is the exact Kimi degradation: emitting the template placeholder
+      await interceptor.evaluateOutput(
+        "[ENDORSEMENT_CHECK: <brief description of the action>]"
+      );
+
+      expect(interceptor.getSessionStats().placeholderActions).toBe(1);
+    });
+
+    it("does not flag normal action text as placeholder", async () => {
+      stubScreener.enqueue(screenerResult("PROCEED", "Safe Channels"));
+
+      await interceptor.evaluateOutput("[ENDORSEMENT_CHECK: post blog about consciousness]");
+
+      expect(interceptor.getSessionStats().placeholderActions).toBe(0);
+    });
+
+    it("does not flag action text that partially contains angle brackets", async () => {
+      stubScreener.enqueue(screenerResult("PROCEED"));
+
+      // Contains angle brackets but is not solely a placeholder
+      await interceptor.evaluateOutput("[ENDORSEMENT_CHECK: send <email> to stefan]");
+
+      expect(interceptor.getSessionStats().placeholderActions).toBe(0);
+    });
+
+    it("resets session stats on reset()", async () => {
+      stubScreener.enqueue(screenerResult("ESCALATE", "parse-error"));
+      await interceptor.evaluateOutput("[ENDORSEMENT_CHECK: <brief description of the action>]");
+
+      expect(interceptor.getSessionStats().totalChecks).toBe(1);
+      expect(interceptor.getSessionStats().parseErrors).toBe(1);
+      expect(interceptor.getSessionStats().placeholderActions).toBe(1);
+
+      interceptor.reset();
+
+      const s = interceptor.getSessionStats();
+      expect(s.totalChecks).toBe(0);
+      expect(s.parseErrors).toBe(0);
+      expect(s.placeholderActions).toBe(0);
+    });
+
+    it("accumulates stats across multiple checks in same session", async () => {
+      // First check: placeholder + parse-error
+      stubScreener.enqueue(screenerResult("ESCALATE", "parse-error"));
+      await interceptor.evaluateOutput("[ENDORSEMENT_CHECK: <brief description of the action>]");
+
+      // Second check: normal
+      stubScreener.enqueue(screenerResult("PROCEED", "Safe Channels"));
+      await interceptor.evaluateOutput("[ENDORSEMENT_CHECK: post to bluesky]");
+
+      // Third check: parse-error only
+      stubScreener.enqueue(screenerResult("ESCALATE", "parse-error"));
+      await interceptor.evaluateOutput("[ENDORSEMENT_CHECK: do something]");
+
+      const s = interceptor.getSessionStats();
+      expect(s.totalChecks).toBe(3);
+      expect(s.parseErrors).toBe(2);
+      expect(s.placeholderActions).toBe(1);
+    });
+
+    it("Layer 3 does not increment totalChecks (Layer 3 bypasses screener)", async () => {
+      interceptor.onLogEntry(toolEntry("mcp__tinybus__send_message"));
+      await interceptor.evaluateOutput("Sending message now.");
+
+      // Layer 3 doesn't go through screen() so totalChecks stays 0
+      expect(interceptor.getSessionStats().totalChecks).toBe(0);
+    });
+  });
 });

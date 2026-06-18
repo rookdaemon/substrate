@@ -7,6 +7,7 @@ import { ReasoningValidator, ReasoningResult } from "./ReasoningValidator";
 import { MetricsStore, TrendAnalysis } from "./MetricsStore";
 import { IFileSystem } from "../substrate/abstractions/IFileSystem";
 import { InferenceLivenessTracker } from "./InferenceLivenessTracker";
+import { OutputQualityMonitor } from "./OutputQualityMonitor";
 
 export interface HealthCheckResult {
   overall: "healthy" | "degraded" | "unhealthy";
@@ -34,10 +35,23 @@ export interface CriticalChecksResult {
    * - "unknown": no InferenceLivenessTracker was provided (legacy / no probe).
    */
   inferenceAlive: "healthy" | "degraded" | "unknown";
+  /**
+   * Output quality status (Ego/Subconscious semantic output health).
+   * - "healthy": monitor present and fewer than MAX_DEGRADED_CYCLES consecutive degraded cycles.
+   * - "degraded": monitor present and ≥ MAX_DEGRADED_CYCLES consecutive degraded cycles.
+   * - "unknown": no OutputQualityMonitor was provided.
+   *
+   * Detects the parse-error storm pattern (e.g. Kimi emitting placeholder ENDORSEMENT_CHECK
+   * text → screener can't parse → parse-error ESCALATE repeated for 24+ hours).
+   */
+  outputQuality: "healthy" | "degraded" | "unknown";
 }
 
 /** Inference is considered degraded after this many consecutive failures. */
 const MAX_INFERENCE_FAILURES = 3;
+
+/** Output quality is considered degraded after this many consecutive degraded cycles. */
+const MAX_DEGRADED_CYCLES = 3;
 
 export class HealthCheck {
   private readonly driftAnalyzer: DriftAnalyzer;
@@ -49,6 +63,7 @@ export class HealthCheck {
   private readonly fs: IFileSystem | null;
   private readonly substratePath: string | null;
   private readonly livenessTracker: InferenceLivenessTracker | null;
+  private readonly outputQualityMonitor: OutputQualityMonitor | null;
 
   constructor(
     reader: SubstrateFileReader,
@@ -56,6 +71,7 @@ export class HealthCheck {
     fs: IFileSystem | null = null,
     substratePath: string | null = null,
     livenessTracker?: InferenceLivenessTracker,
+    outputQualityMonitor?: OutputQualityMonitor,
   ) {
     this.driftAnalyzer = new DriftAnalyzer(reader);
     this.consistencyChecker = new ConsistencyChecker(reader);
@@ -66,6 +82,7 @@ export class HealthCheck {
     this.fs = fs;
     this.substratePath = substratePath;
     this.livenessTracker = livenessTracker ?? null;
+    this.outputQualityMonitor = outputQualityMonitor ?? null;
   }
 
   /**
@@ -102,12 +119,16 @@ export class HealthCheck {
     // Inference liveness — only available when a tracker was wired in.
     const inferenceAlive = this.evaluateInferenceLiveness();
 
+    // Output quality — only available when a monitor was wired in.
+    const outputQuality = this.evaluateOutputQuality();
+
     const healthy =
       readsOk &&
       substrateFsWritable === "healthy" &&
-      inferenceAlive !== "degraded";
+      inferenceAlive !== "degraded" &&
+      outputQuality !== "degraded";
 
-    return { healthy, substrateFsWritable, inferenceAlive };
+    return { healthy, substrateFsWritable, inferenceAlive, outputQuality };
   }
 
   async run(): Promise<HealthCheckResult> {
@@ -152,6 +173,11 @@ export class HealthCheck {
   private evaluateInferenceLiveness(): "healthy" | "degraded" | "unknown" {
     if (!this.livenessTracker) return "unknown";
     return this.livenessTracker.isHealthy(MAX_INFERENCE_FAILURES) ? "healthy" : "degraded";
+  }
+
+  private evaluateOutputQuality(): "healthy" | "degraded" | "unknown" {
+    if (!this.outputQualityMonitor) return "unknown";
+    return this.outputQualityMonitor.isHealthy(MAX_DEGRADED_CYCLES) ? "healthy" : "degraded";
   }
 
   private determineOverall(
