@@ -49,8 +49,6 @@ describe("PiSessionLauncher", () => {
       message: "Task",
     }), {
       cwd: "/workspace/ego",
-      continueSession: true,
-      persistSession: true,
     });
 
     const call = runner.getCalls()[0];
@@ -67,7 +65,8 @@ describe("PiSessionLauncher", () => {
     expect(call.args[call.args.indexOf("--thinking") + 1]).toBe("off");
     expect(call.args).toContain("--session-dir");
     expect(call.args[call.args.indexOf("--session-dir") + 1]).toBe("/substrate/pi-sessions");
-    expect(call.args).toContain("--continue");
+    expect(call.args).toContain("--no-session");
+    expect(call.args).not.toContain("--continue");
     expect(call.args).not.toContain("--append-system-prompt");
     expect(call.args).not.toContain("System rules");
     expect(call.args).not.toContain("Task");
@@ -293,6 +292,31 @@ describe("PiSessionLauncher", () => {
       billingSource: "cli_usage",
       telemetrySource: "pi-json-event-stream",
     });
+  });
+
+  it("middle-truncates stdin when contextWindowTokens is set and prompt exceeds budget", async () => {
+    // Budget: (10000 - 4096) * 4 * 0.9 = ~21254 chars
+    runner.enqueue({ stdout: "", stderr: "", exitCode: 0 });
+    const launcher = new PiSessionLauncher(runner, clock, { contextWindowTokens: 10000 });
+    const bigMessage = "u".repeat(50000);
+
+    await launcher.launch(makeRequest({ message: bigMessage }));
+
+    const stdin = runner.getCalls()[0].options?.stdin as string;
+    expect(stdin.length).toBeLessThan(bigMessage.length);
+    expect(stdin).toContain("[content truncated");
+  });
+
+  it("does not truncate when prompt fits within contextWindowTokens budget", async () => {
+    runner.enqueue({ stdout: "", stderr: "", exitCode: 0 });
+    const launcher = new PiSessionLauncher(runner, clock, { contextWindowTokens: 131072 });
+    const smallMessage = "short message";
+
+    await launcher.launch(makeRequest({ message: smallMessage }));
+
+    const stdin = runner.getCalls()[0].options?.stdin as string;
+    expect(stdin).toBe(smallMessage);
+    expect(stdin).not.toContain("[content truncated");
   });
 
   it("returns failure when the pi process fails", async () => {

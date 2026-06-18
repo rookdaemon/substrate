@@ -306,6 +306,8 @@ export async function createAgentLayer(
   } else if (config.sessionLauncher === "pi") {
     logger.debug("agent-layer: using PiSessionLauncher for cognitive roles");
     const { PiSessionLauncher } = await import("../agents/pi/PiSessionLauncher");
+    const piContextWindowTokens = piConfig?.contextWindowTokens
+      ?? (piProvider === "openrouter" ? (openrouterConfig?.contextWindowTokens ?? 131072) : undefined);
     const piLauncher = new PiSessionLauncher(new NodeProcessRunner(), clock, {
       provider: piProvider,
       model: activeModel,
@@ -318,6 +320,7 @@ export async function createAgentLayer(
       defaultIdleTimeoutMs: piConfig?.defaultIdleTimeoutMs,
       maxLoggedTextChars: piConfig?.maxLoggedTextChars,
       minLoggedTextChars: piConfig?.minLoggedTextChars,
+      contextWindowTokens: piContextWindowTokens,
     }, logger);
     gatedLauncher = new SemaphoreSessionLauncher(piLauncher, apiSemaphore);
   } else if (config.sessionLauncher === "ollama") {

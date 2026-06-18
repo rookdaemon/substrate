@@ -9,6 +9,7 @@ import type {
   ProcessLogEntry,
   SessionUsage,
 } from "../claude/ISessionLauncher";
+import { fitToContextWindow } from "../openrouter/PromptTruncator";
 
 export type PiShellMode = "json" | "print";
 export type PiThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
@@ -36,6 +37,9 @@ export interface PiSessionLauncherConfig {
   maxLoggedTextChars?: number;
   /** Minimum assistant text length before it is worth logging as a text entry. */
   minLoggedTextChars?: number;
+  /** Context window size in tokens. When set, the combined prompt is middle-truncated to fit.
+   *  Defaults to 131072 when provider is "openrouter". Set in createAgentLayer. */
+  contextWindowTokens?: number;
 }
 
 const MAX_PROCESS_LOG_CONTENT_CHARS = 2_000;
@@ -134,9 +138,12 @@ export class PiSessionLauncher implements ISessionLauncher {
   }
 
   private buildPrompt(request: ClaudeSessionRequest): string {
-    return request.systemPrompt
-      ? `SYSTEM INSTRUCTIONS:\n${request.systemPrompt}\n\n---\n\n${request.message}`
-      : request.message;
+    const { systemPrompt, userMessage } = this.config.contextWindowTokens
+      ? fitToContextWindow(request.systemPrompt ?? "", request.message, this.config.contextWindowTokens)
+      : { systemPrompt: request.systemPrompt ?? "", userMessage: request.message };
+    return systemPrompt
+      ? `SYSTEM INSTRUCTIONS:\n${systemPrompt}\n\n---\n\n${userMessage}`
+      : userMessage;
   }
 
   private buildEnvironment(): Record<string, string | undefined> | undefined {
