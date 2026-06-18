@@ -306,8 +306,15 @@ export async function createAgentLayer(
   } else if (config.sessionLauncher === "pi") {
     logger.debug("agent-layer: using PiSessionLauncher for cognitive roles");
     const { PiSessionLauncher } = await import("../agents/pi/PiSessionLauncher");
+    // Pi reserves ~32 000 output tokens and ~800 tokens for tool definitions on each call.
+    // fitToContextWindow only reserves 4 096 for response, so pre-subtract the remainder
+    // so the text budget is safe within the model's actual context window.
+    const PI_OUTPUT_RESERVE = 32_000;
+    const PI_TOOL_OVERHEAD = 800;
     const piContextWindowTokens = piConfig?.contextWindowTokens
-      ?? (piProvider === "openrouter" ? (openrouterConfig?.contextWindowTokens ?? 131072) : undefined);
+      ?? (piProvider === "openrouter"
+        ? Math.max(8_192, (openrouterConfig?.contextWindowTokens ?? 131_072) - PI_OUTPUT_RESERVE - PI_TOOL_OVERHEAD)
+        : undefined);
     const piLauncher = new PiSessionLauncher(new NodeProcessRunner(), clock, {
       provider: piProvider,
       model: activeModel,
