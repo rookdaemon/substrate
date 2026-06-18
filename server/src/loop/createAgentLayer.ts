@@ -351,11 +351,12 @@ export async function createAgentLayer(
     if (openrouterApiKey) {
       const pinnedModel = openrouterConfig?.model;
       const priorityModels = openrouterConfig?.priorityModels ?? [];
+      const contextWindowTokens = openrouterConfig?.contextWindowTokens;
       logger.debug(`agent-layer: using OpenRouterSessionLauncher for cognitive roles (priority models: ${priorityModels.length > 0 ? priorityModels.join(", ") : "auto-discover free models"})`);
       const { OpenRouterModelRegistry } = await import("../agents/openrouter/OpenRouterModelRegistry");
       const { OpenRouterSessionLauncher } = await import("../agents/openrouter/OpenRouterSessionLauncher");
       const registry = new OpenRouterModelRegistry(new FetchHttpClient(), clock, openrouterApiKey, priorityModels);
-      const openrouterLauncher = new OpenRouterSessionLauncher(new FetchHttpClient(), clock, openrouterApiKey, registry, pinnedModel);
+      const openrouterLauncher = new OpenRouterSessionLauncher(new FetchHttpClient(), clock, openrouterApiKey, registry, pinnedModel, contextWindowTokens);
       gatedLauncher = new SemaphoreSessionLauncher(openrouterLauncher, apiSemaphore);
     } else {
       logger.warn("agent-layer: sessionLauncher is \"openrouter\" but openrouter.keyPath is not set or key file unreadable — blocking silent fallback to default provider");

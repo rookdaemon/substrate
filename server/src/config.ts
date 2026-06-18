@@ -35,6 +35,9 @@ export interface ProviderConfig {
   defaultIdleTimeoutMs?: number;
   maxLoggedTextChars?: number;
   minLoggedTextChars?: number;
+  /** Override the model's context window in tokens. When set, prompt truncation uses this value
+   *  instead of the value fetched from the provider's model list API. */
+  contextWindowTokens?: number;
 }
 
 const ProviderConfigSchema = z.object({
@@ -54,6 +57,7 @@ const ProviderConfigSchema = z.object({
   defaultIdleTimeoutMs: z.number().int().min(1).optional(),
   maxLoggedTextChars: z.number().int().min(1).optional(),
   minLoggedTextChars: z.number().int().min(1).optional(),
+  contextWindowTokens: z.number().int().min(1).optional(),
 });
 
 export interface IterationModelClassConfig {

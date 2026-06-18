@@ -37,6 +37,7 @@ export class OpenRouterModelRegistry {
   private models: string[] = [];
   private currentIndex = 0;
   private fetchedAt: number | null = null;
+  private contextLengths: Map<string, number> = new Map();
 
   constructor(
     private readonly httpClient: IHttpClient,
@@ -52,6 +53,11 @@ export class OpenRouterModelRegistry {
 
   currentModel(): string | undefined {
     return this.models[this.currentIndex];
+  }
+
+  contextLengthFor(modelId: string): number | undefined {
+    const len = this.contextLengths.get(modelId);
+    return len && len > 0 ? len : undefined;
   }
 
   advanceModel(): void {
@@ -86,7 +92,13 @@ export class OpenRouterModelRegistry {
       }
 
       const data = (await response.json()) as OpenRouterModelsResponse;
-      const discovered = filterAndRankFreeTextModels(data.data ?? []);
+      const allModels = data.data ?? [];
+      for (const m of allModels) {
+        if (m.context_length && m.context_length > 0) {
+          this.contextLengths.set(m.id, m.context_length);
+        }
+      }
+      const discovered = filterAndRankFreeTextModels(allModels);
       const prioritySet = new Set(this.priorityModels);
       const tail = discovered.filter((id) => !prioritySet.has(id));
       const merged = [...this.priorityModels, ...tail];

@@ -78,6 +78,7 @@ export interface OpenRouterLauncherArgs {
   apiKey: string;
   pinnedModel?: string;
   priorityModels?: string[];
+  contextWindowTokens?: number;
 }
 
 export interface CliLauncherArgs {
@@ -150,7 +151,7 @@ export async function createLauncher(
       const { OpenRouterSessionLauncher } = await import("./openrouter/OpenRouterSessionLauncher");
       const orArgs = args as unknown as OpenRouterLauncherArgs;
       const registry = new OpenRouterModelRegistry(deps.httpClient, deps.clock, orArgs.apiKey, orArgs.priorityModels);
-      return new OpenRouterSessionLauncher(deps.httpClient, deps.clock, orArgs.apiKey, registry, orArgs.pinnedModel);
+      return new OpenRouterSessionLauncher(deps.httpClient, deps.clock, orArgs.apiKey, registry, orArgs.pinnedModel, orArgs.contextWindowTokens);
     }
     case "claude":
     default:

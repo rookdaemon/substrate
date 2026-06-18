@@ -217,6 +217,39 @@ describe("OpenRouterModelRegistry", () => {
     expect(models).toContain("beta");
   });
 
+  // ── Context length ─────────────────────────────────────────────────────────
+
+  it("contextLengthFor returns context length for a fetched model", async () => {
+    http.enqueueJson(makeModelsResponse([
+      { id: "big-model", context_length: 131072 },
+      { id: "small-model", context_length: 8192 },
+    ]));
+
+    const registry = new OpenRouterModelRegistry(http, clock, FAKE_KEY);
+    await registry.getModels();
+
+    expect(registry.contextLengthFor("big-model")).toBe(131072);
+    expect(registry.contextLengthFor("small-model")).toBe(8192);
+  });
+
+  it("contextLengthFor returns undefined for unknown model", async () => {
+    http.enqueueJson(makeModelsResponse([{ id: "known-model", context_length: 8192 }]));
+
+    const registry = new OpenRouterModelRegistry(http, clock, FAKE_KEY);
+    await registry.getModels();
+
+    expect(registry.contextLengthFor("unknown-model")).toBeUndefined();
+  });
+
+  it("contextLengthFor returns undefined for models with zero context_length", async () => {
+    http.enqueueJson(makeModelsResponse([{ id: "zero-model", context_length: 0 }]));
+
+    const registry = new OpenRouterModelRegistry(http, clock, FAKE_KEY);
+    await registry.getModels();
+
+    expect(registry.contextLengthFor("zero-model")).toBeUndefined();
+  });
+
   // ── Auth header ────────────────────────────────────────────────────────────
 
   it("sends Authorization header with Bearer token", async () => {

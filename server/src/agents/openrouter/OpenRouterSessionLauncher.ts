@@ -7,9 +7,11 @@ import type {
 } from "../claude/ISessionLauncher";
 import type { IHttpClient } from "../ollama/IHttpClient";
 import type { OpenRouterModelRegistry } from "./OpenRouterModelRegistry";
+import { fitToContextWindow } from "./PromptTruncator";
 
 const OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions";
 const DEFAULT_TIMEOUT_MS = 2 * 60 * 1000; // 2 minutes
+const DEFAULT_CONTEXT_WINDOW_TOKENS = 32768;
 
 interface OpenRouterMessage {
   role: "system" | "user" | "assistant";
@@ -50,6 +52,7 @@ export class OpenRouterSessionLauncher implements ISessionLauncher {
     private readonly apiKey: string,
     private readonly registry: OpenRouterModelRegistry,
     private readonly pinnedModel?: string,
+    private readonly contextWindowTokens?: number,
   ) {}
 
   async launch(
@@ -83,11 +86,21 @@ export class OpenRouterSessionLauncher implements ISessionLauncher {
     const startMs = this.clock.now().getTime();
     const timeoutMs = options?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 
+    const contextTokens =
+      this.contextWindowTokens ??
+      this.registry.contextLengthFor(model) ??
+      DEFAULT_CONTEXT_WINDOW_TOKENS;
+    const { systemPrompt, userMessage } = fitToContextWindow(
+      request.systemPrompt ?? "",
+      request.message,
+      contextTokens,
+    );
+
     const messages: OpenRouterMessage[] = [];
-    if (request.systemPrompt) {
-      messages.push({ role: "system", content: request.systemPrompt });
+    if (systemPrompt) {
+      messages.push({ role: "system", content: systemPrompt });
     }
-    messages.push({ role: "user", content: request.message });
+    messages.push({ role: "user", content: userMessage });
 
     try {
       const response = await this.httpClient.post(

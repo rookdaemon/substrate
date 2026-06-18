@@ -246,6 +246,38 @@ describe("OpenRouterSessionLauncher", () => {
     expect(result.error).toContain("[REDACTED]");
   });
 
+  // ── Prompt truncation ──────────────────────────────────────────────────────
+
+  it("truncates user message when content exceeds context window", async () => {
+    // Budget: (10000 - 4096) * 4 * 0.9 = ~21254 chars
+    const launcher10k = new OpenRouterSessionLauncher(http, clock, FAKE_KEY, registry, undefined, 10000);
+    const bigUser = "u".repeat(50000);
+    http.enqueueJson(makeChatResponse("ok"));
+
+    await launcher10k.launch(makeRequest({ message: bigUser }));
+
+    const body = http.getRequests()[0].body as Record<string, unknown>;
+    const messages = body.messages as Array<{ role: string; content: string }>;
+    const sentUser = messages[messages.length - 1].content;
+    expect(sentUser.length).toBeLessThan(bigUser.length);
+    expect(sentUser).toContain("[content truncated");
+  });
+
+  it("uses context window from registry when no override is provided", async () => {
+    // Registry model has context_length 8192; budget = (8192-4096)*4*0.9 = 14745 chars
+    const bigUser = "u".repeat(30000);
+    http.enqueueJson(makeChatResponse("ok"));
+    const launcher = new OpenRouterSessionLauncher(http, clock, FAKE_KEY, registry);
+
+    await launcher.launch(makeRequest({ message: bigUser }));
+
+    const body = http.getRequests()[0].body as Record<string, unknown>;
+    const messages = body.messages as Array<{ role: string; content: string }>;
+    const sentUser = messages[messages.length - 1].content;
+    expect(sentUser.length).toBeLessThan(bigUser.length);
+    expect(sentUser).toContain("[content truncated");
+  });
+
   // ── No available models ────────────────────────────────────────────────────
 
   it("returns failure when registry has no models", async () => {
