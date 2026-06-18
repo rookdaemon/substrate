@@ -3,6 +3,7 @@ import {
   defaultLoopConfig,
   MIN_SURVIVAL_ROUTINE_CYCLE_DELAY_MS,
   CycleResult,
+  IdleReason,
   LoopEvent,
   createInitialMetrics,
 } from "../../src/loop/types";
@@ -163,6 +164,92 @@ describe("CycleResult type", () => {
     expect(result.blocked).toBe(true);
     expect(result.blockedUntil).toBe("2026-03-12T10:00:00.000Z");
     expect(result.retryAfter).toBeUndefined();
+  });
+
+  it("can carry an idleReason for expected idle states", () => {
+    const emptyResult: CycleResult = {
+      cycleNumber: 5,
+      action: "idle",
+      success: true,
+      summary: "No tasks available — idle",
+      planEmpty: true,
+      idleReason: "plan_empty",
+    };
+    expect(emptyResult.idleReason).toBe("plan_empty");
+
+    const completeResult: CycleResult = {
+      cycleNumber: 6,
+      action: "idle",
+      success: true,
+      summary: "No tasks available — idle",
+      planComplete: true,
+      idleReason: "plan_complete",
+    };
+    expect(completeResult.idleReason).toBe("plan_complete");
+  });
+
+  it("can carry no_actionable idleReason for diagnostic anomaly state", () => {
+    // Tasks exist, not complete, not blocked — but no dispatch candidate found.
+    // This is the HB47-50 anomaly case and warrants investigation.
+    const result: CycleResult = {
+      cycleNumber: 7,
+      action: "idle",
+      success: true,
+      summary: "No tasks available — idle",
+      planEmpty: false,
+      planComplete: false,
+      idleReason: "no_actionable",
+    };
+
+    expect(result.idleReason).toBe("no_actionable");
+    expect(result.planEmpty).toBe(false);
+    expect(result.planComplete).toBe(false);
+  });
+
+  it("can carry already_running idleReason for skipped cycles", () => {
+    const result: CycleResult = {
+      cycleNumber: 8,
+      action: "idle",
+      success: true,
+      summary: "Skipped — cycle already in progress",
+      idleReason: "already_running",
+    };
+
+    expect(result.idleReason).toBe("already_running");
+  });
+});
+
+describe("IdleReason type", () => {
+  it("includes all expected literal values", () => {
+    const reasons: IdleReason[] = [
+      "plan_empty",
+      "plan_complete",
+      "all_blocked",
+      "hold_until",
+      "no_actionable",
+      "already_running",
+    ];
+
+    expect(reasons).toHaveLength(6);
+    expect(reasons).toContain("plan_empty");
+    expect(reasons).toContain("plan_complete");
+    expect(reasons).toContain("all_blocked");
+    expect(reasons).toContain("hold_until");
+    expect(reasons).toContain("no_actionable");
+    expect(reasons).toContain("already_running");
+  });
+
+  it("distinguishes expected idle (plan_empty, plan_complete, all_blocked) from anomalous idle (no_actionable)", () => {
+    const expectedReasons: IdleReason[] = ["plan_empty", "plan_complete", "all_blocked", "hold_until", "already_running"];
+    const anomalousReasons: IdleReason[] = ["no_actionable"];
+
+    // Expected reasons are not anomalous
+    for (const r of expectedReasons) {
+      expect(anomalousReasons).not.toContain(r);
+    }
+
+    // no_actionable is the HB47-50 diagnostic case
+    expect(anomalousReasons).toContain("no_actionable");
   });
 });
 

@@ -44,6 +44,28 @@ export function defaultLoopConfig(overrides?: Partial<LoopConfig>): LoopConfig {
   };
 }
 
+/**
+ * Typed reason for an idle cycle. Distinguishes expected idle states from
+ * anomalous cases — particularly "no_actionable" (tasks exist and are not
+ * fully blocked, but findNextActionable returned null), which was the
+ * HB47-50 anomaly diagnostic target flagged 2026-06-18.
+ *
+ * - plan_empty     : PLAN.md has no task entries at all
+ * - plan_complete  : all task entries are marked [x]
+ * - all_blocked    : tasks exist but all are status-blocked or time-blocked
+ * - hold_until     : a candidate task was selected but held by HOLD_UNTIL
+ * - no_actionable  : tasks exist and are not fully blocked, but findNextActionable
+ *                    returned null (anomalous — warrants diagnostic investigation)
+ * - already_running: cycle skipped because a previous cycle was still in progress
+ */
+export type IdleReason =
+  | "plan_empty"
+  | "plan_complete"
+  | "all_blocked"
+  | "hold_until"
+  | "no_actionable"
+  | "already_running";
+
 export interface CycleResult {
   cycleNumber: number;
   action: "dispatch" | "idle";
@@ -54,6 +76,12 @@ export interface CycleResult {
   planEmpty?: boolean;
   /** True when PLAN.md has task entries and every task is complete. */
   planComplete?: boolean;
+  /**
+   * Typed reason for an idle cycle — distinguishes expected idle states (plan_empty,
+   * plan_complete, all_blocked) from anomalous states (no_actionable) that warrant
+   * diagnostic investigation. Always set when action === "idle".
+   */
+  idleReason?: IdleReason;
   /** True when a dispatch was blocked without implying a whole-loop rate-limit backoff. */
   blocked?: boolean;
   /** ISO 8601 UTC timestamp when a task-local time block lifts. Unlike retryAfter, this is not a rate-limit signal. */
