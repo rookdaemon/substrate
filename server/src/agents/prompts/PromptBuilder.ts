@@ -113,7 +113,7 @@ Direct substrate tool surfaces for Pi (use \`${tools.runShell}\` with curl; incl
 - Get usage summary: \`${tools.getUsageSummary}?windowHours=24\`
 - Query metrics with read-only SQL: \`${tools.queryMetrics}\` with JSON {"sql":"SELECT ...","params":[],"maxRows":100}
 - Get shell-independence inventory and scorecard: \`bash/curl GET ${baseUrl}/api/shell-independence\`
-- Dispatch code work: \`${codeDispatchTool}\` with JSON {"spec":"task","backend":"auto","files":[],"testCommand":"npm test","cwd":"optional"}
+- Dispatch code work: \`${codeDispatchTool}\` with JSON {"spec":"task","backend":"auto","files":[],"testCommand":"npm test && npm run lint","cwd":"optional"}; when omitted, changed files are guarded by the default test+lint command
 
 Before doing repo-wide searches for launcher/provider/code-dispatch dependency inventory, call the shell-independence endpoint and use its deterministic report as the starting point. Only inspect source after the report names a concrete gap.`;
   }

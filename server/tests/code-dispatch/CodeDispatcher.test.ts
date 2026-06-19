@@ -73,7 +73,7 @@ describe("CodeDispatcher", () => {
     it("loads CODING_CONTEXT.md and passes it to the backend", async () => {
       await fs.writeFile(CONTEXT_PATH, CODING_CONTEXT);
       claudeBackend.enqueue(successBackendResult());
-      // git diff --name-only
+      // git status --porcelain=v1
       processRunner.enqueue({ stdout: "", stderr: "", exitCode: 0 });
 
       await dispatcher.dispatch(makeTask());
@@ -84,7 +84,7 @@ describe("CodeDispatcher", () => {
 
     it("proceeds without error when CODING_CONTEXT.md is absent", async () => {
       claudeBackend.enqueue(successBackendResult());
-      processRunner.enqueue({ stdout: "", stderr: "", exitCode: 0 }); // git diff
+      processRunner.enqueue({ stdout: "", stderr: "", exitCode: 0 }); // git status
 
       const result = await dispatcher.dispatch(makeTask());
       expect(result.success).toBe(true);
@@ -96,7 +96,7 @@ describe("CodeDispatcher", () => {
     it("reads listed source files and passes them in the context", async () => {
       await fs.writeFile("/src/foo.ts", "export const x = 1;");
       claudeBackend.enqueue(successBackendResult());
-      processRunner.enqueue({ stdout: "", stderr: "", exitCode: 0 }); // git diff
+      processRunner.enqueue({ stdout: "", stderr: "", exitCode: 0 }); // git status
 
       await dispatcher.dispatch(makeTask({ files: ["/src/foo.ts"] }));
 
@@ -106,7 +106,7 @@ describe("CodeDispatcher", () => {
 
     it("skips files that do not exist", async () => {
       claudeBackend.enqueue(successBackendResult());
-      processRunner.enqueue({ stdout: "", stderr: "", exitCode: 0 }); // git diff
+      processRunner.enqueue({ stdout: "", stderr: "", exitCode: 0 }); // git status
 
       const result = await dispatcher.dispatch(makeTask({ files: ["/nonexistent.ts"] }));
       expect(result.success).toBe(true);
@@ -117,7 +117,7 @@ describe("CodeDispatcher", () => {
   describe("backend options", () => {
     it("passes task model and effort overrides to the selected backend", async () => {
       codexBackend.enqueue(successBackendResult());
-      processRunner.enqueue({ stdout: "", stderr: "", exitCode: 0 }); // git diff
+      processRunner.enqueue({ stdout: "", stderr: "", exitCode: 0 }); // git status
 
       await dispatcher.dispatch(makeTask({
         backend: "codex",
@@ -135,7 +135,7 @@ describe("CodeDispatcher", () => {
   describe("backend selection", () => {
     it("uses 'claude' backend when backend='claude'", async () => {
       claudeBackend.enqueue(successBackendResult());
-      processRunner.enqueue({ stdout: "", stderr: "", exitCode: 0 }); // git diff
+      processRunner.enqueue({ stdout: "", stderr: "", exitCode: 0 }); // git status
 
       const result = await dispatcher.dispatch(makeTask({ backend: "claude" }));
       expect(result.backendUsed).toBe("claude");
@@ -151,7 +151,7 @@ describe("CodeDispatcher", () => {
         ["pi", piBackend],
       ]);
       const piDispatcher = new CodeDispatcher(fs, processRunner, SUBSTRATE_PATH, backendsWithPi, clock);
-      processRunner.enqueue({ stdout: "", stderr: "", exitCode: 0 }); // git diff
+      processRunner.enqueue({ stdout: "", stderr: "", exitCode: 0 }); // git status
 
       const result = await piDispatcher.dispatch(makeTask({ backend: "auto" }));
       expect(result.backendUsed).toBe("pi");
@@ -166,7 +166,7 @@ describe("CodeDispatcher", () => {
         ["pi", piBackend],
       ]);
       const piDispatcher = new CodeDispatcher(fs, processRunner, SUBSTRATE_PATH, backendsWithPi, clock);
-      processRunner.enqueue({ stdout: "", stderr: "", exitCode: 0 }); // git diff
+      processRunner.enqueue({ stdout: "", stderr: "", exitCode: 0 }); // git status
 
       const task = makeTask();
       delete task.backend;
@@ -183,7 +183,7 @@ describe("CodeDispatcher", () => {
         ["pi", piBackend],
       ]);
       const piDispatcher = new CodeDispatcher(fs, processRunner, SUBSTRATE_PATH, backendsWithPi, clock);
-      processRunner.enqueue({ stdout: "", stderr: "", exitCode: 0 }); // git diff
+      processRunner.enqueue({ stdout: "", stderr: "", exitCode: 0 }); // git status
 
       const result = await piDispatcher.dispatch(
         makeTask({ backend: "auto", testCommand: undefined, files: ["a.ts", "b.ts"] }),
@@ -201,7 +201,7 @@ describe("CodeDispatcher", () => {
         ["pi", piBackend],
       ]);
       const piDispatcher = new CodeDispatcher(fs, processRunner, SUBSTRATE_PATH, backendsWithPi, clock);
-      processRunner.enqueue({ stdout: "", stderr: "", exitCode: 0 }); // git diff
+      processRunner.enqueue({ stdout: "", stderr: "", exitCode: 0 }); // git status
       processRunner.enqueue({ stdout: "", stderr: "", exitCode: 0 }); // test
 
       const result = await piDispatcher.dispatch(
@@ -220,7 +220,7 @@ describe("CodeDispatcher", () => {
         ["pi", piBackend],
       ]);
       const piDispatcher = new CodeDispatcher(fs, processRunner, SUBSTRATE_PATH, backendsWithPi, clock);
-      processRunner.enqueue({ stdout: "", stderr: "", exitCode: 0 }); // git diff
+      processRunner.enqueue({ stdout: "", stderr: "", exitCode: 0 }); // git status
       processRunner.enqueue({ stdout: "", stderr: "", exitCode: 0 }); // test
 
       const result = await piDispatcher.dispatch(
@@ -239,7 +239,7 @@ describe("CodeDispatcher", () => {
         ["pi", piBackend],
       ]);
       const piDispatcher = new CodeDispatcher(fs, processRunner, SUBSTRATE_PATH, backendsWithPi, clock);
-      processRunner.enqueue({ stdout: "", stderr: "", exitCode: 0 }); // git diff
+      processRunner.enqueue({ stdout: "", stderr: "", exitCode: 0 }); // git status
       processRunner.enqueue({ stdout: "", stderr: "", exitCode: 0 }); // test
 
       const result = await piDispatcher.dispatch(
@@ -251,7 +251,7 @@ describe("CodeDispatcher", () => {
 
     it("uses configured codex default for auto dispatch", async () => {
       codexBackend.enqueue(successBackendResult());
-      processRunner.enqueue({ stdout: "", stderr: "", exitCode: 0 }); // git diff
+      processRunner.enqueue({ stdout: "", stderr: "", exitCode: 0 }); // git status
       const codexDefaultDispatcher = new CodeDispatcher(
         fs,
         processRunner,
@@ -315,16 +315,17 @@ describe("CodeDispatcher", () => {
     });
   });
 
-  describe("git diff (filesChanged)", () => {
-    it("parses changed files from git diff output", async () => {
+  describe("git status (filesChanged)", () => {
+    it("parses changed files from git status output", async () => {
       claudeBackend.enqueue(successBackendResult());
-      processRunner.enqueue({ stdout: "src/a.ts\nsrc/b.ts\n", stderr: "", exitCode: 0 });
+      processRunner.enqueue({ stdout: " M src/a.ts\n?? src/b.ts\n", stderr: "", exitCode: 0 });
+      processRunner.enqueue({ stdout: "guard passed", stderr: "", exitCode: 0 });
 
       const result = await dispatcher.dispatch(makeTask());
       expect(result.filesChanged).toEqual(["src/a.ts", "src/b.ts"]);
     });
 
-    it("returns empty array when git diff fails", async () => {
+    it("returns empty array when git status fails", async () => {
       claudeBackend.enqueue(successBackendResult());
       processRunner.enqueue({ stdout: "", stderr: "not a git repo", exitCode: 128 });
 
@@ -336,15 +337,38 @@ describe("CodeDispatcher", () => {
   describe("test gating", () => {
     it("returns testsPassed=null when no testCommand is given", async () => {
       claudeBackend.enqueue(successBackendResult());
-      processRunner.enqueue({ stdout: "", stderr: "", exitCode: 0 }); // git diff
+      processRunner.enqueue({ stdout: "", stderr: "", exitCode: 0 }); // git status: no changes
 
       const result = await dispatcher.dispatch(makeTask({ testCommand: undefined }));
       expect(result.testsPassed).toBeNull();
     });
 
+    it("runs the default test+lint guard when files changed and no testCommand is given", async () => {
+      claudeBackend.enqueue(successBackendResult());
+      processRunner.enqueue({ stdout: " M src/foo.ts", stderr: "", exitCode: 0 }); // git status
+      processRunner.enqueue({ stdout: "guard passed", stderr: "", exitCode: 0 }); // default guard
+
+      const result = await dispatcher.dispatch(makeTask({ testCommand: undefined }));
+
+      expect(result.testsPassed).toBe(true);
+      const guardCall = processRunner.getCalls().find((c) => c.command === "bash");
+      expect(guardCall?.args).toEqual(["-lc", "npm test && npm run lint"]);
+    });
+
+    it("detects untracked files before deciding whether to run the guard", async () => {
+      claudeBackend.enqueue(successBackendResult());
+      processRunner.enqueue({ stdout: "?? src/new-file.ts", stderr: "", exitCode: 0 }); // git status
+      processRunner.enqueue({ stdout: "guard passed", stderr: "", exitCode: 0 }); // default guard
+
+      const result = await dispatcher.dispatch(makeTask({ testCommand: undefined }));
+
+      expect(result.filesChanged).toEqual(["src/new-file.ts"]);
+      expect(result.testsPassed).toBe(true);
+    });
+
     it("returns testsPassed=true when tests pass", async () => {
       claudeBackend.enqueue(successBackendResult());
-      processRunner.enqueue({ stdout: "a.ts", stderr: "", exitCode: 0 }); // git diff
+      processRunner.enqueue({ stdout: "a.ts", stderr: "", exitCode: 0 }); // git status
       processRunner.enqueue({ stdout: "Tests passed", stderr: "", exitCode: 0 }); // npm test
 
       const result = await dispatcher.dispatch(makeTask({ testCommand: "npm test" }));
@@ -354,7 +378,7 @@ describe("CodeDispatcher", () => {
 
     it("preserves changes and returns testsPassed=false when tests fail", async () => {
       claudeBackend.enqueue(successBackendResult());
-      processRunner.enqueue({ stdout: "a.ts", stderr: "", exitCode: 0 }); // git diff
+      processRunner.enqueue({ stdout: "a.ts", stderr: "", exitCode: 0 }); // git status
       processRunner.enqueue({ stdout: "", stderr: "FAIL", exitCode: 1 });  // npm test fails
 
       const result = await dispatcher.dispatch(makeTask({ testCommand: "npm test" }));
@@ -376,12 +400,12 @@ describe("CodeDispatcher", () => {
 
     it("passes cwd to test command", async () => {
       claudeBackend.enqueue(successBackendResult());
-      processRunner.enqueue({ stdout: "", stderr: "", exitCode: 0 }); // git diff
+      processRunner.enqueue({ stdout: "", stderr: "", exitCode: 0 }); // git status
       processRunner.enqueue({ stdout: "", stderr: "", exitCode: 0 }); // test
 
       await dispatcher.dispatch(makeTask({ testCommand: "npm test", cwd: "/my/project" }));
 
-      const testCall = processRunner.getCalls().find((c) => c.command === "npm");
+      const testCall = processRunner.getCalls().find((c) => c.command === "bash");
       expect(testCall?.options?.cwd).toBe("/my/project");
     });
   });
@@ -389,7 +413,7 @@ describe("CodeDispatcher", () => {
   describe("cwd", () => {
     it("passes task.cwd through to the backend context", async () => {
       claudeBackend.enqueue(successBackendResult());
-      processRunner.enqueue({ stdout: "", stderr: "", exitCode: 0 }); // git diff
+      processRunner.enqueue({ stdout: "", stderr: "", exitCode: 0 }); // git status
 
       await dispatcher.dispatch(makeTask({ cwd: "/repo" }));
       expect(claudeBackend.calls[0].context.cwd).toBe("/repo");
@@ -399,7 +423,7 @@ describe("CodeDispatcher", () => {
   describe("CodeResult fields", () => {
     it("reports durationMs using clock (FixedClock gives 0ms elapsed)", async () => {
       claudeBackend.enqueue(successBackendResult());
-      processRunner.enqueue({ stdout: "", stderr: "", exitCode: 0 }); // git diff
+      processRunner.enqueue({ stdout: "", stderr: "", exitCode: 0 }); // git status
 
       const result = await dispatcher.dispatch(makeTask());
       // FixedClock always returns the same timestamp so elapsed = 0
@@ -408,7 +432,7 @@ describe("CodeDispatcher", () => {
 
     it("includes backendUsed in result", async () => {
       claudeBackend.enqueue(successBackendResult());
-      processRunner.enqueue({ stdout: "", stderr: "", exitCode: 0 }); // git diff
+      processRunner.enqueue({ stdout: "", stderr: "", exitCode: 0 }); // git status
 
       const result = await dispatcher.dispatch(makeTask({ backend: "claude" }));
       expect(result.backendUsed).toBe("claude");

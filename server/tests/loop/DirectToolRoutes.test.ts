@@ -212,7 +212,8 @@ describe("direct HTTP tool routes", () => {
       clock,
       "codex",
     );
-    runner.enqueue({ stdout: "src/a.ts\n", stderr: "", exitCode: 0 });
+    runner.enqueue({ stdout: " M src/a.ts\n", stderr: "", exitCode: 0 });
+    runner.enqueue({ stdout: "guard passed", stderr: "", exitCode: 0 });
     server = new LoopHttpServer();
     server.setCodeDispatcher(dispatcher);
     port = await server.listen(0);

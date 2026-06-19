@@ -34,16 +34,21 @@ export class EndorsementScreener implements IEndorsementScreener {
 
   async evaluate(input: ScreenerInput): Promise<ScreenerResult> {
     const boundaries = await this.loadBoundaries();
+    if (boundaries === null) {
+      const verdict = { verdict: "ESCALATE" as const, matchedSection: "boundaries-missing" };
+      await this.appendLog(input.action, verdict);
+      return { ...verdict, timestamp: this.clock.now().getTime() };
+    }
     const verdict = await this.invokeModel(input, boundaries);
     await this.appendLog(input.action, verdict);
     return { ...verdict, timestamp: this.clock.now().getTime() };
   }
 
-  private async loadBoundaries(): Promise<string> {
+  private async loadBoundaries(): Promise<string | null> {
     try {
       return await this.fs.readFile(this.config.boundariesPath);
     } catch {
-      return "(BOUNDARIES.md not found — treat all actions as ESCALATE)";
+      return null;
     }
   }
 

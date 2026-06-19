@@ -148,14 +148,15 @@ describe("EndorsementScreener", () => {
       expect(result.matchedSection).toBeUndefined();
     });
 
-    it("sends fallback text to model when BOUNDARIES.md is missing", async () => {
+    it("deterministically escalates when BOUNDARIES.md is missing", async () => {
       await fs.unlink(BOUNDARIES_PATH);
       launcher.enqueueSuccess(JSON.stringify({ verdict: "PROCEED" }));
 
-      await screener.evaluate({ action: "Some action" });
+      const result = await screener.evaluate({ action: "Some action" });
 
-      const launches = launcher.getLaunches();
-      expect(launches[0].request.message).toContain("BOUNDARIES.md not found");
+      expect(result.verdict).toBe("ESCALATE");
+      expect(result.matchedSection).toBe("boundaries-missing");
+      expect(launcher.getLaunches()).toHaveLength(0);
     });
   });
 

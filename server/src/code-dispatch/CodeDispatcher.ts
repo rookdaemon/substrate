@@ -5,9 +5,13 @@ import type { IProcessRunner } from "../agents/claude/IProcessRunner";
 import type { ICodeBackend, SubstrateSlice } from "./ICodeBackend";
 import type { BackendType, CodeTask, CodeResult } from "./types";
 
+export const DEFAULT_CODE_DISPATCH_GUARD_COMMAND = "npm test && npm run lint";
+
 /**
- * CodeDispatcher — loads coding context, routes tasks to a backend, gates with
- * an optional test command, and reverts changes if tests fail.
+ * CodeDispatcher — loads coding context, routes tasks to a backend, and gates
+ * changed work with tests/lint. The default guard closes the self-modification
+ * bypass where an agent could omit testCommand and still receive success after
+ * changing source.
  */
 export class CodeDispatcher {
   constructor(
@@ -103,11 +107,12 @@ export class CodeDispatcher {
       };
     }
 
-    // 5. Get changed files via git diff
+    // 5. Get changed files via git status, including untracked files
     const filesChanged = await this.getChangedFiles(cwd);
 
-    // 6. Run tests if testCommand specified
-    if (!task.testCommand) {
+    // 6. Run guard command when the backend changed files. If the caller did not
+    // provide a command, use the full default test+lint guard.
+    if (filesChanged.length === 0 && !task.testCommand) {
       return {
         success: true,
         output: backendResult.output,
@@ -118,9 +123,10 @@ export class CodeDispatcher {
       };
     }
 
-    const testsPassed = await this.runTests(task.testCommand, cwd);
+    const guardCommand = task.testCommand ?? DEFAULT_CODE_DISPATCH_GUARD_COMMAND;
+    const testsPassed = await this.runGuard(guardCommand, cwd);
 
-    // 7. Do not auto-revert on test failure. This dispatcher may run in a shared
+    // 7. Do not auto-revert on guard failure. This dispatcher may run in a shared
     // or live checkout; destructive cleanup could erase unrelated user work.
     if (!testsPassed) {
       return {
@@ -128,7 +134,7 @@ export class CodeDispatcher {
         output: backendResult.output,
         filesChanged,
         testsPassed: false,
-        error: "Tests failed — changes preserved for review",
+        error: "Guard command failed — changes preserved for review",
         backendUsed: backendType,
         durationMs: this.clock.now().getTime() - startMs,
       };
@@ -170,21 +176,24 @@ export class CodeDispatcher {
 
   private async getChangedFiles(cwd: string): Promise<string[]> {
     try {
-      const result = await this.processRunner.run("git", ["diff", "--name-only"], { cwd });
+      const result = await this.processRunner.run(
+        "git",
+        ["status", "--porcelain=v1", "--untracked-files=all"],
+        { cwd }
+      );
       if (result.exitCode !== 0) return [];
       return result.stdout
         .split("\n")
-        .map((f) => f.trim())
+        .map((line) => parseGitStatusPath(line))
         .filter(Boolean);
     } catch {
       return [];
     }
   }
 
-  private async runTests(testCommand: string, cwd: string): Promise<boolean> {
+  private async runGuard(testCommand: string, cwd: string): Promise<boolean> {
     try {
-      const [cmd, ...args] = testCommand.split(/\s+/);
-      const result = await this.processRunner.run(cmd, args, { cwd });
+      const result = await this.processRunner.run("bash", ["-lc", testCommand], { cwd });
       return result.exitCode === 0;
     } catch {
       return false;
@@ -195,4 +204,17 @@ export class CodeDispatcher {
 
 function isLegacyCommercialShellBackend(backend: BackendType): boolean {
   return backend === "claude" || backend === "copilot" || backend === "gemini";
+}
+
+function parseGitStatusPath(line: string): string {
+  if (!line.trim()) return "";
+  if (line.length < 4 || line[2] !== " ") {
+    return line.trim();
+  }
+  const pathPart = line.slice(3).trim();
+  const renameArrow = " -> ";
+  if (pathPart.includes(renameArrow)) {
+    return pathPart.slice(pathPart.lastIndexOf(renameArrow) + renameArrow.length).trim();
+  }
+  return pathPart;
 }
