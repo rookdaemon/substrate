@@ -55,6 +55,7 @@ export class HealthCheckScheduler {
     const lastCheckTime = this.scheduler.getStatus().lastRunTime;
     if (lastCheckTime === null || this.lastResult === null) return false;
     if (this.errorLogReader?.hasErrorsSince(lastCheckTime)) return false;
+    if (!this.healthCheck.runtimeSignalsHealthy()) return false;
     return true;
   }
 

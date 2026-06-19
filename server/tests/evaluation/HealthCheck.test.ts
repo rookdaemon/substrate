@@ -1,4 +1,5 @@
 import { HealthCheck } from "../../src/evaluation/HealthCheck";
+import { InferenceLivenessTracker } from "../../src/evaluation/InferenceLivenessTracker";
 import { InMemoryFileSystem } from "../../src/substrate/abstractions/InMemoryFileSystem";
 import { SubstrateConfig } from "../../src/substrate/config";
 import { SubstrateFileReader } from "../../src/substrate/io/FileReader";
@@ -17,13 +18,17 @@ describe("HealthCheck", () => {
     await fs.mkdir("/substrate", { recursive: true });
   });
 
-  it("returns healthy result when all files are well-formed", async () => {
+  async function writeHealthySubstrate(): Promise<void> {
     await fs.writeFile("/substrate/PLAN.md", "# Plan\n\n## Current Goal\nBuild authentication system\n\n## Tasks\n- [ ] Task A\n- [ ] Task B");
     await fs.writeFile("/substrate/VALUES.md", "# Values\n\nBe good");
     await fs.writeFile("/substrate/SECURITY.md", "# Security\n\n## Constraints\nStay safe");
     await fs.writeFile("/substrate/CHARTER.md", "# Charter\n\nOur mission");
     await fs.writeFile("/substrate/MEMORY.md", "# Memory\n\nWe are building an authentication system");
     await fs.writeFile("/substrate/SKILLS.md", "# Skills\n\nKnown: authentication, TypeScript");
+  }
+
+  it("returns healthy result when all files are well-formed", async () => {
+    await writeHealthySubstrate();
 
     const result = await healthCheck.run();
 
@@ -56,5 +61,46 @@ describe("HealthCheck", () => {
     expect(result).toHaveProperty("planQuality");
     expect(result).toHaveProperty("reasoning");
     expect(result).toHaveProperty("overall");
+  });
+
+  it("reports no observed inference signal as unknown and prevents healthy full status", async () => {
+    await writeHealthySubstrate();
+    const livenessTracker = new InferenceLivenessTracker();
+    healthCheck = new HealthCheck(reader, null, fs, "/substrate", livenessTracker);
+
+    const fullResult = await healthCheck.run();
+    const criticalResult = await healthCheck.runCriticalChecks();
+
+    expect(fullResult.overall).toBe("degraded");
+    expect(fullResult.inference).toEqual(expect.objectContaining({
+      observed: false,
+      alive: false,
+      consecutiveFailures: 0,
+    }));
+    expect(criticalResult.inferenceAlive).toBe("unknown");
+    expect(criticalResult.healthy).toBe(true);
+    expect(healthCheck.runtimeSignalsHealthy()).toBe(false);
+  });
+
+  it("marks health unhealthy when persisted inference failures are above threshold", async () => {
+    await writeHealthySubstrate();
+    const livenessTracker = new InferenceLivenessTracker();
+    livenessTracker.recordFailure("HTTP 401");
+    livenessTracker.recordFailure("HTTP 401");
+    livenessTracker.recordFailure("HTTP 401");
+    healthCheck = new HealthCheck(reader, null, fs, "/substrate", livenessTracker);
+
+    const fullResult = await healthCheck.run();
+    const criticalResult = await healthCheck.runCriticalChecks();
+
+    expect(fullResult.overall).toBe("unhealthy");
+    expect(fullResult.inference).toEqual(expect.objectContaining({
+      observed: true,
+      alive: false,
+      consecutiveFailures: 3,
+      lastError: "HTTP 401",
+    }));
+    expect(criticalResult.inferenceAlive).toBe("degraded");
+    expect(criticalResult.healthy).toBe(false);
   });
 });

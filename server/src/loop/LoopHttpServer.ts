@@ -766,6 +766,8 @@ export class LoopHttpServer {
         checks: {
           orchestrator: orchestratorHealthy ? "healthy" : "unhealthy",
           substrateFsWritable: criticalResult.substrateFsWritable,
+          inferenceAlive: criticalResult.inferenceAlive,
+          outputQuality: criticalResult.outputQuality,
           lastCycleAgeMs,
           lastCycleResult,
           consecutiveAuditFailures: this.orchestrator.getMetrics().consecutiveAuditFailures,

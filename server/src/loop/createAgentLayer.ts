@@ -484,7 +484,12 @@ export async function createAgentLayer(
       launcher: withSurvivalPolicy(new SemaphoreSessionLauncher(anthropicFallbackLauncher, apiSemaphore), "anthropic", anthropicFallbackModel),
     });
   }
-  const livenessTracker = new InferenceLivenessTracker(clock);
+  const livenessStatePath = path.resolve(config.substratePath, "..", ".inference-liveness-state.json");
+  const livenessTracker = await InferenceLivenessTracker.load(clock, {
+    fs,
+    statePath: livenessStatePath,
+    logger,
+  });
   gatedLauncher = new ProviderFallbackLauncher(
     withSurvivalPolicy(gatedLauncher, sessionProvider, activeModel),
     fallbackRoutes,

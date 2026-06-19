@@ -1,5 +1,6 @@
 import { HealthCheckScheduler } from "../../src/loop/HealthCheckScheduler";
 import { HealthCheck } from "../../src/evaluation/HealthCheck";
+import { InferenceLivenessTracker } from "../../src/evaluation/InferenceLivenessTracker";
 import { FixedClock } from "../../src/substrate/abstractions/FixedClock";
 import { InMemoryLogger } from "../../src/logging";
 import { InMemoryFileSystem } from "../../src/substrate/abstractions/InMemoryFileSystem";
@@ -356,6 +357,33 @@ describe("HealthCheckScheduler", () => {
       const fastResult = await s.runCheck();
 
       expect(fastResult.result).toEqual(lastResult);
+    });
+
+    it("does not fast-path a cached healthy result after inference liveness degrades", async () => {
+      const livenessTracker = new InferenceLivenessTracker(clock);
+      livenessTracker.recordSuccess();
+      const livenessAwareHealthCheck = new HealthCheck(reader, null, undefined, undefined, livenessTracker);
+      const s = new HealthCheckScheduler(livenessAwareHealthCheck, clock, logger, {
+        checkIntervalMs: 3600000,
+        noErrorWindowCycles: 3,
+      }, noErrors);
+
+      for (let i = 0; i < 3; i++) {
+        clock.setNow(new Date(clock.now().getTime() + 3600000));
+        const r = await s.runCheck();
+        expect(r.result?.overall).toBe("healthy");
+      }
+
+      livenessTracker.recordFailure("HTTP 401");
+      livenessTracker.recordFailure("HTTP 401");
+      livenessTracker.recordFailure("HTTP 401");
+
+      clock.setNow(new Date(clock.now().getTime() + 3600000));
+      const result = await s.runCheck();
+
+      expect(logger.getEntries().some((l) => l.includes("fast-path skip"))).toBe(false);
+      expect(result.result?.overall).toBe("unhealthy");
+      expect(result.result?.inference?.consecutiveFailures).toBe(3);
     });
 
     it("resets consecutive count when a full check returns non-healthy, requiring N new healthy cycles for fast-path", async () => {

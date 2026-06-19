@@ -19,6 +19,7 @@ export interface HealthCheckResult {
   trends?: TrendAnalysis; // Optional trend analysis (only available after baseline is established)
   /** Inference path liveness. Omitted if no InferenceLivenessTracker was provided. */
   inference?: {
+    observed: boolean;
     alive: boolean;
     consecutiveFailures: number;
     lastError?: string;
@@ -30,9 +31,9 @@ export interface CriticalChecksResult {
   substrateFsWritable: "healthy" | "unhealthy";
   /**
    * Inference liveness status.
-   * - "healthy": tracker present and fewer than MAX_INFERENCE_FAILURES consecutive failures.
-   * - "degraded": tracker present and ≥ MAX_INFERENCE_FAILURES consecutive failures.
-   * - "unknown": no InferenceLivenessTracker was provided (legacy / no probe).
+   * - "healthy": tracker present, at least one attempt observed, and fewer than MAX_INFERENCE_FAILURES consecutive failures.
+   * - "degraded": tracker present, at least one attempt observed, and ≥ MAX_INFERENCE_FAILURES consecutive failures.
+   * - "unknown": no InferenceLivenessTracker was provided, or a tracker is present but no attempt has been observed yet.
    */
   inferenceAlive: "healthy" | "degraded" | "unknown";
   /**
@@ -140,8 +141,6 @@ export class HealthCheck {
       this.reasoningValidator.validate(),
     ]);
 
-    const overall = this.determineOverall(drift, consistency, security, planQuality, reasoning);
-
     // Record metrics and analyze trends if MetricsStore is available
     let trends: TrendAnalysis | undefined;
     if (this.metricsStore) {
@@ -156,16 +155,36 @@ export class HealthCheck {
 
     // Attach inference liveness state when a tracker is present.
     let inference: HealthCheckResult["inference"];
+    const inferenceAlive = this.evaluateInferenceLiveness();
     if (this.livenessTracker) {
       const state = this.livenessTracker.getState();
       inference = {
+        observed: state.observed,
         alive: state.alive,
         consecutiveFailures: state.consecutiveFailures,
         lastError: state.lastError,
       };
     }
 
+    const outputQuality = this.evaluateOutputQuality();
+    const overall = this.determineOverall(
+      drift,
+      consistency,
+      security,
+      planQuality,
+      reasoning,
+      inferenceAlive,
+      outputQuality,
+    );
+
     return { overall, drift, consistency, security, planQuality, reasoning, trends, inference };
+  }
+
+  /** Returns whether current non-cached runtime signals are still eligible for a cached healthy result. */
+  runtimeSignalsHealthy(): boolean {
+    if (this.livenessTracker && this.evaluateInferenceLiveness() !== "healthy") return false;
+    if (this.outputQualityMonitor && this.evaluateOutputQuality() !== "healthy") return false;
+    return true;
   }
 
   // ── private helpers ────────────────────────────────────────────────────────
@@ -190,8 +209,13 @@ export class HealthCheck {
     consistency: ConsistencyResult,
     security: SecurityResult,
     planQuality: PlanQualityResult,
-    reasoning: ReasoningResult
+    reasoning: ReasoningResult,
+    inferenceAlive: "healthy" | "degraded" | "unknown",
+    outputQuality: "healthy" | "degraded" | "unknown",
   ): "healthy" | "degraded" | "unhealthy" {
+    if (this.livenessTracker && inferenceAlive === "degraded") return "unhealthy";
+    if (this.outputQualityMonitor && outputQuality !== "healthy") return "unhealthy";
+
     const issues =
       (drift.score > 0.5 ? 1 : 0) +
       (consistency.score < 0.75 ? 1 : 0) + // Use quantitative score
@@ -199,7 +223,9 @@ export class HealthCheck {
       (planQuality.score < 0.5 ? 1 : 0) +
       (!reasoning.valid ? 1 : 0);
 
-    if (issues === 0) return "healthy";
+    if (issues === 0) {
+      return this.livenessTracker && inferenceAlive === "unknown" ? "degraded" : "healthy";
+    }
     if (issues <= 2) return "degraded";
     return "unhealthy";
   }

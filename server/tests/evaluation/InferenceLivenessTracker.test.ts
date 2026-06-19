@@ -1,4 +1,5 @@
 import { InferenceLivenessTracker } from "../../src/evaluation/InferenceLivenessTracker";
+import { InMemoryFileSystem } from "../../src/substrate/abstractions/InMemoryFileSystem";
 import { FixedClock } from "../../src/substrate/abstractions/FixedClock";
 
 describe("InferenceLivenessTracker", () => {
@@ -10,19 +11,21 @@ describe("InferenceLivenessTracker", () => {
     tracker = new InferenceLivenessTracker(clock);
   });
 
-  it("starts healthy with zero failures", () => {
+  it("starts fail-closed until an inference attempt is observed", () => {
     const state = tracker.getState();
-    expect(state.alive).toBe(true);
+    expect(state.observed).toBe(false);
+    expect(state.alive).toBe(false);
     expect(state.consecutiveFailures).toBe(0);
     expect(state.lastError).toBeUndefined();
     expect(state.lastSuccessAt).toBeNull();
     expect(state.lastFailureAt).toBeNull();
-    expect(tracker.isHealthy()).toBe(true);
+    expect(tracker.isHealthy()).toBe(false);
   });
 
   it("records a success", () => {
     tracker.recordSuccess();
     const state = tracker.getState();
+    expect(state.observed).toBe(true);
     expect(state.alive).toBe(true);
     expect(state.consecutiveFailures).toBe(0);
     expect(state.lastSuccessAt).toEqual(new Date("2026-06-12T10:00:00.000Z"));
@@ -87,12 +90,52 @@ describe("InferenceLivenessTracker", () => {
     expect(noClockTracker.getState().lastSuccessAt).toBeInstanceOf(Date);
   });
 
+  it("persists failures and reloads them after restart", async () => {
+    const fs = new InMemoryFileSystem();
+    const statePath = "/state/inference-liveness.json";
+    const first = new InferenceLivenessTracker(clock, { fs, statePath });
+
+    first.recordFailure("HTTP 401");
+    first.recordFailure("HTTP 401");
+    first.recordFailure("HTTP 401");
+    await first.flush();
+
+    const reloaded = await InferenceLivenessTracker.load(clock, { fs, statePath });
+    const state = reloaded.getState();
+
+    expect(state.observed).toBe(true);
+    expect(state.alive).toBe(false);
+    expect(state.consecutiveFailures).toBe(3);
+    expect(state.lastError).toBe("HTTP 401");
+    expect(reloaded.isHealthy()).toBe(false);
+  });
+
+  it("reloads a persisted success as healthy", async () => {
+    const fs = new InMemoryFileSystem();
+    const statePath = "/state/inference-liveness.json";
+    const first = new InferenceLivenessTracker(clock, { fs, statePath });
+
+    first.recordSuccess();
+    await first.flush();
+
+    const reloaded = await InferenceLivenessTracker.load(clock, { fs, statePath });
+
+    expect(reloaded.getState()).toEqual(expect.objectContaining({
+      observed: true,
+      alive: true,
+      consecutiveFailures: 0,
+    }));
+    expect(reloaded.isHealthy()).toBe(true);
+  });
+
   describe("getHealthStatus", () => {
-    it("reports 'unknown' before any inference (never probed) — NOT a false 'healthy'", () => {
-      // This is the boot-GREEN fix: alive/isHealthy still say healthy for backward
-      // compatibility, but getHealthStatus refuses to count a never-probed tracker as live.
-      expect(tracker.getState().alive).toBe(true); // legacy field unchanged
-      expect(tracker.isHealthy()).toBe(true); // legacy method unchanged
+    it("reports unknown before any inference attempt without weakening fail-closed isHealthy", () => {
+      expect(tracker.getState()).toEqual(expect.objectContaining({
+        observed: false,
+        alive: false,
+        consecutiveFailures: 0,
+      }));
+      expect(tracker.isHealthy()).toBe(false);
       expect(tracker.getHealthStatus()).toBe("unknown");
     });
 
@@ -153,6 +196,21 @@ describe("InferenceLivenessTracker", () => {
       expect(tracker.getHealthStatus(3, 60 * 1000)).toBe("unknown");
       tracker.recordSuccess(); // now at clock = +2min
       expect(tracker.getHealthStatus(3, 60 * 1000)).toBe("healthy");
+    });
+
+    it("reloads persisted failures as degraded", async () => {
+      const fs = new InMemoryFileSystem();
+      const statePath = "/state/inference-liveness.json";
+      const first = new InferenceLivenessTracker(clock, { fs, statePath });
+
+      first.recordFailure("HTTP 401");
+      first.recordFailure("HTTP 401");
+      first.recordFailure("HTTP 401");
+      await first.flush();
+
+      const reloaded = await InferenceLivenessTracker.load(clock, { fs, statePath });
+
+      expect(reloaded.getHealthStatus()).toBe("degraded");
     });
   });
 });
