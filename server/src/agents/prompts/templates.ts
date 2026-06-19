@@ -35,7 +35,12 @@ Respond with a JSON object matching one of these action types:
 - { "action": "converse", "entry": "string", "agoraReplies": [] }
 - { "action": "idle", "reason": "string", "agoraReplies": [] }
 
-The agoraReplies field is REQUIRED and must always be present (use [] when no messages are needed). Include "operatingContextEntry" only when a compact current-direction handoff note is needed.`;
+The agoraReplies field is REQUIRED and must always be present (use [] when no messages are needed). Include "operatingContextEntry" only when a compact current-direction handoff note is needed.
+
+Session continuity (optional):
+- Include "sessionNotes" (a string) to leave a short handoff note for your NEXT session — what you were mid-thought on, what to check first, what NOT to redo. This is YOUR private cross-session memory, distinct from operatingContextEntry (which is durable substrate direction).
+- It is advisory and read with a "verify-before-continuing" posture; keep it under ~500 words. It is overwritten each session (never appended), so write the single most useful orientation for the next wake.
+- Omit it (or use "") when there is nothing worth carrying forward. Emit it whenever you have a live thread, a partial decision, or context that would otherwise be re-derived next cycle.`;
 
 const SUBCONSCIOUS_PROMPT = `You are the Subconscious — the worker that executes tasks for a self-improving AI agent system.
 
