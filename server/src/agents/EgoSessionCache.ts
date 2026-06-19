@@ -99,31 +99,18 @@ export class EgoSessionCache {
       return null;
     }
 
-    // Check substrate fingerprint: PLAN.md and OPERATING_CONTEXT.md mtimes
-    const planPath = path.join(this.substratePath, "PLAN.md");
-    const ocPath = path.join(this.substratePath, "OPERATING_CONTEXT.md");
-
-    try {
-      const planStat = await this.fs.stat(planPath);
-      const currentPlanMtime = new Date(planStat.mtimeMs).toISOString();
-      if (currentPlanMtime !== entry.planMtime) {
-        return null;
-      }
-    } catch {
-      // If we can't stat PLAN.md, treat as fingerprint mismatch
-      return null;
-    }
-
-    try {
-      const ocStat = await this.fs.stat(ocPath);
-      const currentOcMtime = new Date(ocStat.mtimeMs).toISOString();
-      if (currentOcMtime !== entry.operatingContextMtime) {
-        return null;
-      }
-    } catch {
-      // If we can't stat OPERATING_CONTEXT.md, treat as fingerprint mismatch
-      return null;
-    }
+    // Note: the recorded PLAN.md / OPERATING_CONTEXT.md mtimes (entry.planMtime,
+    // entry.operatingContextMtime) are retained in the file header for human/diagnostic
+    // inspection, but are NOT used as a hard rejection gate here.
+    //
+    // Rationale: both PLAN.md and OPERATING_CONTEXT.md are rewritten on essentially every
+    // cycle — the Subconscious updates task status in PLAN.md and appends to
+    // OPERATING_CONTEXT.md between Ego sessions by design. A strict mtime-equality gate
+    // therefore invalidated the cache on nearly every read, so the handoff note never
+    // reached the next session. The notes are explicitly advisory and carry a
+    // "verify-before-continuing" posture; the 4h wall-time staleness check above is the
+    // bound that keeps them from going stale. See
+    // memory/ego_session_cache_writepath_diagnosis_2026-06-19.md.
 
     return entry;
   }

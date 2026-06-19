@@ -98,27 +98,31 @@ describe("EgoSessionCache", () => {
       expect(result).toBeNull();
     });
 
-    it("returns null when PLAN.md has been modified since cache was written", async () => {
+    it("still returns notes when PLAN.md / OPERATING_CONTEXT.md changed since write (no hard fingerprint gate)", async () => {
+      // Regression guard for the cross-session continuity fix: PLAN.md and
+      // OPERATING_CONTEXT.md are rewritten on essentially every cycle, so the cache
+      // must NOT be invalidated merely because they changed. Only wall-time staleness
+      // (4h) gates the notes; content freshness is the reader's responsibility
+      // (verify-before-continuing posture). See
+      // memory/ego_session_cache_writepath_diagnosis_2026-06-19.md.
       const fs = new InMemoryFileSystem();
       await fs.mkdir(SUBSTRATE_PATH, { recursive: true });
       await fs.writeFile(`${SUBSTRATE_PATH}/PLAN.md`, "# Plan v1");
-      await fs.writeFile(`${SUBSTRATE_PATH}/OPERATING_CONTEXT.md`, "# OC");
+      await fs.writeFile(`${SUBSTRATE_PATH}/OPERATING_CONTEXT.md`, "# OC v1");
 
       const now = new Date("2026-06-16T10:00:00Z");
       const cache = new EgoSessionCache(SUBSTRATE_PATH, fs, makeClock(now));
-      await cache.write("Notes from before plan changed.", "action=dispatch");
+      await cache.write("Notes from before substrate churned.", "action=dispatch");
 
-      // Simulate PLAN.md being modified (different mtime via new write)
-      // InMemoryFileSystem updates mtime on writeFile
+      // Simulate the Subconscious updating both files between Ego sessions.
       await fs.writeFile(`${SUBSTRATE_PATH}/PLAN.md`, "# Plan v2");
+      await fs.writeFile(`${SUBSTRATE_PATH}/OPERATING_CONTEXT.md`, "# OC v2");
 
-      // Read after modification — cache was renamed to .prev during read(),
-      // but now we need a fresh cache file to read. Actually read() was not called yet.
-      // The cache file was written, then PLAN.md changed. Now read() should detect mismatch.
-      const laterNow = new Date("2026-06-16T10:05:00Z");
+      const laterNow = new Date("2026-06-16T10:05:00Z"); // within 4h
       const readCache = new EgoSessionCache(SUBSTRATE_PATH, fs, makeClock(laterNow));
       const result = await readCache.read();
-      expect(result).toBeNull();
+      expect(result).not.toBeNull();
+      expect(result!.notes).toContain("before substrate churned");
     });
   });
 
