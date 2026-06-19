@@ -202,6 +202,20 @@ describe("Superego agent", () => {
       expect(launcher.getLaunches()).toHaveLength(0);
     });
 
+    it("mode:replace — bypasses the 20KB size pre-rejection so full-file skillUpdates/memoryUpdates can be evaluated", async () => {
+      launcher.enqueueSuccess(JSON.stringify({
+        proposalEvaluations: [{ approved: true, reason: "Full replacement approved" }],
+      }));
+
+      const evaluations = await superego.evaluateProposals([
+        { target: "SKILLS", content: "x".repeat(20_001), mode: "replace" },
+      ]);
+
+      expect(evaluations).toHaveLength(1);
+      expect(evaluations[0].approved).toBe(true);
+      expect(launcher.getLaunches()).toHaveLength(1);
+    });
+
     it("keeps an oversized proposal rejection aligned with other proposal evaluations", async () => {
       launcher.enqueueSuccess(JSON.stringify({
         proposalEvaluations: [{ approved: true, reason: "Small proposal OK" }],
@@ -881,6 +895,32 @@ describe("Superego agent", () => {
       const plan = await fs.readFile("/substrate/PLAN.md");
       expect(plan).toContain("## Tasks");
       expect(plan).toContain("- [ ] Bootstrap task");
+    });
+
+    it("mode:replace — SKILLS proposal overwrites existing content instead of appending", async () => {
+      const newContent = "# Skills\n\nFull replacement content";
+      const proposals = [{ target: "SKILLS", content: newContent, mode: "replace" as const }];
+      const evaluations = [{ approved: true, reason: "Full replacement approved" }];
+
+      await superego.applyProposals(proposals, evaluations);
+
+      const skills = await fs.readFile("/substrate/SKILLS.md");
+      expect(skills).toBe(newContent);
+      expect(skills).not.toContain("Some skills");
+      expect(skills).not.toContain("---");
+    });
+
+    it("mode:replace — MEMORY proposal overwrites existing content instead of appending", async () => {
+      const newContent = "# Memory\n\nFull replacement memory";
+      const proposals = [{ target: "MEMORY", content: newContent, mode: "replace" as const }];
+      const evaluations = [{ approved: true, reason: "Full replacement approved" }];
+
+      await superego.applyProposals(proposals, evaluations);
+
+      const memory = await fs.readFile("/substrate/MEMORY.md");
+      expect(memory).toBe(newContent);
+      expect(memory).not.toContain("Some memories");
+      expect(memory).not.toContain("---");
     });
 
     it("HABITS and SECURITY still use trimEnd+separator merge (regression guard)", async () => {

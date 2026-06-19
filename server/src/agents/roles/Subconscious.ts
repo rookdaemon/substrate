@@ -17,6 +17,8 @@ import { ICycleLogWriter } from "../../substrate/io/ICycleLogWriter";
 export interface SubconsciousProposal {
   target: string;
   content: string;
+  /** "replace" overwrites the target file; "append" (default) merges with separator. */
+  mode?: "replace" | "append";
 }
 
 /**

@@ -33,6 +33,8 @@ export interface GovernanceReport {
 export interface Proposal {
   target: string;
   content: string;
+  /** "replace" overwrites the target file; "append" (default) merges with separator. */
+  mode?: "replace" | "append";
 }
 
 /** Governed domains whose proposals require Superego approval. */
@@ -59,6 +61,7 @@ const MAX_PROPOSAL_CONTENT_CHARS = 20_000;
 const MAX_PROPOSAL_BATCH_CHARS = 80_000;
 
 function proposalSizeRejection(proposal: Proposal): ProposalEvaluation | null {
+  if (proposal.mode === "replace") return null; // full-file replacements bypass the delta size cap
   if (proposal.content.length > MAX_PROPOSAL_CONTENT_CHARS) {
     return {
       approved: false,
@@ -342,6 +345,8 @@ export class Superego {
               await this.logAudit(`PLAN atomic write failed: ${msg}`);
               throw err;
             }
+          } else if (proposal.mode === "replace") {
+            await this.writer.write(fileType, proposal.content);
           } else {
             merged = existing
               ? `${existing.trimEnd()}\n\n---\n\n${proposal.content}`

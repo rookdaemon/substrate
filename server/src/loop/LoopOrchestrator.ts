@@ -1524,12 +1524,14 @@ export class LoopOrchestrator implements IMessageInjector {
       proposals.push({
         target: "SKILLS",
         content: taskResult.skillUpdates,
+        mode: "replace",
       });
     }
     if (taskResult.memoryUpdates) {
       proposals.push({
         target: "MEMORY",
         content: taskResult.memoryUpdates,
+        mode: "replace",
       });
     }
     return proposals;
