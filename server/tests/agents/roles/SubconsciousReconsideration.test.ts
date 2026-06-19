@@ -43,7 +43,7 @@ describe("Subconscious reconsideration", () => {
     );
 
     subconscious = new Subconscious(
-      reader, writer, appendWriter, conversationManager, checker, promptBuilder, launcher, clock, taskClassifier, "/workspace"
+      reader, writer, appendWriter, conversationManager, checker, promptBuilder, launcher, clock, taskClassifier, "/workspace", undefined, "/source/root"
     );
 
     await fs.mkdir("/substrate", { recursive: true });
@@ -90,6 +90,11 @@ describe("Subconscious reconsideration", () => {
       expect(outcome.qualityScore).toBe(95);
       expect(outcome.issuesFound).toHaveLength(0);
       expect(outcome.needsReassessment).toBe(false);
+
+      const launches = launcher.getLaunches();
+      expect(launches[0].options?.outputSchema).toBeDefined();
+      expect((launches[0].options?.outputSchema?.required as string[] | undefined)).toContain("outcomeMatchesIntent");
+      expect(launches[0].options?.additionalDirs).toEqual(["/source/root"]);
     });
 
     it("identifies quality issues in partial success", async () => {

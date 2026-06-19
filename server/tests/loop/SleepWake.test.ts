@@ -818,6 +818,56 @@ describe("LoopOrchestrator: INS messages do not reset idle counter", () => {
     }]);
   });
 
+  it("does not send agoraReplies to unknown public keys without inReplyTo context", async () => {
+    const deps = createDeps();
+    await setupIdleSubstrate(deps.fs);
+
+    const logger = new InMemoryLogger();
+    const eventSink = new InMemoryEventSink();
+    const config = defaultLoopConfig({ maxConsecutiveIdleCycles: 5 });
+    const orchestrator = new LoopOrchestrator(
+      deps.ego, deps.subconscious, deps.superego, deps.id,
+      deps.appendWriter, deps.clock, new ImmediateTimer(), eventSink,
+      config, logger
+    );
+
+    const sent: Array<{ peerName: string; type: string; payload: unknown; inReplyTo?: string }> = [];
+    const replied: Array<{ targetPubkey: string; type: string; payload: unknown; inReplyTo: string }> = [];
+    const unknownPubkey = "302a300506032b6570032100dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd";
+    const agoraService: IAgoraService = {
+      async sendMessage(options) {
+        sent.push(options);
+        return { ok: true, status: 200 };
+      },
+      async sendToAll() { return { ok: true, errors: [] }; },
+      async replyToEnvelope(options) {
+        replied.push(options);
+        return { ok: true, status: 200 };
+      },
+      async decodeInbound() { return { ok: false, reason: "not implemented" }; },
+      getPeers() { return []; },
+      getPeerConfig() { return undefined; },
+      getSelfIdentity() { return { publicKey: "self", name: "rook" }; },
+      async connectRelay() {},
+      async disconnectRelay() {},
+      isRelayConnected() { return true; },
+    };
+    orchestrator.setAgoraService(agoraService);
+
+    deps.launcher.enqueueSuccess(JSON.stringify({
+      action: "idle",
+      agoraReplies: [{ to: unknownPubkey, text: "No context." }],
+    }));
+
+    orchestrator.start();
+    orchestrator.queueStartupMessage("[AGORA MESSAGE] missing reply context");
+
+    await orchestrator.runOneCycle();
+
+    expect(sent).toEqual([]);
+    expect(replied).toEqual([]);
+  });
+
   it("idle counter still increments when only INS messages are pending", async () => {
     const deps = createDeps();
     await setupIdleSubstrate(deps.fs);

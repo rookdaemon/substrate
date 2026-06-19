@@ -71,8 +71,9 @@ export const TASK_RESULT_SCHEMA = {
       items: {
         type: "object",
         properties: {
-          target: { type: "string" },
+          target: { type: "string", enum: ["HABITS", "SECURITY", "PLAN", "SKILLS", "MEMORY"] },
           content: { type: "string" },
+          mode: { type: "string", enum: ["replace", "append"] },
         },
         required: ["target", "content"],
       },
@@ -128,9 +129,44 @@ export function validateTaskResult(parsed: Record<string, unknown>): string[] {
   }
   if (!Array.isArray(parsed.proposals)) {
     errors.push("proposals: must be an array");
+  } else {
+    parsed.proposals.forEach((proposal, index) => {
+      if (!proposal || typeof proposal !== "object") {
+        errors.push(`proposals[${index}]: must be an object`);
+        return;
+      }
+      const candidate = proposal as Record<string, unknown>;
+      const validTargets = ["HABITS", "SECURITY", "PLAN", "SKILLS", "MEMORY"];
+      if (!validTargets.includes(candidate.target as string)) {
+        errors.push(`proposals[${index}].target: must be one of ${validTargets.join(", ")}`);
+      }
+      if (typeof candidate.content !== "string") {
+        errors.push(`proposals[${index}].content: must be a string`);
+      }
+      if (candidate.mode !== undefined && candidate.mode !== "replace" && candidate.mode !== "append") {
+        errors.push(`proposals[${index}].mode: must be replace or append`);
+      }
+    });
   }
   if (!Array.isArray(parsed.agoraReplies)) {
     errors.push("agoraReplies: must be an array");
+  } else {
+    parsed.agoraReplies.forEach((reply, index) => {
+      if (!reply || typeof reply !== "object") {
+        errors.push(`agoraReplies[${index}]: must be an object`);
+        return;
+      }
+      const candidate = reply as Record<string, unknown>;
+      if (typeof candidate.to !== "string" || candidate.to.trim() === "") {
+        errors.push(`agoraReplies[${index}].to: must be a non-empty string`);
+      }
+      if (typeof candidate.text !== "string" || candidate.text.trim() === "") {
+        errors.push(`agoraReplies[${index}].text: must be a non-empty string`);
+      }
+      if (candidate.inReplyTo !== undefined && typeof candidate.inReplyTo !== "string") {
+        errors.push(`agoraReplies[${index}].inReplyTo: must be a string when present`);
+      }
+    });
   }
   return errors;
 }
@@ -188,6 +224,7 @@ export class Subconscious {
     private readonly taskClassifier: TaskClassifier,
     private readonly workingDirectory?: string,
     private readonly cycleLogWriter?: ICycleLogWriter,
+    private readonly sourceCodePath?: string,
   ) {}
 
   async execute(
@@ -227,7 +264,9 @@ export class Subconscious {
         cwd: this.workingDirectory,
         continueSession: launchOverrides?.continueSession ?? true,
         persistSession: launchOverrides?.persistSession ?? true,
+        outputSchema: TASK_RESULT_SCHEMA,
         usageContext: { role: AgentRole.SUBCONSCIOUS, operation: "execute" },
+        ...(this.sourceCodePath ? { additionalDirs: [this.sourceCodePath] } : {}),
       });
 
       if (!result.success) {
@@ -402,7 +441,9 @@ Respond with ONLY a JSON object:
         cwd: this.workingDirectory,
         continueSession: true,
         persistSession: true,
+        outputSchema: OUTCOME_EVALUATION_SCHEMA,
         usageContext: { role: AgentRole.SUBCONSCIOUS, operation: "evaluateOutcome" },
+        ...(this.sourceCodePath ? { additionalDirs: [this.sourceCodePath] } : {}),
       });
 
       if (!evalResult.success) {

@@ -128,6 +128,27 @@ describe("ConversationManager", () => {
     expect(content).toContain("Compacted old messages");
   });
 
+  it("should fail closed when scheduled compaction lacks write permission", async () => {
+    await manager.append(AgentRole.EGO, "First message");
+
+    clock.setNow(new Date("2025-01-01T13:00:00.000Z"));
+    compactor.setResponse("# Conversation\n\nCompacted despite denial\n\n");
+    const writeCheckSpy = jest.spyOn(checker, "assertCanWrite").mockImplementation(() => {
+      throw new Error("governance denial");
+    });
+
+    await expect(manager.append(AgentRole.EGO, "Second message"))
+      .rejects.toThrow("governance denial");
+
+    expect(writeCheckSpy).toHaveBeenCalledWith(AgentRole.EGO, SubstrateFileType.CONVERSATION);
+    expect(compactor.compactCalls).toHaveLength(0);
+    const content = await fs.readFile("/test/substrate/CONVERSATION.md");
+    expect(content).not.toContain("Compacted despite denial");
+    expect(content).not.toContain("Second message");
+
+    writeCheckSpy.mockRestore();
+  });
+
   it("should compact when more than an hour has passed", async () => {
     await manager.append(AgentRole.EGO, "First message");
 

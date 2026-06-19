@@ -1756,6 +1756,13 @@ export class LoopOrchestrator implements IMessageInjector {
         const isConfiguredPeer = !!this.agoraService.getPeerConfig(peerRef);
         const shouldReplyToUnknown = !!reply.inReplyTo && !isConfiguredPeer && this.isLikelyFullPublicKey(peerRef);
 
+        if (!reply.inReplyTo && !isConfiguredPeer && this.isLikelyFullPublicKey(peerRef)) {
+          this.logger.debug(
+            `agoraReplies: skipped unknown public-key recipient ${peerRef} because inReplyTo is required`,
+          );
+          continue;
+        }
+
         const result = shouldReplyToUnknown
           ? await this.agoraService.replyToEnvelope({
             targetPubkey: peerRef,

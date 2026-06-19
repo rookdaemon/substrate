@@ -8,22 +8,6 @@ function makeClock(nowDate: Date): IClock {
   return { now: () => nowDate };
 }
 
-async function makeFilesWithMtimes(
-  fs: InMemoryFileSystem,
-  planMtime: Date,
-  ocMtime: Date,
-): Promise<void> {
-  await fs.mkdir(SUBSTRATE_PATH, { recursive: true });
-  await fs.writeFile(`${SUBSTRATE_PATH}/PLAN.md`, "# Plan");
-  await fs.writeFile(`${SUBSTRATE_PATH}/OPERATING_CONTEXT.md`, "# Operating Context");
-  // InMemoryFileSystem uses current mtime on write — we patch it via touchFile if needed.
-  // For tests where we need controlled mtimes, we use the patch mechanism.
-  // The InMemoryFileSystem stat() returns the mtime at write time (Date.now()).
-  // We set specific mtimes by using a clock-controlled variant.
-  void planMtime; // suppress unused lint — used only in mtime-controlled tests below
-  void ocMtime;
-}
-
 describe("EgoSessionCache", () => {
   describe("read() — cache absent", () => {
     it("returns null when cache file does not exist", async () => {

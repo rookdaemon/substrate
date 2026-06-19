@@ -353,6 +353,24 @@ describe("AgoraOutboundProvider", () => {
       expect(agoraService.sentToAll).toHaveLength(0);
     });
 
+    it("should reject unknown full-key recipients without inReplyTo", async () => {
+      await provider.start();
+
+      const unknownPubkey = "302a300506032b6570032100dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd";
+      const message = createMessage({
+        type: "agora.send",
+        payload: {
+          to: [unknownPubkey],
+          type: "publish",
+          payload: { text: "unsolicited unknown" },
+        },
+      });
+
+      await expect(provider.send(message)).rejects.toThrow("Unknown public-key recipient(s) require inReplyTo");
+      expect(agoraService.sentToAll).toHaveLength(0);
+      expect(agoraService.repliedEnvelopes).toHaveLength(0);
+    });
+
     it("should split configured and unknown recipients for inReplyTo sends", async () => {
       await provider.start();
 

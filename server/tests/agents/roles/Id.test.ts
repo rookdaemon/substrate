@@ -178,6 +178,8 @@ describe("Id agent", () => {
       expect(message).toContain("8.0/10");
       expect(message).toContain("coordination");
       expect(message).toContain("3.0/10");
+      expect(message).toContain("Use these ratings as outcome feedback");
+      expect(message).toContain("do not suppress high-priority governance");
     });
 
     it("omits the historical section when tracker has no data", async () => {

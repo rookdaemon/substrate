@@ -61,7 +61,18 @@ const MAX_PROPOSAL_CONTENT_CHARS = 20_000;
 const MAX_PROPOSAL_BATCH_CHARS = 80_000;
 
 function proposalSizeRejection(proposal: Proposal): ProposalEvaluation | null {
-  if (proposal.mode === "replace") return null; // full-file replacements bypass the delta size cap
+  if (proposal.mode === "replace") {
+    if (proposal.content.length > MAX_PROPOSAL_BATCH_CHARS) {
+      return {
+        approved: false,
+        reason:
+          `PROPOSAL_TOO_LARGE: ${proposal.target} replacement content is ${proposal.content.length} characters, ` +
+          `above the ${MAX_PROPOSAL_BATCH_CHARS} character evaluator limit. ` +
+          `Submit a narrower replacement or split the governed update into smaller proposals.`,
+      };
+    }
+    return null; // full-file replacements bypass the smaller delta size cap
+  }
   if (proposal.content.length > MAX_PROPOSAL_CONTENT_CHARS) {
     return {
       approved: false,
@@ -162,7 +173,7 @@ export class Superego {
   }
 
   async evaluateProposals(proposals: Proposal[], onLogEntry?: (entry: ProcessLogEntry) => void): Promise<ProposalEvaluation[]> {
-    // Pre-filter: PROPOSAL_TOO_LARGE — oversized full-file replacements can
+    // Pre-filter: PROPOSAL_TOO_LARGE — oversized proposal payloads can
     // exceed provider argv/context limits before Superego can evaluate them.
     // Reject locally with an actionable reason so governance stays alive and
     // future cycles submit compact targeted proposals instead of hitting E2BIG.

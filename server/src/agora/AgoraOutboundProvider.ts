@@ -52,13 +52,14 @@ export class AgoraOutboundProvider implements Provider {
 
   // clock is always provided alongside conversationManager in production (injected from createLoopLayer).
   // Both are optional here to preserve backward-compat for callers that don't need conversation logging.
-  private async logOutbound(recipients: string[], type: string, payload: unknown): Promise<void> {
+  private async logOutbound(recipients: string[], type: string, payload: unknown, inReplyTo?: string): Promise<void> {
     if (!this.conversationManager) return;
     try {
       const iso = this.clock?.now().toISOString() ?? "";
       const toList = recipients.join(", ");
       const text = this.formatOutboundPayload(payload);
-      const entry = `[AGORA_OUT${iso ? ` ${iso}` : ""}] TO: ${toList} ${type}: ${text}`.replace(/\n+/g, " ").trim();
+      const replyContext = inReplyTo ? ` inReplyTo=${inReplyTo}` : "";
+      const entry = `[AGORA_OUT${iso ? ` ${iso}` : ""}] TO: ${toList} ${type}:${replyContext} ${text}`.replace(/\n+/g, " ").trim();
       await this.conversationManager.append(AgentRole.SUBCONSCIOUS, entry);
     } catch (err) {
       this.logger?.debug(`[AGORA-OUT] Failed to log outbound message to CONVERSATION.md: ${err instanceof Error ? err.message : String(err)}`);
@@ -141,7 +142,7 @@ export class AgoraOutboundProvider implements Provider {
       this.logger?.debug(
         `[AGORA-OUT] Reply sent successfully: ${targetPubkey}`
       );
-      await this.logOutbound([payload.targetPubkey], payload.type, payload.payload);
+      await this.logOutbound([payload.targetPubkey], payload.type, payload.payload, payload.inReplyTo);
       return;
     }
 
@@ -158,6 +159,7 @@ export class AgoraOutboundProvider implements Provider {
     const sendTargets: string[] = [];
     const replyTargets: string[] = [];
     const unresolvedTargets: string[] = [];
+    const unknownPubkeyWithoutReplyTargets: string[] = [];
 
     for (const target of resolvedTargets) {
       const isConfiguredPeer = !!this.agoraService.getPeerConfig(target.resolved);
@@ -165,6 +167,8 @@ export class AgoraOutboundProvider implements Provider {
 
       if (payload.inReplyTo && !isConfiguredPeer && isFullKey) {
         replyTargets.push(target.resolved);
+      } else if (!payload.inReplyTo && !isConfiguredPeer && isFullKey) {
+        unknownPubkeyWithoutReplyTargets.push(target.original);
       } else if (!isConfiguredPeer && !isFullKey) {
         unresolvedTargets.push(target.original);
       } else {
@@ -174,6 +178,11 @@ export class AgoraOutboundProvider implements Provider {
 
     if (unresolvedTargets.length > 0) {
       throw new Error(`Unresolved recipient reference(s): ${unresolvedTargets.join(", ")}`);
+    }
+    if (unknownPubkeyWithoutReplyTargets.length > 0) {
+      throw new Error(
+        `Unknown public-key recipient(s) require inReplyTo: ${unknownPubkeyWithoutReplyTargets.join(", ")}`
+      );
     }
 
     this.logger?.debug(
@@ -224,7 +233,7 @@ export class AgoraOutboundProvider implements Provider {
       throw new Error(`All sends failed: ${errors.map((e) => e.error).join("; ")}`);
     }
 
-    await this.logOutbound(payload.to ?? [], payload.type, payload.payload);
+    await this.logOutbound(payload.to ?? [], payload.type, payload.payload, payload.inReplyTo);
   }
 
   onMessage(_handler: (message: Message) => Promise<void>): void {

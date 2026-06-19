@@ -27,21 +27,28 @@ describe("Subconscious agent", () => {
   let clock: FixedClock;
   let launcher: InMemorySessionLauncher;
   let subconscious: Subconscious;
+  let reader: SubstrateFileReader;
+  let writer: SubstrateFileWriter;
+  let appendWriter: AppendOnlyWriter;
+  let checker: PermissionChecker;
+  let promptBuilder: PromptBuilder;
+  let conversationManager: ConversationManager;
+  let taskClassifier: TaskClassifier;
 
   beforeEach(async () => {
     fs = new InMemoryFileSystem();
     clock = new FixedClock(new Date("2025-06-15T10:00:00.000Z"));
     launcher = new InMemorySessionLauncher();
     const config = new SubstrateConfig("/substrate");
-    const reader = new SubstrateFileReader(fs, config);
+    reader = new SubstrateFileReader(fs, config);
     const lock = new FileLock();
-    const writer = new SubstrateFileWriter(fs, config, lock);
-    const appendWriter = new AppendOnlyWriter(fs, config, lock, clock);
-    const checker = new PermissionChecker();
-    const promptBuilder = new PromptBuilder(reader, checker);
-    const taskClassifier = new TaskClassifier({ strategicModel: "opus", tacticalModel: "sonnet" });
+    writer = new SubstrateFileWriter(fs, config, lock);
+    appendWriter = new AppendOnlyWriter(fs, config, lock, clock);
+    checker = new PermissionChecker();
+    promptBuilder = new PromptBuilder(reader, checker);
+    taskClassifier = new TaskClassifier({ strategicModel: "opus", tacticalModel: "sonnet" });
     const compactor = new MockCompactor();
-    const conversationManager = new ConversationManager(
+    conversationManager = new ConversationManager(
       reader, fs, config, lock, appendWriter, checker, compactor, clock
     );
 
@@ -109,6 +116,44 @@ describe("Subconscious agent", () => {
 
       const launches = launcher.getLaunches();
       expect(launches[0].options?.cwd).toBe("/workspace");
+    });
+
+    it("passes sourceCodePath as additionalDirs when provided", async () => {
+      const sourceLauncher = new InMemorySessionLauncher();
+      const subconsciousWithSource = new Subconscious(
+        reader,
+        writer,
+        appendWriter,
+        conversationManager,
+        checker,
+        promptBuilder,
+        sourceLauncher,
+        clock,
+        taskClassifier,
+        "/workspace",
+        new CycleLogWriter(fs, clock, "/substrate"),
+        "/source/root",
+      );
+      sourceLauncher.enqueueSuccess(JSON.stringify({
+        result: "success", summary: "Done", progressEntry: "", skillUpdates: null, memoryUpdates: null, proposals: [], agoraReplies: [],
+      }));
+
+      await subconsciousWithSource.execute({ taskId: "task-1", description: "Inspect source" });
+
+      const launches = sourceLauncher.getLaunches();
+      expect(launches[0].options?.additionalDirs).toEqual(["/source/root"]);
+    });
+
+    it("requests schema-constrained task result output", async () => {
+      launcher.enqueueSuccess(JSON.stringify({
+        result: "success", summary: "Done", progressEntry: "", skillUpdates: null, memoryUpdates: null, proposals: [], agoraReplies: [],
+      }));
+
+      await subconscious.execute({ taskId: "task-1", description: "Do it" });
+
+      const launches = launcher.getLaunches();
+      expect(launches[0].options?.outputSchema).toBeDefined();
+      expect((launches[0].options?.outputSchema?.required as string[] | undefined)).toContain("agoraReplies");
     });
 
     it("uses launch model and effort overrides when supplied", async () => {
@@ -507,6 +552,29 @@ describe("Subconscious agent", () => {
       expect(errors.some((e) => e.startsWith("summary:"))).toBe(true);
       expect(errors.some((e) => e.startsWith("proposals:"))).toBe(true);
       expect(errors.some((e) => e.startsWith("agoraReplies:"))).toBe(true);
+    });
+
+    it("returns errors for malformed proposal and Agora reply elements", () => {
+      const errors = validateTaskResult({
+        result: "success",
+        summary: "All done",
+        progressEntry: "Completed",
+        skillUpdates: null,
+        memoryUpdates: null,
+        proposals: [
+          { target: "UNKNOWN", content: 12, mode: "overwrite" },
+        ],
+        agoraReplies: [
+          { to: "", text: "", inReplyTo: 42 },
+        ],
+      });
+
+      expect(errors).toContain("proposals[0].target: must be one of HABITS, SECURITY, PLAN, SKILLS, MEMORY");
+      expect(errors).toContain("proposals[0].content: must be a string");
+      expect(errors).toContain("proposals[0].mode: must be replace or append");
+      expect(errors).toContain("agoraReplies[0].to: must be a non-empty string");
+      expect(errors).toContain("agoraReplies[0].text: must be a non-empty string");
+      expect(errors).toContain("agoraReplies[0].inReplyTo: must be a string when present");
     });
   });
 });

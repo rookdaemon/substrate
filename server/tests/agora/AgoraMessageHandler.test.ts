@@ -2221,9 +2221,23 @@ describe("AgoraMessageHandler — lastSeen tracking", () => {
     await handler.processEnvelope(testEnv, "webhook");
 
     const saved = await store.getLastSeen(PEER_PK);
-    expect(saved).toBeDefined();
-    expect(typeof saved).toBe("number");
-    expect(saved).toBeGreaterThan(0);
+    expect(saved).toBe(testEnv.timestamp);
+  });
+
+  it("caps future envelope timestamps at local receipt time for lastSeen", async () => {
+    const memFs = new InMemoryFileSystem();
+    const store = new AgoraStateStore("/state.json", memFs);
+    const { handler, clock } = makeHandlerWithStore(store);
+    const futureEnv = {
+      ...testEnv,
+      id: "future-ls-env",
+      timestamp: clock.now().getTime() + 60_000,
+    };
+
+    await handler.processEnvelope(futureEnv, "webhook");
+
+    const saved = await store.getLastSeen(PEER_PK);
+    expect(saved).toBe(clock.now().getTime());
   });
 
   it("does NOT update lastSeen for duplicate (ignored) envelopes", async () => {
@@ -2271,6 +2285,6 @@ describe("AgoraMessageHandler — lastSeen tracking", () => {
 
     // Even quarantined messages should update lastSeen
     const saved = await store.getLastSeen(PEER_PK);
-    expect(saved).toBeDefined();
+    expect(saved).toBe(testEnv.timestamp);
   });
 });

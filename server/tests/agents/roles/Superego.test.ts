@@ -216,6 +216,18 @@ describe("Superego agent", () => {
       expect(launcher.getLaunches()).toHaveLength(1);
     });
 
+    it("mode:replace — pre-rejects pathological single replacements above the evaluator payload limit", async () => {
+      const evaluations = await superego.evaluateProposals([
+        { target: "SKILLS", content: "x".repeat(80_001), mode: "replace" },
+      ]);
+
+      expect(evaluations).toHaveLength(1);
+      expect(evaluations[0].approved).toBe(false);
+      expect(evaluations[0].reason).toContain("PROPOSAL_TOO_LARGE");
+      expect(evaluations[0].reason).toContain("replacement content");
+      expect(launcher.getLaunches()).toHaveLength(0);
+    });
+
     it("keeps an oversized proposal rejection aligned with other proposal evaluations", async () => {
       launcher.enqueueSuccess(JSON.stringify({
         proposalEvaluations: [{ approved: true, reason: "Small proposal OK" }],

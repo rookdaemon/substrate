@@ -48,7 +48,6 @@ describe("fitToContextWindow", () => {
   });
 
   it("truncates user message when total exceeds budget", () => {
-    const contextWindowTokens = 1000; // very small for testing
     const system = "s".repeat(100);
     // Budget: (1000 - 4096) would be negative, so let's use a bigger window
     // Budget with 10000 tokens: (10000 - 4096) * 4 * 0.9 = 5904 * 3.6 = ~21254 chars

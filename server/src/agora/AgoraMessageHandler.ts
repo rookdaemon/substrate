@@ -508,6 +508,15 @@ export class AgoraMessageHandler {
     return JSON.stringify(compactedPayload);
   }
 
+  private getLastSeenTimestampMs(envelope: Envelope): number {
+    const nowMs = this.clock.now().getTime();
+    const candidate = envelope.timestamp;
+    if (typeof candidate === "number" && Number.isFinite(candidate) && candidate > 0) {
+      return Math.min(candidate, nowMs);
+    }
+    return nowMs;
+  }
+
   async processEnvelope(envelope: Envelope, source: "webhook" | "relay" = "webhook"): Promise<MessageStatus> {
     const envelopeRouting = envelope as Envelope & { from?: string; to?: string[]; sender?: string };
     const envelopeFrom = envelopeRouting.from ?? envelopeRouting.sender ?? "";
@@ -577,7 +586,7 @@ export class AgoraMessageHandler {
           this.recordProcessed(envelope.id, envelopeFrom, envelope.type, envelope.payload);
           // Update lastSeen anchor so the wake poller skips this message on the next startup.
           if (this.stateStore && envelopeFrom) {
-            await this.stateStore.updateLastSeen(envelopeFrom, this.clock.now().getTime());
+            await this.stateStore.updateLastSeen(envelopeFrom, this.getLastSeenTimestampMs(envelope));
           }
         } catch (err) {
           this.logger.debug(`[AGORA] Failed to write quarantined message to CONVERSATION.md: ${err instanceof Error ? err.message : String(err)}`);
@@ -755,7 +764,7 @@ export class AgoraMessageHandler {
 
     // Update lastSeen anchor so the wake poller skips this message on the next startup.
     if (this.stateStore && envelopeFrom) {
-      await this.stateStore.updateLastSeen(envelopeFrom, this.clock.now().getTime());
+      await this.stateStore.updateLastSeen(envelopeFrom, this.getLastSeenTimestampMs(envelope));
     }
 
     return isUnprocessed ? 'unprocessed' : (injected ? 'injected' : 'queued');

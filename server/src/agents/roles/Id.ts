@@ -75,7 +75,7 @@ export class Id {
           const statsText = statEntries
             .map(([cat, s]) => `  ${cat}: ${s.avgRating.toFixed(1)}/10 avg (${s.count} task${s.count === 1 ? "" : "s"})`)
             .join("\n");
-          message += `[DRIVE QUALITY]\nAverage ratings by category (higher is better):\n${statsText}\n\nPrioritize categories with higher historical ratings. Avoid repeatedly suggesting drives in consistently low-performing categories unless there is clear strategic reason.\n\n`;
+          message += `[DRIVE QUALITY]\nAverage ratings by category (higher is better):\n${statsText}\n\nUse these ratings as outcome feedback, not as authorization to avoid difficult work. Prefer higher-performing categories only when candidates are otherwise strategically comparable. Low-performing categories should trigger better scoping or framing; do not suppress high-priority governance, adversarial review, verification, or source-code maintenance solely because their category average is low.\n\n`;
         }
       }
 

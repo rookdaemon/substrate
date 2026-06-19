@@ -61,6 +61,8 @@ describe("IterationPlanner", () => {
     const launches = launcher.getLaunches();
     expect(launches[0].options?.model).toBe("claude-haiku");
     expect(launches[0].options?.effort).toBe("minimal");
+    expect(launches[0].options?.outputSchema).toBeDefined();
+    expect(launches[0].options?.additionalDirs).toEqual(["/repo"]);
     expect(launches[0].request.message).toContain('Default to "direct"');
     expect(launches[0].request.message).toContain("Use \"menial\" for trivial, routine, or deterministic work");
     expect(launches[0].request.message).toContain("Do not create a reconciling");
