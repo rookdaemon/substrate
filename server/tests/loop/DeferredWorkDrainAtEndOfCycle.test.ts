@@ -113,8 +113,8 @@ describe("DeferredWorkQueue drain at end-of-cycle", () => {
 
     expect(proposals).toEqual([
       { target: "PLAN", content: "- [ ] Follow-up" },
-      { target: "SKILLS", content: "# Skills\n\nNew skill" },
-      { target: "MEMORY", content: "# Memory\n\nNew memory" },
+      { target: "SKILLS", content: "# Skills\n\nNew skill", mode: "replace" },
+      { target: "MEMORY", content: "# Memory\n\nNew memory", mode: "replace" },
     ]);
   });
 
