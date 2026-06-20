@@ -201,8 +201,9 @@ describe("CodeDispatcher", () => {
         ["pi", piBackend],
       ]);
       const piDispatcher = new CodeDispatcher(fs, processRunner, SUBSTRATE_PATH, backendsWithPi, clock);
-      processRunner.enqueue({ stdout: "", stderr: "", exitCode: 0 }); // git status
+      processRunner.enqueue({ stdout: " M src/foo.ts", stderr: "", exitCode: 0 }); // git status
       processRunner.enqueue({ stdout: "", stderr: "", exitCode: 0 }); // test
+      processRunner.enqueue({ stdout: "", stderr: "", exitCode: 0 }); // default guard
 
       const result = await piDispatcher.dispatch(
         makeTask({ backend: "auto", files: ["src/foo.ts"], testCommand: "npm test" }),
@@ -220,8 +221,9 @@ describe("CodeDispatcher", () => {
         ["pi", piBackend],
       ]);
       const piDispatcher = new CodeDispatcher(fs, processRunner, SUBSTRATE_PATH, backendsWithPi, clock);
-      processRunner.enqueue({ stdout: "", stderr: "", exitCode: 0 }); // git status
+      processRunner.enqueue({ stdout: " M a.ts\n M b.ts\n", stderr: "", exitCode: 0 }); // git status
       processRunner.enqueue({ stdout: "", stderr: "", exitCode: 0 }); // test
+      processRunner.enqueue({ stdout: "", stderr: "", exitCode: 0 }); // default guard
 
       const result = await piDispatcher.dispatch(
         makeTask({ backend: "auto", files: ["a.ts", "b.ts"], testCommand: "npm test" }),
@@ -370,10 +372,27 @@ describe("CodeDispatcher", () => {
       claudeBackend.enqueue(successBackendResult());
       processRunner.enqueue({ stdout: "a.ts", stderr: "", exitCode: 0 }); // git status
       processRunner.enqueue({ stdout: "Tests passed", stderr: "", exitCode: 0 }); // npm test
+      processRunner.enqueue({ stdout: "Full guard passed", stderr: "", exitCode: 0 }); // default guard
 
       const result = await dispatcher.dispatch(makeTask({ testCommand: "npm test" }));
       expect(result.testsPassed).toBe(true);
       expect(result.success).toBe(true);
+    });
+
+    it("runs the default full test+lint guard after a custom guard when files changed", async () => {
+      claudeBackend.enqueue(successBackendResult());
+      processRunner.enqueue({ stdout: " M src/foo.ts", stderr: "", exitCode: 0 }); // git status
+      processRunner.enqueue({ stdout: "targeted passed", stderr: "", exitCode: 0 }); // custom guard
+      processRunner.enqueue({ stdout: "full passed", stderr: "", exitCode: 0 }); // default guard
+
+      const result = await dispatcher.dispatch(makeTask({ testCommand: "npm test -- src/foo.test.ts" }));
+
+      expect(result.success).toBe(true);
+      const guardCalls = processRunner.getCalls().filter((c) => c.command === "bash");
+      expect(guardCalls.map((c) => c.args)).toEqual([
+        ["-lc", "npm test -- src/foo.test.ts"],
+        ["-lc", "npm test && npm run lint"],
+      ]);
     });
 
     it("preserves changes and returns testsPassed=false when tests fail", async () => {

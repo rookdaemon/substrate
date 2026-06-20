@@ -110,8 +110,9 @@ export class CodeDispatcher {
     // 5. Get changed files via git status, including untracked files
     const filesChanged = await this.getChangedFiles(cwd);
 
-    // 6. Run guard command when the backend changed files. If the caller did not
-    // provide a command, use the full default test+lint guard.
+    // 6. Run guard command(s). A caller-provided command is additional targeted
+    // verification, not a replacement for the default full test+lint guard when
+    // source files changed.
     if (filesChanged.length === 0 && !task.testCommand) {
       return {
         success: true,
@@ -123,8 +124,8 @@ export class CodeDispatcher {
       };
     }
 
-    const guardCommand = task.testCommand ?? DEFAULT_CODE_DISPATCH_GUARD_COMMAND;
-    const testsPassed = await this.runGuard(guardCommand, cwd);
+    const guardCommands = this.guardCommands(task.testCommand, filesChanged.length > 0);
+    const testsPassed = await this.runGuards(guardCommands, cwd);
 
     // 7. Do not auto-revert on guard failure. This dispatcher may run in a shared
     // or live checkout; destructive cleanup could erase unrelated user work.
@@ -191,13 +192,25 @@ export class CodeDispatcher {
     }
   }
 
-  private async runGuard(testCommand: string, cwd: string): Promise<boolean> {
-    try {
-      const result = await this.processRunner.run("bash", ["-lc", testCommand], { cwd });
-      return result.exitCode === 0;
-    } catch {
-      return false;
+  private guardCommands(testCommand: string | undefined, filesChanged: boolean): string[] {
+    const commands: string[] = [];
+    if (testCommand) commands.push(testCommand);
+    if (filesChanged && testCommand !== DEFAULT_CODE_DISPATCH_GUARD_COMMAND) {
+      commands.push(DEFAULT_CODE_DISPATCH_GUARD_COMMAND);
     }
+    return commands;
+  }
+
+  private async runGuards(testCommands: string[], cwd: string): Promise<boolean> {
+    for (const testCommand of testCommands) {
+      try {
+        const result = await this.processRunner.run("bash", ["-lc", testCommand], { cwd });
+        if (result.exitCode !== 0) return false;
+      } catch {
+        return false;
+      }
+    }
+    return true;
   }
 
 }

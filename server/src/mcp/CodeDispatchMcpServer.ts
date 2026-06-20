@@ -13,12 +13,12 @@ import { REASONING_EFFORT_VALUES } from "../agents/reasoningEffort";
 export function addCodeDispatchTools(server: McpServer, dispatcher: CodeDispatcher): void {
   server.tool(
     "invoke",
-    "Dispatch a coding task with scoped coding context. Auto/default dispatch is Pi-local-first; changed files are guarded by test+lint when no testCommand is supplied; legacy shell backends require an explicit backend override.",
+    "Dispatch a coding task with scoped coding context. Auto/default dispatch is Pi-local-first; changed files always run the default full test+lint guard; testCommand, when supplied, runs as an additional targeted guard first; legacy shell backends require an explicit backend override.",
     {
       spec: z.string().describe("Task specification in natural language"),
       backend: z.enum(["copilot", "claude", "codex", "gemini", "pi", "auto"]).default("auto").describe("Backend to use; auto routes to the local Pi tool path"),
       files: z.array(z.string()).describe("Source file paths to include as context"),
-      testCommand: z.string().optional().describe("Guard command for changed files (default: npm test && npm run lint)"),
+      testCommand: z.string().optional().describe("Optional targeted guard command. If files changed, the default npm test && npm run lint guard still runs afterward."),
       model: z.string().optional().describe("Model override for backends that support model selection"),
       effort: z.enum(REASONING_EFFORT_VALUES).optional().describe("Reasoning effort override for backends that support effort selection"),
       cwd: z.string().optional().describe("Working directory for the task"),
