@@ -278,4 +278,16 @@ describe("CycleLogWriter disk-space guard", () => {
     const newContent = await fs.readFile("/substrate/cycle_log.md");
     expect(newContent).toContain("[EGO] retry after enospc");
   });
+
+  it("surfaces non-ENOSPC append errors instead of silently reporting success", async () => {
+    const fs = new InMemoryFileSystem();
+    const clock = new FixedClock(new Date("2026-06-12T10:00:00.000Z"));
+    await fs.mkdir("/substrate", { recursive: true });
+    const permissionError = Object.assign(new Error("EACCES"), { code: "EACCES" });
+    jest.spyOn(fs, "appendFile").mockRejectedValue(permissionError);
+
+    const writer = new CycleLogWriter(fs, clock, "/substrate");
+
+    await expect(writer.write("EGO", "permission denied")).rejects.toThrow("EACCES");
+  });
 });

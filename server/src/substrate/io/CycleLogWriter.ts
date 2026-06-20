@@ -111,6 +111,7 @@ export class CycleLogWriter implements ICycleLogWriter {
       }
       // Non-ENOSPC appendFile errors are re-thrown; callers should not block on them.
       // (Swallowing here would hide real bugs like permission errors on a writeable dir.)
+      throw err;
     }
   }
 
