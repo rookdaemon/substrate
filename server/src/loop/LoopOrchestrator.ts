@@ -93,6 +93,7 @@ export class LoopOrchestrator implements IMessageInjector {
 
   // Deterministic shell-dependency scorecard for shell-independence work.
   private shellIndependenceService: IShellIndependenceService | null = null;
+  private lastShellIndependenceOperatingContextLine: string | null = null;
 
   // SUPEREGO finding tracker for recurring finding escalation
   private findingTracker: SuperegoFindingTracker = new SuperegoFindingTracker();
@@ -996,13 +997,16 @@ export class LoopOrchestrator implements IMessageInjector {
   }
 
   private async writeShellIndependenceLineToOperatingContext(line: string): Promise<void> {
+    if (line === this.lastShellIndependenceOperatingContextLine) {
+      return;
+    }
     try {
-      const fs = (this as unknown as Record<string, unknown>).fs as { appendFile(path: string, data: string): Promise<void> } | undefined;
-      if (!fs) return;
+      if (!this.fileSystem) return;
       const ocPath = path.join(this.substratePath, "OPERATING_CONTEXT.md");
       const timestamp = this.clock.now().toISOString();
       const entry = `[${timestamp}] [SHELL-INDEPENDENCE] ${line}\n`;
-      await fs.appendFile(ocPath, entry);
+      await this.fileSystem.appendFile(ocPath, entry);
+      this.lastShellIndependenceOperatingContextLine = line;
     } catch {
       // Best-effort: do not let OC write failures block the cycle.
     }

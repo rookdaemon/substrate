@@ -77,6 +77,7 @@ async function setupIdleSubstrate(fs: InMemoryFileSystem) {
   await fs.writeFile("/substrate/CLAUDE.md", "# Claude\n\n");
   await fs.writeFile("/substrate/PROGRESS.md", "# Progress\n\n");
   await fs.writeFile("/substrate/CONVERSATION.md", "# Conversation\n\n");
+  await fs.writeFile("/substrate/OPERATING_CONTEXT.md", "# Operating Context\n\n");
 }
 
 function createOrchestrator() {
@@ -93,6 +94,59 @@ function createOrchestrator() {
 }
 
 describe("DeferredWorkQueue drain at end-of-cycle", () => {
+  it("persists shell-independence scorecard changes to OPERATING_CONTEXT without duplicating stable state", async () => {
+    const deps = createDeps();
+    await setupIdleSubstrate(deps.fs);
+    const logger = new InMemoryLogger();
+    const eventSink = new InMemoryEventSink();
+    const config = defaultLoopConfig({ maxConsecutiveIdleCycles: 100 });
+    const orchestrator = new LoopOrchestrator(
+      deps.ego, deps.subconscious, deps.superego, deps.id,
+      deps.appendWriter, deps.clock, new ImmediateTimer(), eventSink,
+      config, logger,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      "/substrate",
+      deps.fs,
+    );
+
+    const snapshot = (score: number) => ({
+      scorecard: {
+        score,
+        grade: score < 60 ? "D" : "B",
+        riskLevel: score < 60 ? "high" : "medium",
+        activeLauncher: "codex",
+        activeLauncherKind: "commercial-shell",
+        codeDispatchDefault: "claude",
+        commercialShellCount: 2,
+        remoteApiCount: 3,
+      },
+      compactReport: [`Shell independence score: ${score}/100`],
+    });
+    let currentSnapshot = snapshot(48);
+    orchestrator.setShellIndependenceService({
+      refresh: jest.fn(async () => currentSnapshot),
+      getLastSnapshot: jest.fn(() => currentSnapshot),
+    });
+
+    orchestrator.start();
+    await orchestrator.runOneCycle();
+    await orchestrator.runOneCycle();
+    currentSnapshot = snapshot(72);
+    await orchestrator.runOneCycle();
+
+    const operatingContext = await deps.fs.readFile("/substrate/OPERATING_CONTEXT.md");
+    const entries = operatingContext
+      .split("\n")
+      .filter((line) => line.includes("[SHELL-INDEPENDENCE]"));
+    expect(entries).toHaveLength(2);
+    expect(entries[0]).toContain("score=48/100");
+    expect(entries[1]).toContain("score=72/100");
+  });
+
   it("converts SKILLS and MEMORY updates into governed proposals instead of direct writes", () => {
     const { orchestrator } = createOrchestrator();
     const taskResult: TaskResult = {
