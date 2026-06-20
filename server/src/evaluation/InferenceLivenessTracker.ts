@@ -73,4 +73,44 @@ export class InferenceLivenessTracker {
   isHealthy(maxConsecutiveFailures = 3): boolean {
     return this.consecutiveFailures < maxConsecutiveFailures;
   }
+
+  /**
+   * Three-state health classification that distinguishes "never probed" from
+   * "healthy", and (optionally) ages out a tracker whose last success is too old.
+   *
+   * Additive: this does NOT change alive / getState() / isHealthy(), which remain
+   * backward-compatible for ProviderFallbackLauncher and the supervisor's existing
+   * pass/fail decision (degraded == >= maxConsecutiveFailures sequential failures).
+   *
+   * Closes false-GREEN mechanism #3 (the boot-GREEN conflation): alive/isHealthy
+   * report "healthy" before any inference has happened (lastSuccessAt === null).
+   * getHealthStatus reports "unknown" in that state instead of a false "healthy",
+   * so a tracker that has never actually proven the inference path is not counted
+   * as live evidence.
+   *
+   * Staleness is mapped to "unknown" (not "degraded") on purpose: a tracker that
+   * simply has no recent success is *absence of fresh evidence*, not evidence of
+   * failure. Only confirmed consecutive failures escalate to "degraded" (which the
+   * supervisor treats as unhealthy). This keeps the staleness signal from causing a
+   * false restart/rollback loop during legitimately quiet stretches.
+   *
+   * @param maxConsecutiveFailures degrade after this many sequential failures. Default 3.
+   * @param maxStalenessMs if provided, a tracker whose last success is older than this
+   *        is reported "unknown" rather than "healthy". Omit to disable staleness aging.
+   * @returns "degraded" if consecutiveFailures >= maxConsecutiveFailures;
+   *          "unknown" if never probed (lastSuccessAt === null) or stale beyond
+   *          maxStalenessMs; "healthy" otherwise.
+   */
+  getHealthStatus(
+    maxConsecutiveFailures = 3,
+    maxStalenessMs?: number,
+  ): "healthy" | "degraded" | "unknown" {
+    if (this.consecutiveFailures >= maxConsecutiveFailures) return "degraded";
+    if (this.lastSuccessAt === null) return "unknown";
+    if (maxStalenessMs !== undefined) {
+      const ageMs = this.clock.now().getTime() - this.lastSuccessAt.getTime();
+      if (ageMs > maxStalenessMs) return "unknown";
+    }
+    return "healthy";
+  }
 }

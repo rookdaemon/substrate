@@ -172,7 +172,12 @@ export class HealthCheck {
 
   private evaluateInferenceLiveness(): "healthy" | "degraded" | "unknown" {
     if (!this.livenessTracker) return "unknown";
-    return this.livenessTracker.isHealthy(MAX_INFERENCE_FAILURES) ? "healthy" : "degraded";
+    // Three-state classification: "degraded" only on confirmed consecutive failures
+    // (unchanged supervisor pass/fail), but "unknown" — not a false "healthy" — when
+    // the tracker has never proven the inference path (lastSuccessAt === null). Both
+    // "healthy" and "unknown" pass runCriticalChecks (only "degraded" fails), so this
+    // is honest reporting without changing the restart/rollback decision.
+    return this.livenessTracker.getHealthStatus(MAX_INFERENCE_FAILURES);
   }
 
   private evaluateOutputQuality(): "healthy" | "degraded" | "unknown" {
