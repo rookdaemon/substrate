@@ -3,7 +3,11 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { SqliteMetricsService } from "../../src/metrics/SqliteMetricsService";
 
-describe("SqliteMetricsService", () => {
+const [major, minor] = process.versions.node.split(".").map(Number);
+const hasSqlite = major > 22 || (major === 22 && minor >= 5);
+const describeIfSqlite = hasSqlite ? describe : describe.skip;
+
+describeIfSqlite("SqliteMetricsService", () => {
   let tmpDir: string;
   let service: SqliteMetricsService;
 
