@@ -3,6 +3,7 @@ export type { EndorsementScreenerConfig } from "./EndorsementScreener";
 export type { IEndorsementScreener } from "./IEndorsementScreener";
 export type { EndorsementVerdict, ScreenerInput, ScreenerResult } from "./types";
 export { EndorsementInterceptor } from "./EndorsementInterceptor";
+export type { EndorsementSessionStats, EndorsementInterceptorOptions } from "./EndorsementInterceptor";
 export type { EndorsementInterceptResult, IEndorsementInterceptor } from "./IEndorsementInterceptor";
 export { HesitationDetector } from "./HesitationDetector";
 export type { HesitationMatch } from "./HesitationDetector";

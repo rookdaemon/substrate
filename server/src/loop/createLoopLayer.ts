@@ -524,7 +524,11 @@ export async function createLoopLayer(
         screenerModel: "haiku",
       }
     );
-    const interceptor = new EndorsementInterceptor(screener);
+    const preAuthMode = config.endorsement?.preAuthMode ?? false;
+    if (preAuthMode) {
+      logger.debug("endorsement: pre-auth mode enabled — all ESCALATE verdicts auto-accepted");
+    }
+    const interceptor = new EndorsementInterceptor(screener, undefined, undefined, { preAuthMode });
     orchestrator.setEndorsementInterceptor(interceptor);
   }
 
