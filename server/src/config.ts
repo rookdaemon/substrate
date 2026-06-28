@@ -201,6 +201,11 @@ const AppConfigSchema = z
         enabled: z.boolean().optional(),
       })
       .optional(),
+    endorsement: z
+      .object({
+        preAuthMode: z.boolean().optional(),
+      })
+      .optional(),
   })
   .refine(
     (data) =>
@@ -440,6 +445,15 @@ export interface AppConfig {
     /** When false, disables the BudgetGuard entirely — no preflight checks, no kill threshold. Default: true. */
     enabled?: boolean;
   };
+  /** Configuration for the endorsement gate (compliance circuit-breaker). */
+  endorsement?: {
+    /**
+     * When true, ESCALATE verdicts auto-accept ("The human accepts. Continue.") instead of
+     * blocking for human review. Enables fully autonomous operation without approval gates.
+     * Default: false.
+     */
+    preAuthMode?: boolean;
+  };
 }
 
 export interface ResolveConfigOptions {
@@ -660,6 +674,7 @@ export async function resolveConfig(
     peers: fileConfig.peers,
     schedulerCoalesceEnabled: fileConfig.schedulerCoalesceEnabled,
     budgetGuard: fileConfig.budgetGuard,
+    endorsement: fileConfig.endorsement,
   };
 
   // Env vars override everything

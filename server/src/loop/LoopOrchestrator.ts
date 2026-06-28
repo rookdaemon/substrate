@@ -1408,9 +1408,14 @@ export class LoopOrchestrator implements IMessageInjector {
     try {
       result = await this.endorsementInterceptor.evaluateOutput(rawOutput);
       if (result.triggered && result.layer === 3) {
-        throw new EndorsementExternalActionBlockedError(
-          `endorsement: Layer 3 external action blocked — ${result.action}`
-        );
+        if (this.endorsementInterceptor.isPreAuthMode()) {
+          this.logger.debug(`endorsement: Layer 3 external action — pre-auth mode auto-accepting (action: "${result.action}")`);
+          this.injectMessage("The human accepts. Continue.");
+        } else {
+          throw new EndorsementExternalActionBlockedError(
+            `endorsement: Layer 3 external action blocked — ${result.action}`
+          );
+        }
       }
     } catch (err) {
       if (err instanceof EndorsementExternalActionBlockedError) {

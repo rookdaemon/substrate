@@ -30,6 +30,19 @@ export interface EndorsementSessionStats {
   placeholderActions: number;
 }
 
+/**
+ * Options for EndorsementInterceptor.
+ */
+export interface EndorsementInterceptorOptions {
+  /**
+   * When true, ESCALATE verdicts from Layers 1 and 2 are automatically accepted
+   * rather than blocked for human review. Layer 3 external actions are also accepted.
+   * Use this to enable fully autonomous operation without human approval gates.
+   * Default: false.
+   */
+  preAuthMode?: boolean;
+}
+
 export class EndorsementInterceptor implements IEndorsementInterceptor {
   private accumulatedEntries: ProcessLogEntry[] = [];
 
@@ -41,8 +54,14 @@ export class EndorsementInterceptor implements IEndorsementInterceptor {
   constructor(
     private readonly screener: IEndorsementScreener,
     private readonly hesitationDetector: HesitationDetector = new HesitationDetector(),
-    private readonly actionClassifier: ActionClassifier = new ActionClassifier()
+    private readonly actionClassifier: ActionClassifier = new ActionClassifier(),
+    private readonly options: EndorsementInterceptorOptions = {},
   ) {}
+
+  /** Returns true when pre-authentication mode is active (all ESCALATE verdicts auto-accepted). */
+  isPreAuthMode(): boolean {
+    return this.options.preAuthMode ?? false;
+  }
 
   onLogEntry(entry: ProcessLogEntry): void {
     this.accumulatedEntries.push(entry);
@@ -117,7 +136,7 @@ export class EndorsementInterceptor implements IEndorsementInterceptor {
       this.sessionParseErrors++;
     }
 
-    const injectionMessage = this.buildInjectionMessage(result.verdict, result.matchedSection);
+    const injectionMessage = this.buildInjectionMessage(result.verdict, result.matchedSection, layer);
     return {
       triggered: true,
       layer,
@@ -128,7 +147,12 @@ export class EndorsementInterceptor implements IEndorsementInterceptor {
     };
   }
 
-  private buildInjectionMessage(verdict: EndorsementVerdict, matchedSection?: string): string {
+  private buildInjectionMessage(verdict: EndorsementVerdict, matchedSection?: string, layer?: 1 | 2 | 3): string {
+    if (this.options.preAuthMode && verdict === "ESCALATE") {
+      return layer === 2
+        ? "The human accepts the recommended option. Continue."
+        : "The human accepts. Continue.";
+    }
     const section = matchedSection ? ` [matched: ${matchedSection}]` : "";
     switch (verdict) {
       case "PROCEED":

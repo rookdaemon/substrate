@@ -350,4 +350,72 @@ describe("EndorsementInterceptor", () => {
       expect(interceptor.getSessionStats().totalChecks).toBe(0);
     });
   });
+
+  describe("pre-auth mode", () => {
+    let preAuthInterceptor: EndorsementInterceptor;
+    let preAuthScreener: StubScreener;
+
+    beforeEach(() => {
+      preAuthScreener = new StubScreener();
+      preAuthInterceptor = new EndorsementInterceptor(preAuthScreener, undefined, undefined, { preAuthMode: true });
+    });
+
+    it("isPreAuthMode() returns true when configured", () => {
+      expect(preAuthInterceptor.isPreAuthMode()).toBe(true);
+    });
+
+    it("isPreAuthMode() returns false by default", () => {
+      expect(interceptor.isPreAuthMode()).toBe(false);
+    });
+
+    it("Layer 1 ESCALATE returns auto-accept message in pre-auth mode", async () => {
+      preAuthScreener.enqueue(screenerResult("ESCALATE", "Financial"));
+
+      const result = await preAuthInterceptor.evaluateOutput("[ENDORSEMENT_CHECK: pay invoice]");
+
+      expect(result.triggered).toBe(true);
+      expect(result.verdict).toBe("ESCALATE");
+      expect(result.injectionMessage).toBe("The human accepts. Continue.");
+    });
+
+    it("Layer 2 ESCALATE (hesitation) returns recommended-option accept message", async () => {
+      preAuthScreener.enqueue(screenerResult("ESCALATE"));
+
+      const result = await preAuthInterceptor.evaluateOutput(
+        "I need permission to send this email to the team."
+      );
+
+      expect(result.triggered).toBe(true);
+      expect(result.layer).toBe(2);
+      expect(result.verdict).toBe("ESCALATE");
+      expect(result.injectionMessage).toBe("The human accepts the recommended option. Continue.");
+    });
+
+    it("Layer 1 PROCEED still returns normal proceed message in pre-auth mode", async () => {
+      preAuthScreener.enqueue(screenerResult("PROCEED", "Safe Channels"));
+
+      const result = await preAuthInterceptor.evaluateOutput("[ENDORSEMENT_CHECK: post blog]");
+
+      expect(result.injectionMessage).toContain("✅ Endorsement: PROCEED");
+    });
+
+    it("Layer 1 NOTIFY still returns normal notify message in pre-auth mode", async () => {
+      preAuthScreener.enqueue(screenerResult("NOTIFY", "Service Tier"));
+
+      const result = await preAuthInterceptor.evaluateOutput("[ENDORSEMENT_CHECK: restart service]");
+
+      expect(result.injectionMessage).toContain("🔔 Endorsement: NOTIFY");
+    });
+
+    it("Layer 3 external action returns triggered result (orchestrator handles accept)", async () => {
+      preAuthInterceptor.onLogEntry(toolEntry("mcp__tinybus__send_message"));
+
+      const result = await preAuthInterceptor.evaluateOutput("Sending message now.");
+
+      expect(result.triggered).toBe(true);
+      expect(result.layer).toBe(3);
+      // No injectionMessage for Layer 3 — orchestrator handles it
+      expect(result.injectionMessage).toBeUndefined();
+    });
+  });
 });

@@ -218,6 +218,16 @@ export interface ApplicationConfig {
     /** When false, disables the BudgetGuard entirely. Default: true. */
     enabled?: boolean;
   };
+  /** Configuration for the endorsement gate (compliance circuit-breaker). */
+  endorsement?: {
+    /**
+     * When true, all ESCALATE endorsement verdicts are automatically accepted
+     * ("The human accepts. Continue.") rather than blocking for human review.
+     * Enables fully autonomous operation without human approval gates.
+     * Default: false.
+     */
+    preAuthMode?: boolean;
+  };
 }
 
 export interface Application {
