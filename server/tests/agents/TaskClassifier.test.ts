@@ -44,12 +44,12 @@ describe("TaskClassifier", () => {
       expect(result).toBe("strategic");
     });
 
-    it("classifies Subconscious.evaluateOutcome as strategic", () => {
+    it("classifies Subconscious.evaluateOutcome as tactical (lever-b cost cut)", () => {
       const result = classifier.classify({
         role: AgentRole.SUBCONSCIOUS,
         operation: "evaluateOutcome",
       });
-      expect(result).toBe("strategic");
+      expect(result).toBe("tactical");
     });
 
     it("classifies Subconscious.execute as strategic (real work deserves the strategic model)", () => {
@@ -162,7 +162,6 @@ describe("TaskClassifier", () => {
         { role: AgentRole.EGO, operation: "respondToMessage" },
         { role: AgentRole.ID, operation: "generateDrives" },
         { role: AgentRole.SUPEREGO, operation: "audit" },
-        { role: AgentRole.SUBCONSCIOUS, operation: "evaluateOutcome" },
       ];
 
       strategicOps.forEach(op => {
@@ -176,6 +175,7 @@ describe("TaskClassifier", () => {
         { role: AgentRole.SUPEREGO, operation: "evaluateProposals" },
         { role: AgentRole.ID, operation: "detectIdle" },
         { role: AgentRole.EGO, operation: "dispatchNext" },
+        { role: AgentRole.SUBCONSCIOUS, operation: "evaluateOutcome" },
       ];
 
       tacticalOps.forEach(op => {

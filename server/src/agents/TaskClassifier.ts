@@ -47,7 +47,6 @@ export class TaskClassifier {
       "respondToMessage", // Ego's context-aware conversation
       "generateDrives",   // Id's novel goal generation
       "audit",            // Superego's full substrate analysis
-      "evaluateOutcome",  // Subconscious's complex reconsideration
     ];
 
     // Tactical operations that are more routine
@@ -55,6 +54,7 @@ export class TaskClassifier {
       "evaluateProposals", // Superego's binary accept/reject
       "detectIdle",        // Id's deterministic status check
       "dispatchNext",      // Ego's task extraction
+      "evaluateOutcome",   // Subconscious's reconsideration — bounded/structured; lever-b cost cut (opus->sonnet)
     ];
 
     if (strategicOperations.includes(operation)) {
