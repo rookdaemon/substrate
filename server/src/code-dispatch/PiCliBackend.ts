@@ -19,6 +19,21 @@ const DEFAULT_PI_CODE_TIMEOUT_MS = 15 * 60 * 1000;
 const DEFAULT_PI_CODE_IDLE_TIMEOUT_MS = 3 * 60 * 1000;
 
 /**
+ * Infer the provider name from a model string that uses the "provider/model"
+ * convention (e.g. "openrouter/moonshotai/kimi-k2.6:floor" → "openrouter").
+ * Returns undefined when the model has no "/" separator or is unset.
+ *
+ * Mirrors the inference logic in ShellIndependenceService.piProvider() so that
+ * PiCliBackend passes --provider consistently even when config only specifies
+ * a model string.
+ */
+export function inferProviderFromModel(model: string | undefined): string | undefined {
+  if (!model) return undefined;
+  const prefix = model.split("/")[0];
+  return prefix !== model ? prefix : undefined;
+}
+
+/**
  * PiCliBackend — routes code-dispatch through the portable Pi shell instead of
  * a proprietary commercial CLI. Provider/model/key settings are passed in from
  * Substrate config so code-dispatch matches the active Pi/Kimi/OpenRouter route.
@@ -58,17 +73,20 @@ export class PiCliBackend implements ICodeBackend {
         timeoutMs: this.config.defaultTimeoutMs ?? DEFAULT_PI_CODE_TIMEOUT_MS,
         idleTimeoutMs: this.config.defaultIdleTimeoutMs ?? DEFAULT_PI_CODE_IDLE_TIMEOUT_MS,
       });
+      // On failure, include stderr so caller can diagnose errors (e.g. 401 auth failures).
+      const output = result.exitCode === 0
+        ? result.stdout
+        : [result.stdout, result.stderr].filter((s) => s.length > 0).join("\n") || "";
       return {
         success: result.exitCode === 0,
-        output: result.stdout,
-        ...(result.stderr ? { stderr: result.stderr } : {}),
+        output,
         exitCode: result.exitCode,
         durationMs: this.clock.now().getTime() - startMs,
       };
-    } catch {
+    } catch (err) {
       return {
         success: false,
-        output: "",
+        output: err instanceof Error ? err.message : String(err),
         exitCode: 1,
         durationMs: this.clock.now().getTime() - startMs,
       };
@@ -77,7 +95,10 @@ export class PiCliBackend implements ICodeBackend {
 
   private buildArgs(): string[] {
     const args = ["-p"];
-    pushOpt(args, "--provider", this.config.provider);
+    // Infer provider from model prefix ("openrouter/model" → "--provider openrouter")
+    // when not explicitly set. Mirrors ShellIndependenceService.piProvider().
+    const provider = this.config.provider ?? inferProviderFromModel(this.config.model);
+    pushOpt(args, "--provider", provider);
     pushOpt(args, "--model", this.config.model);
     pushOpt(args, "--thinking", this.config.thinking);
     pushOpt(args, "--session-dir", this.config.sessionDir);

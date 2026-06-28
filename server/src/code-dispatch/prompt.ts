@@ -4,12 +4,14 @@ import type { SubstrateSlice } from "./ICodeBackend";
  * Compose the prompt for a code backend from CODING_CONTEXT.md content,
  * source file snapshots, and the task specification.
  *
- * **Token-budget risk:** The prompt grows proportionally with the number and
- * size of files in `context.fileContents`. There is no cap enforced here.
- * Callers (CodeDispatcher) are responsible for limiting which files they
- * include — reading many large files or an entire repo into a SubstrateSlice
- * will silently produce an oversized prompt that may hit provider context
- * limits or inflate token costs.
+ * @param spec - The task specification or instruction.
+ * @param context - Substrate slice containing optional coding context, file
+ *   contents, and working directory. The `fileContents` map is injected inline:
+ *   large maps (many files or files with large content) will produce
+ *   proportionally large prompts and significant token cost. Callers should
+ *   limit `fileContents` to directly relevant files. A typical source file is
+ *   ~200–500 tokens; injecting 20+ files can push a single code-dispatch call
+ *   past 10k tokens before the task spec is even appended.
  */
 export function buildPrompt(spec: string, context: SubstrateSlice): string {
   const parts: string[] = [];
