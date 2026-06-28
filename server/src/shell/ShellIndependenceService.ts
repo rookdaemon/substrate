@@ -130,6 +130,12 @@ const STATIC_SYMBOLS: Array<{ symbol: string; provider: string; kind: ShellRoute
 
 export class ShellIndependenceService implements IShellIndependenceService {
   private lastSnapshot: ShellIndependenceSnapshot | null = null;
+  /**
+   * Cached result of the static source-file scan. Source files do not change
+   * at runtime (only on deploy/restart), so we scan once and cache. This avoids
+   * repeated filesystem reads on every refresh() call.
+   */
+  private cachedStaticReferences: StaticShellReference[] | null = null;
 
   constructor(
     private readonly fs: IFileSystem,
@@ -280,8 +286,14 @@ export class ShellIndependenceService implements IShellIndependenceService {
   }
 
   private async scanStaticShellReferences(): Promise<StaticShellReference[]> {
+    if (this.cachedStaticReferences !== null) {
+      return this.cachedStaticReferences;
+    }
     const sourceRoot = this.config.sourceCodePath;
-    if (!sourceRoot) return [];
+    if (!sourceRoot) {
+      this.cachedStaticReferences = [];
+      return this.cachedStaticReferences;
+    }
     const references: StaticShellReference[] = [];
     for (const relativePath of SOURCE_SCAN_FILES) {
       const filePath = joinPath(sourceRoot, relativePath);
@@ -297,6 +309,7 @@ export class ShellIndependenceService implements IShellIndependenceService {
         });
       }
     }
+    this.cachedStaticReferences = references;
     return references;
   }
 
