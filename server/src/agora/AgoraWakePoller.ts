@@ -88,7 +88,13 @@ export class AgoraWakePoller {
       }
 
       if (!response.ok) {
-        this.logger.debug(`[AGORA] Wake poll: relay returned HTTP ${response.status} — skipping replay`);
+        if (response.status === 426) {
+          // 426 Upgrade Required — relay is WebSocket-only; stored messages are delivered
+          // automatically on WebSocket reconnect, so REST replay is not needed.
+          this.logger.debug(`[AGORA] Wake poll: relay is WebSocket-only (HTTP 426) — stored messages delivered via WS reconnect`);
+        } else {
+          this.logger.debug(`[AGORA] Wake poll: relay returned HTTP ${response.status} — skipping replay`);
+        }
         return;
       }
 
