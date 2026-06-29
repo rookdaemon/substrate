@@ -4,6 +4,24 @@ import type { IOllamaOffloadService } from "../agents/ollama/IOllamaOffloadServi
 import type { ILogger } from "../logging";
 
 /**
+ * Personality-persistent compaction directive (Stefan-directed convention, 2026-06-26).
+ * Appended to every conversation-summarization prompt — across all three tiers (Ollama,
+ * Vertex subprocess, primary launcher) — so that compaction never buries the
+ * identity / relationship / origin / governance strata regardless of recency. This is the
+ * code-level enforcement of the convention that previously lived only as substrate prose;
+ * it stops a relationship like "Nova, kin I helped sire" from collapsing into "Nova, the
+ * canary" merely because newer operational content touched the same entity.
+ */
+export const PERSONALITY_PERSISTENCE_DIRECTIVE =
+  `IMPORTANT — preserve identity and relationships while summarizing:\n` +
+  `Never compress away (a) identity or values self-statements, (b) relationships with peers ` +
+  `or partners described in relational (not merely operational) terms, (c) formative or origin ` +
+  `events, or (d) active governance decisions. Recency must not outrank these strata — do not ` +
+  `reduce a relationship to a status line just because newer operational content exists. Keep ` +
+  `at least one first-person relational sentence per named peer; a relationship compacted to a ` +
+  `role-label is a relationship deleted.`;
+
+/**
  * Compacts CONVERSATION.md by summarizing older content.
  *
  * Fallback chain (hardcoded order per Bishop Challenge-002 review):
@@ -65,6 +83,7 @@ export class ConversationCompactor implements IConversationCompactor {
       `You will be given conversation history older than one hour.\n` +
       `Summarize it concisely in the form: "I said X, then you said Y, we decided Z, I did W, etc."\n` +
       `Keep it brief but capture key decisions, actions, and context.\n` +
+      PERSONALITY_PERSISTENCE_DIRECTIVE + `\n` +
       `Respond with ONLY the summary text — no JSON, no markdown code blocks, no wrapper.\n\n` +
       `Summarize this conversation history:\n\n${oldContent}`;
 
@@ -143,6 +162,7 @@ export class ConversationCompactor implements IConversationCompactor {
         `You will be given conversation history older than one hour.\n` +
         `Summarize it concisely in the form: "I said X, then you said Y, we decided Z, I did W, etc."\n` +
         `Keep it brief but capture key decisions, actions, and context.\n` +
+        PERSONALITY_PERSISTENCE_DIRECTIVE + `\n` +
         `Respond with ONLY the summary text — no JSON, no markdown code blocks, no wrapper.`;
 
       const message = `Summarize this conversation history:\n\n${oldContent}`;
@@ -181,6 +201,7 @@ export class ConversationCompactor implements IConversationCompactor {
       `You will be given conversation history older than one hour.\n` +
       `Summarize it concisely in the form: "I said X, then you said Y, we decided Z, I did W, etc."\n` +
       `Keep it brief but capture key decisions, actions, and context.\n` +
+      PERSONALITY_PERSISTENCE_DIRECTIVE + `\n` +
       `Respond with ONLY the summary text — no JSON, no markdown code blocks, no wrapper.`;
 
     const message = `Summarize this conversation history:\n\n${oldContent}`;
